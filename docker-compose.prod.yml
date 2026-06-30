@@ -45,6 +45,7 @@ services:
       - backend
     labels:
       - "traefik.enable=true"
+      - "traefik.docker.network=coolify"
       - "traefik.http.routers.nexisthub.rule=Host(`72.60.43.158`)"
       - "traefik.http.routers.nexisthub.entrypoints=http"
       - "traefik.http.services.nexisthub.loadbalancer.server.port=80"
