@@ -41,12 +41,16 @@ services:
       dockerfile: Dockerfile
     container_name: nexisthub_frontend
     restart: always
-    ports:
-      - "80:80"
     depends_on:
       - backend
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.nexisthub.rule=Host(`72.60.43.158`)"
+      - "traefik.http.routers.nexisthub.entrypoints=http"
+      - "traefik.http.services.nexisthub.loadbalancer.server.port=80"
     networks:
       - nexisthub_net
+      - coolify
 
 volumes:
   postgres_data:
@@ -54,3 +58,5 @@ volumes:
 networks:
   nexisthub_net:
     name: nexisthub_network
+  coolify:
+    external: true
