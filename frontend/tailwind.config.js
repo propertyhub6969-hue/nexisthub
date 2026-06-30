@@ -5,13 +5,17 @@ export default {
     extend: {
       colors: {
         brand: {
-          50:  '#fefce8',
-          100: '#fef9c3',
-          500: '#d97706',
-          600: '#b45309',
-          700: '#92400e',
+          50:  '#eff6ff',
+          100: '#dbeafe',
+          500: '#1A56DB',
+          600: '#1547C0',
+          700: '#1240AA',
         },
-        sidebar: '#1e293b',
+        accent: {
+          500: '#22C55E',
+          600: '#16A34A',
+        },
+        sidebar: '#0F1F4D',
       },
       fontFamily: {
         sans: ['Inter', 'system-ui', 'sans-serif'],

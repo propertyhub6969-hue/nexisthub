@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
-import { Building2, Loader2 } from 'lucide-react'
+import { Loader2 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import type { LoginPayload } from '../../types'
 
@@ -30,13 +30,12 @@ export default function Login() {
     <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
       <div className="w-full max-w-sm">
         {/* Logo */}
-        <div className="flex items-center justify-center gap-2.5 mb-8">
-          <div className="w-10 h-10 rounded-xl bg-brand-500 flex items-center justify-center">
-            <Building2 size={20} className="text-white" />
-          </div>
-          <span className="text-xl font-bold text-slate-900 tracking-tight">
-            NexistHub
-          </span>
+        <div className="flex justify-center mb-10">
+          <img
+            src="/brand.png"
+            alt="Nexist Logo"
+            className="h-32 w-auto"
+          />
         </div>
 
         <div className="card p-6">

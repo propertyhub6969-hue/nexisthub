@@ -13,7 +13,7 @@ export default function Header({ title }: HeaderProps) {
           <Bell size={16} />
         </button>
         <div className="flex items-center gap-2 cursor-pointer hover:bg-slate-50 rounded-lg px-2 py-1 transition-colors">
-          <div className="w-7 h-7 rounded-full bg-brand-500 flex items-center justify-center">
+          <div className="w-7 h-7 rounded-full bg-accent-500 flex items-center justify-center">
             <span className="text-white text-xs font-semibold">U</span>
           </div>
           <ChevronDown size={14} className="text-slate-400" />

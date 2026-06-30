@@ -8,10 +8,10 @@ import {
   FileText,
   BarChart3,
   LogOut,
-  Building2,
 } from 'lucide-react'
 import { clsx } from 'clsx'
 import { useAuth } from '../../context/AuthContext'
+import NexistLogo from '../ui/NexistLogo'
 
 const navItems = [
   {
@@ -52,15 +52,8 @@ export default function Sidebar() {
   return (
     <aside className="w-60 min-h-screen bg-sidebar flex flex-col">
       {/* Logo */}
-      <div className="px-5 py-5 border-b border-slate-700">
-        <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg bg-brand-500 flex items-center justify-center">
-            <Building2 size={16} className="text-white" />
-          </div>
-          <span className="text-white font-semibold text-base tracking-tight">
-            NexistHub
-          </span>
-        </div>
+      <div className="px-5 py-5 border-b border-blue-900">
+        <NexistLogo size={32} showText={true} textColor="white" />
       </div>
 
       {/* Nav */}
@@ -80,7 +73,7 @@ export default function Sidebar() {
                       'flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors',
                       isActive
                         ? 'bg-brand-500 text-white'
-                        : 'text-slate-300 hover:bg-slate-700 hover:text-white'
+                        : 'text-slate-300 hover:bg-blue-900 hover:text-white'
                     )
                   }
                 >
@@ -98,7 +91,7 @@ export default function Sidebar() {
                   'flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors',
                   isActive
                     ? 'bg-brand-500 text-white'
-                    : 'text-slate-300 hover:bg-slate-700 hover:text-white'
+                    : 'text-slate-300 hover:bg-blue-900 hover:text-white'
                 )
               }
             >
@@ -110,10 +103,10 @@ export default function Sidebar() {
       </nav>
 
       {/* Logout */}
-      <div className="px-3 py-4 border-t border-slate-700">
+      <div className="px-3 py-4 border-t border-blue-900">
         <button
           onClick={logout}
-          className="flex items-center gap-3 px-3 py-2 w-full rounded-lg text-sm font-medium text-slate-400 hover:bg-slate-700 hover:text-white transition-colors"
+          className="flex items-center gap-3 px-3 py-2 w-full rounded-lg text-sm font-medium text-slate-400 hover:bg-blue-900 hover:text-white transition-colors"
         >
           <LogOut size={16} />
           Logout
