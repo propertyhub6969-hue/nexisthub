@@ -65,4 +65,83 @@ async def register(
         email=payload.email,
         hashed_password=get_password_hash(payload.password),
         full_name=payload.full_name,
-   
+        role=UserRole.OWNER,
+        tenant_id=tenant.id,
+        is_active=True,
+    )
+    db.add(user)
+    await db.commit()
+    await db.refresh(user)
+
+    return user
+
+
+@router.post("/login", response_model=Token)
+async def login(
+    payload: UserLogin,
+    db: AsyncSession = Depends(get_db)
+):
+    """Login and return access + refresh tokens."""
+    result = await db.execute(select(User).where(User.email == payload.email))
+    user = result.scalar_one_or_none()
+
+    if not user or not verify_password(payload.password, user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Email atau password salah"
+        )
+
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Akun tidak aktif"
+        )
+
+    access_token = create_access_token({"sub": str(user.id), "tenant_id": str(user.tenant_id)})
+    refresh_token = create_refresh_token({"sub": str(user.id), "tenant_id": str(user.tenant_id)})
+
+    return {
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "token_type": "bearer"
+    }
+
+
+@router.post("/refresh", response_model=Token)
+async def refresh_token(
+    payload: TokenRefresh,
+    db: AsyncSession = Depends(get_db)
+):
+    """Refresh access token using refresh token."""
+    token_data = decode_token(payload.refresh_token)
+    if not token_data:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Refresh token tidak valid"
+        )
+
+    result = await db.execute(select(User).where(User.id == token_data["sub"]))
+    user = result.scalar_one_or_none()
+
+    if not user or not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User tidak ditemukan"
+        )
+
+    access_token = create_access_token({"sub": str(user.id), "tenant_id": str(user.tenant_id)})
+    refresh_token = create_refresh_token({"sub": str(user.id), "tenant_id": str(user.tenant_id)})
+
+    return {
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "token_type": "bearer"
+    }
+
+
+@router.get("/me", response_model=UserResponse)
+async def get_me(
+    db: AsyncSession = Depends(get_db)
+):
+    """Placeholder — implement with JWT middleware."""
+    raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail="Use JWT middleware")
