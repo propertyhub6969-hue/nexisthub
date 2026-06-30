@@ -10,15 +10,21 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from app.core.config import settings
 from app.core.database import Base
 
-# Import all models here so Alembic detects them
-# from app.models.user import User  # ← uncomment in Session 2
+# Explicit model imports — Alembic MUST see these before reading Base.metadata
+from app.models.tenant import Tenant
+from app.models.user import User
+from app.models.marketing import Lead, Prospect, Client
+from app.models.procurement import Vendor, PurchaseOrder, PurchaseOrderItem
+from app.models.legal import DocumentTemplate, LegalDocument
+from app.models.reporting import ReportConfig
+from app.models.audit import AuditLog
 
 config = context.config
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# Override sqlalchemy.url from settings
+# Override sqlalchemy.url from settings (sync URL for Alembic)
 config.set_main_option("sqlalchemy.url", settings.DATABASE_URL_SYNC)
 
 target_metadata = Base.metadata
