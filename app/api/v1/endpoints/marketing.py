@@ -37,7 +37,7 @@ async def list_leads(
     search: Optional[str] = Query(None),
     status_filter: Optional[str] = Query(None, alias="status"),
     page: int = Query(1, ge=1),
-    size: int = Query(20, ge=1, le=100),
+    size: int = Query(20, ge=1, le=500),
 ):
     """List leads for the current tenant (paginated, searchable)."""
     conditions = [Lead.tenant_id == ctx.tenant_id]
@@ -122,7 +122,7 @@ async def list_prospects(
     search: Optional[str] = Query(None),
     status_filter: Optional[str] = Query(None, alias="status"),
     page: int = Query(1, ge=1),
-    size: int = Query(20, ge=1, le=100),
+    size: int = Query(20, ge=1, le=500),
 ):
     conditions = [Prospect.tenant_id == ctx.tenant_id]
     if search:
@@ -205,7 +205,7 @@ async def list_clients(
     search: Optional[str] = Query(None),
     status_filter: Optional[str] = Query(None, alias="status"),
     page: int = Query(1, ge=1),
-    size: int = Query(20, ge=1, le=100),
+    size: int = Query(20, ge=1, le=500),
 ):
     conditions = [Client.tenant_id == ctx.tenant_id]
     if search:

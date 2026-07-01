@@ -36,7 +36,7 @@ async def list_projects(
     search: Optional[str] = Query(None),
     status_filter: Optional[str] = Query(None, alias="status"),
     page: int = Query(1, ge=1),
-    size: int = Query(20, ge=1, le=100),
+    size: int = Query(20, ge=1, le=500),
 ):
     conditions = [Project.tenant_id == ctx.tenant_id]
     if search:
