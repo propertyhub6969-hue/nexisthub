@@ -165,6 +165,43 @@ export interface UnitCreate {
   status?: UnitStatus
 }
 
+// ── Sales (Penjualan) ─────────────────────────────────────────────
+export type SaleCategory = 'subsidi' | 'komersial'
+export type PaymentType = 'cash_keras' | 'cash_bertahap' | 'kpr'
+export type SaleStatus = 'booking' | 'proses' | 'akad' | 'lunas' | 'batal'
+
+export interface Sale {
+  id: string
+  unit_id?: string
+  client_id?: string
+  sale_number?: string
+  category: SaleCategory
+  payment_type: PaymentType
+  price?: number
+  booking_date?: string
+  akad_date?: string
+  status: SaleStatus
+  notes?: string
+  unit_label?: string
+  project_id?: string
+  client_name?: string
+  created_at: string
+  updated_at: string
+}
+
+export interface SaleCreate {
+  unit_id: string
+  client_id: string
+  sale_number?: string
+  category?: SaleCategory
+  payment_type?: PaymentType
+  price?: number
+  booking_date?: string
+  akad_date?: string
+  status?: SaleStatus
+  notes?: string
+}
+
 // ── Pagination ────────────────────────────────────────────────────
 export interface PaginatedResponse<T> {
   items: T[]

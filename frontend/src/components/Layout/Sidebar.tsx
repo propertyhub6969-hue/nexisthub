@@ -5,6 +5,7 @@ import {
   UserCheck,
   Handshake,
   Building2,
+  Receipt,
   ShoppingCart,
   FileText,
   BarChart3,
@@ -33,6 +34,11 @@ const navItems = [
     label: 'Properti',
     icon: Building2,
     to: '/property/projects',
+  },
+  {
+    label: 'Penjualan',
+    icon: Receipt,
+    to: '/sales',
   },
   {
     label: 'Procurement',
