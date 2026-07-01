@@ -19,6 +19,7 @@ export default function DashboardLayout() {
   const title = pageTitles[pathname]
     ?? (pathname.includes('/units') ? 'Kelola Unit'
       : pathname.includes('/payments') ? 'Pembayaran & Cicilan'
+      : pathname.includes('/tax') ? 'Pajak & Notaris'
       : 'NexistHub')
 
   return (

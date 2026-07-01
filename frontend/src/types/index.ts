@@ -295,6 +295,78 @@ export interface DashboardStats {
   overdue_count: number
 }
 
+// ── Perpajakan & Notaris ──────────────────────────────────────────
+export type TaxType = 'pph' | 'bphtb' | 'ppn'
+export type TaxStatus = 'belum' | 'dibayar' | 'validasi' | 'dtp' | 'bebas'
+
+export interface Notary {
+  id: string
+  name: string
+  office?: string
+  phone?: string
+  address?: string
+  notes?: string
+  created_at: string
+  updated_at: string
+}
+export interface NotaryCreate {
+  name: string
+  office?: string
+  phone?: string
+  address?: string
+  notes?: string
+}
+
+export interface TaxRecord {
+  id: string
+  client_id: string
+  tax_type: TaxType
+  amount?: number
+  id_billing?: string
+  ntpn?: string
+  tax_date?: string
+  status: TaxStatus
+  notary_id?: string
+  notary_name?: string
+  notes?: string
+  created_at: string
+  updated_at: string
+}
+export interface TaxCreate {
+  client_id: string
+  tax_type: TaxType
+  amount?: number
+  id_billing?: string
+  ntpn?: string
+  tax_date?: string
+  status?: TaxStatus
+  notary_id?: string
+  notes?: string
+}
+
+export interface NotaryFee {
+  id: string
+  client_id: string
+  description: string
+  amount: number
+  fee_date?: string
+  is_paid: boolean
+  notary_id?: string
+  notary_name?: string
+  notes?: string
+  created_at: string
+  updated_at: string
+}
+export interface NotaryFeeCreate {
+  client_id: string
+  description: string
+  amount: number
+  fee_date?: string
+  is_paid?: boolean
+  notary_id?: string
+  notes?: string
+}
+
 // ── Audit ─────────────────────────────────────────────────────────
 export interface AuditEntry {
   id: string

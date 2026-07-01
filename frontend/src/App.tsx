@@ -9,6 +9,8 @@ import Leads from './pages/marketing/Leads'
 import Prospects from './pages/marketing/Prospects'
 import Clients from './pages/marketing/Clients'
 import ClientPayments from './pages/marketing/ClientPayments'
+import ClientTax from './pages/marketing/ClientTax'
+import Notaries from './pages/legal/Notaries'
 import Projects from './pages/property/Projects'
 import ProjectUnits from './pages/property/ProjectUnits'
 import ComingSoon from './pages/ComingSoon'
@@ -42,10 +44,11 @@ export default function App() {
           <Route path="/marketing/prospects" element={<Prospects />} />
           <Route path="/marketing/clients"   element={<Clients />} />
           <Route path="/marketing/clients/:clientId/payments" element={<ClientPayments />} />
+          <Route path="/marketing/clients/:clientId/tax" element={<ClientTax />} />
           <Route path="/property/projects"                 element={<Projects />} />
           <Route path="/property/projects/:projectId/units" element={<ProjectUnits />} />
           <Route path="/procurement"         element={<ComingSoon name="Procurement" />} />
-          <Route path="/legal"               element={<ComingSoon name="Legal & Dokumen" />} />
+          <Route path="/legal"               element={<Notaries />} />
           <Route path="/reports"             element={<ComingSoon name="Laporan" />} />
         </Route>
 

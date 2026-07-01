@@ -1,0 +1,279 @@
+import { useEffect, useState, useCallback } from 'react'
+import { useParams, Link } from 'react-router-dom'
+import { ArrowLeft, Plus, Trash2, Pencil, Loader2, Receipt, Scale } from 'lucide-react'
+import Badge from '../../components/ui/Badge'
+import Modal from '../../components/ui/Modal'
+import { marketingService } from '../../services/marketing'
+import { taxService } from '../../services/tax'
+import type { Client, Notary, TaxRecord, TaxCreate, TaxType, TaxStatus, NotaryFee, NotaryFeeCreate } from '../../types'
+
+const fmt = (n?: number) => n == null ? '—' : new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(Number(n))
+const fmtDate = (d?: string) => d ? new Date(d).toLocaleDateString('id-ID') : '—'
+
+const taxTypeLabel: Record<TaxType, string> = { pph: 'PPh Final', bphtb: 'BPHTB', ppn: 'PPN' }
+const taxStatusCfg: Record<TaxStatus, { label: string; variant: 'gray' | 'blue' | 'green' | 'orange' }> = {
+  belum:    { label: 'Belum Bayar', variant: 'gray' },
+  dibayar:  { label: 'Dibayar',     variant: 'blue' },
+  validasi: { label: 'Validasi',    variant: 'green' },
+  dtp:      { label: 'DTP',         variant: 'orange' },
+  bebas:    { label: 'Bebas',       variant: 'orange' },
+}
+
+const emptyTax = (cid: string): TaxCreate => ({ client_id: cid, tax_type: 'pph', amount: undefined, id_billing: '', ntpn: '', tax_date: '', status: 'belum', notary_id: '' })
+const emptyFee = (cid: string): NotaryFeeCreate => ({ client_id: cid, description: '', amount: 0, fee_date: '', is_paid: false, notary_id: '' })
+
+export default function ClientTax() {
+  const { clientId = '' } = useParams()
+  const [client, setClient] = useState<Client | null>(null)
+  const [notaries, setNotaries] = useState<Notary[]>([])
+  const [taxes, setTaxes] = useState<TaxRecord[]>([])
+  const [fees, setFees] = useState<NotaryFee[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+
+  const [taxModal, setTaxModal] = useState(false)
+  const [taxForm, setTaxForm] = useState<TaxCreate>(emptyTax(clientId))
+  const [taxEditId, setTaxEditId] = useState<string | null>(null)
+  const [feeModal, setFeeModal] = useState(false)
+  const [feeForm, setFeeForm] = useState<NotaryFeeCreate>(emptyFee(clientId))
+  const [feeEditId, setFeeEditId] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+
+  const load = useCallback(async () => {
+    setLoading(true); setError('')
+    try {
+      const [cl, no, tx, fe] = await Promise.all([
+        marketingService.getClient(clientId), taxService.listNotaries(),
+        taxService.listTax(clientId), taxService.listFees(clientId),
+      ])
+      setClient(cl); setNotaries(no); setTaxes(tx); setFees(fe)
+    } catch { setError('Gagal memuat data pajak & notaris.') } finally { setLoading(false) }
+  }, [clientId])
+  useEffect(() => { load() }, [load])
+
+  const reload = async () => {
+    const [tx, fe] = await Promise.all([taxService.listTax(clientId), taxService.listFees(clientId)])
+    setTaxes(tx); setFees(fe)
+  }
+  const notaryName = (id?: string) => notaries.find((n) => n.id === id)?.name
+
+  // tax handlers
+  function openTaxCreate() { setTaxEditId(null); setTaxForm(emptyTax(clientId)); setTaxModal(true) }
+  function openTaxEdit(x: TaxRecord) {
+    setTaxEditId(x.id)
+    setTaxForm({ client_id: clientId, tax_type: x.tax_type, amount: x.amount, id_billing: x.id_billing ?? '', ntpn: x.ntpn ?? '', tax_date: x.tax_date ?? '', status: x.status, notary_id: x.notary_id ?? '' })
+    setTaxModal(true)
+  }
+  async function submitTax(e: React.FormEvent) {
+    e.preventDefault(); setSaving(true)
+    try {
+      const p = { ...taxForm }
+      if (!p.amount) delete p.amount
+      const rec = p as unknown as Record<string, unknown>
+      ;['id_billing', 'ntpn', 'tax_date', 'notary_id'].forEach((k) => { if (rec[k] === '') delete rec[k] })
+      if (taxEditId) await taxService.updateTax(taxEditId, p); else await taxService.createTax(p)
+      setTaxModal(false); await reload()
+    } catch { setError('Gagal menyimpan data pajak.') } finally { setSaving(false) }
+  }
+  async function delTax(id: string) {
+    if (!confirm('Hapus (arsipkan) data pajak ini?')) return
+    try { await taxService.deleteTax(id); await reload() } catch { setError('Gagal menghapus.') }
+  }
+
+  // fee handlers
+  function openFeeCreate() { setFeeEditId(null); setFeeForm(emptyFee(clientId)); setFeeModal(true) }
+  function openFeeEdit(f: NotaryFee) {
+    setFeeEditId(f.id)
+    setFeeForm({ client_id: clientId, description: f.description, amount: f.amount, fee_date: f.fee_date ?? '', is_paid: f.is_paid, notary_id: f.notary_id ?? '' })
+    setFeeModal(true)
+  }
+  async function submitFee(e: React.FormEvent) {
+    e.preventDefault(); setSaving(true)
+    try {
+      const p = { ...feeForm }
+      const rec = p as unknown as Record<string, unknown>
+      ;['fee_date', 'notary_id'].forEach((k) => { if (rec[k] === '') delete rec[k] })
+      if (feeEditId) await taxService.updateFee(feeEditId, p); else await taxService.createFee(p)
+      setFeeModal(false); await reload()
+    } catch { setError('Gagal menyimpan biaya notaris.') } finally { setSaving(false) }
+  }
+  async function delFee(id: string) {
+    if (!confirm('Hapus biaya ini?')) return
+    try { await taxService.deleteFee(id); await reload() } catch { setError('Gagal menghapus.') }
+  }
+
+  const totalFee = fees.reduce((a, f) => a + Number(f.amount || 0), 0)
+
+  if (loading) return <div className="py-16 text-center text-slate-400"><Loader2 size={20} className="inline animate-spin" /></div>
+
+  return (
+    <div className="space-y-5">
+      <div>
+        <Link to="/marketing/clients" className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-brand-600 mb-1"><ArrowLeft size={14} /> Daftar Pembeli</Link>
+        <h1 className="text-lg font-semibold text-slate-900">{client?.full_name ?? 'Pembeli'}</h1>
+        <p className="text-sm text-slate-500">Berkas pajak & notaris — bukti tersimpan di sisi Anda sendiri</p>
+      </div>
+
+      {error && <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-2">{error}</div>}
+
+      {/* Pajak */}
+      <div className="card overflow-hidden">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
+          <h2 className="text-sm font-semibold text-slate-900 flex items-center gap-2"><Receipt size={15} /> Perpajakan</h2>
+          <button className="btn-primary text-xs flex items-center gap-1" onClick={openTaxCreate}><Plus size={13} /> Tambah Pajak</button>
+        </div>
+        <table className="w-full text-sm">
+          <thead className="bg-slate-50 border-b border-slate-200">
+            <tr>{['Jenis', 'Jumlah', 'ID Billing', 'NTPN', 'Status', 'Notaris', ''].map((h, i) => (
+              <th key={i} className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">{h}</th>))}</tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {taxes.length === 0 ? (
+              <tr><td colSpan={7} className="px-4 py-6 text-center text-slate-400 text-sm">Belum ada data pajak (PPh / BPHTB / PPN).</td></tr>
+            ) : taxes.map((x) => {
+              const st = taxStatusCfg[x.status]
+              return (
+                <tr key={x.id} className="hover:bg-slate-50">
+                  <td className="px-4 py-2.5 font-medium text-slate-900">{taxTypeLabel[x.tax_type]}</td>
+                  <td className="px-4 py-2.5 text-slate-600">{fmt(x.amount)}</td>
+                  <td className="px-4 py-2.5 text-slate-500 text-xs">{x.id_billing ?? '—'}</td>
+                  <td className="px-4 py-2.5 text-slate-500 text-xs">{x.ntpn ?? '—'}</td>
+                  <td className="px-4 py-2.5">{st && <Badge label={st.label} variant={st.variant} />}</td>
+                  <td className="px-4 py-2.5 text-slate-500">{x.notary_name ?? '—'}</td>
+                  <td className="px-4 py-2.5">
+                    <div className="flex items-center justify-end gap-3">
+                      <button onClick={() => openTaxEdit(x)} className="text-slate-400 hover:text-brand-600" title="Edit"><Pencil size={14} /></button>
+                      <button onClick={() => delTax(x.id)} className="text-slate-400 hover:text-red-600" title="Hapus"><Trash2 size={14} /></button>
+                    </div>
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Biaya Notaris */}
+      <div className="card overflow-hidden">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
+          <h2 className="text-sm font-semibold text-slate-900 flex items-center gap-2"><Scale size={15} /> Biaya Notaris {totalFee > 0 && <span className="text-slate-400 font-normal">· total {fmt(totalFee)}</span>}</h2>
+          <button className="btn-primary text-xs flex items-center gap-1" onClick={openFeeCreate}><Plus size={13} /> Tambah Biaya</button>
+        </div>
+        <table className="w-full text-sm">
+          <thead className="bg-slate-50 border-b border-slate-200">
+            <tr>{['Uraian', 'Nominal', 'Tanggal', 'Notaris', 'Status', ''].map((h, i) => (
+              <th key={i} className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">{h}</th>))}</tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {fees.length === 0 ? (
+              <tr><td colSpan={6} className="px-4 py-6 text-center text-slate-400 text-sm">Belum ada rincian biaya notaris.</td></tr>
+            ) : fees.map((f) => (
+              <tr key={f.id} className="hover:bg-slate-50">
+                <td className="px-4 py-2.5 font-medium text-slate-900">{f.description}</td>
+                <td className="px-4 py-2.5 text-slate-600">{fmt(f.amount)}</td>
+                <td className="px-4 py-2.5 text-slate-500 text-xs">{fmtDate(f.fee_date)}</td>
+                <td className="px-4 py-2.5 text-slate-500">{f.notary_name ?? '—'}</td>
+                <td className="px-4 py-2.5">{f.is_paid ? <Badge label="Lunas" variant="green" /> : <Badge label="Belum" variant="gray" />}</td>
+                <td className="px-4 py-2.5">
+                  <div className="flex items-center justify-end gap-3">
+                    <button onClick={() => openFeeEdit(f)} className="text-slate-400 hover:text-brand-600" title="Edit"><Pencil size={14} /></button>
+                    <button onClick={() => delFee(f.id)} className="text-slate-400 hover:text-red-600" title="Hapus"><Trash2 size={14} /></button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Modal Pajak */}
+      <Modal open={taxModal} onClose={() => setTaxModal(false)} title={taxEditId ? 'Edit Pajak' : 'Tambah Pajak'}>
+        <form onSubmit={submitTax} className="space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="label">Jenis Pajak *</label>
+              <select className="input" value={taxForm.tax_type} onChange={(e) => setTaxForm({ ...taxForm, tax_type: e.target.value as TaxType })}>
+                {(Object.keys(taxTypeLabel) as TaxType[]).map((k) => <option key={k} value={k}>{taxTypeLabel[k]}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="label">Status</label>
+              <select className="input" value={taxForm.status} onChange={(e) => setTaxForm({ ...taxForm, status: e.target.value as TaxStatus })}>
+                {(Object.keys(taxStatusCfg) as TaxStatus[]).map((k) => <option key={k} value={k}>{taxStatusCfg[k].label}</option>)}
+              </select>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="label">Jumlah (Rp)</label>
+              <input className="input" type="number" min={0} value={taxForm.amount ?? ''} onChange={(e) => setTaxForm({ ...taxForm, amount: e.target.value ? Number(e.target.value) : undefined })} />
+            </div>
+            <div>
+              <label className="label">Tanggal</label>
+              <input className="input" type="date" value={taxForm.tax_date} onChange={(e) => setTaxForm({ ...taxForm, tax_date: e.target.value })} />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="label">ID Billing</label>
+              <input className="input" placeholder="Kode billing DJP" value={taxForm.id_billing} onChange={(e) => setTaxForm({ ...taxForm, id_billing: e.target.value })} />
+            </div>
+            <div>
+              <label className="label">NTPN</label>
+              <input className="input" placeholder="Bukti setelah bayar" value={taxForm.ntpn} onChange={(e) => setTaxForm({ ...taxForm, ntpn: e.target.value })} />
+            </div>
+          </div>
+          <div>
+            <label className="label">Dibayar via Notaris</label>
+            <select className="input" value={taxForm.notary_id} onChange={(e) => setTaxForm({ ...taxForm, notary_id: e.target.value })}>
+              <option value="">— (bayar sendiri)</option>
+              {notaries.map((n) => <option key={n.id} value={n.id}>{n.name}</option>)}
+            </select>
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <button type="button" className="btn-secondary text-sm" onClick={() => setTaxModal(false)}>Batal</button>
+            <button type="submit" className="btn-primary text-sm flex items-center gap-2" disabled={saving}>{saving && <Loader2 size={14} className="animate-spin" />}Simpan</button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Modal Biaya */}
+      <Modal open={feeModal} onClose={() => setFeeModal(false)} title={feeEditId ? 'Edit Biaya' : 'Tambah Biaya Notaris'}>
+        <form onSubmit={submitFee} className="space-y-3">
+          <div>
+            <label className="label">Uraian *</label>
+            <input className="input" required placeholder="Jasa AJB / BBN / pengurusan sertifikat" value={feeForm.description} onChange={(e) => setFeeForm({ ...feeForm, description: e.target.value })} />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="label">Nominal (Rp) *</label>
+              <input className="input" type="number" min={0} required value={feeForm.amount || ''} onChange={(e) => setFeeForm({ ...feeForm, amount: Number(e.target.value) })} />
+            </div>
+            <div>
+              <label className="label">Tanggal</label>
+              <input className="input" type="date" value={feeForm.fee_date} onChange={(e) => setFeeForm({ ...feeForm, fee_date: e.target.value })} />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="label">Notaris</label>
+              <select className="input" value={feeForm.notary_id} onChange={(e) => setFeeForm({ ...feeForm, notary_id: e.target.value })}>
+                <option value="">— pilih —</option>
+                {notaries.map((n) => <option key={n.id} value={n.id}>{n.name}</option>)}
+              </select>
+            </div>
+            <div className="flex items-end pb-2">
+              <label className="flex items-center gap-2 text-sm text-slate-600">
+                <input type="checkbox" checked={feeForm.is_paid} onChange={(e) => setFeeForm({ ...feeForm, is_paid: e.target.checked })} /> Sudah dibayar
+              </label>
+            </div>
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <button type="button" className="btn-secondary text-sm" onClick={() => setFeeModal(false)}>Batal</button>
+            <button type="submit" className="btn-primary text-sm flex items-center gap-2" disabled={saving}>{saving && <Loader2 size={14} className="animate-spin" />}Simpan</button>
+          </div>
+        </form>
+      </Modal>
+    </div>
+  )
+}
