@@ -1,0 +1,79 @@
+import uuid
+import enum
+from sqlalchemy import String, Text, ForeignKey, Enum as SAEnum, Numeric, Integer
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.dialects.postgresql import UUID
+from app.models.base import BaseModel
+
+
+class ProjectStatus(str, enum.Enum):
+    PLANNING = "planning"     # Perencanaan / pra-jual
+    SELLING = "selling"       # Sedang dijual
+    SOLD_OUT = "sold_out"     # Habis terjual
+    INACTIVE = "inactive"
+
+
+class UnitStatus(str, enum.Enum):
+    AVAILABLE = "available"   # Tersedia
+    BOOKED = "booked"         # Booking / DP
+    SOLD = "sold"             # Akad / Terjual
+    HANDOVER = "handover"     # Serah terima
+
+
+class Project(BaseModel):
+    """Proyek / perumahan milik developer."""
+    __tablename__ = "projects"
+
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"),
+        nullable=False, index=True
+    )
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    address: Mapped[str] = mapped_column(Text, nullable=True)
+    city: Mapped[str] = mapped_column(String(100), nullable=True)
+    province: Mapped[str] = mapped_column(String(100), nullable=True)
+    total_units: Mapped[int] = mapped_column(Integer, nullable=True)     # target jumlah unit
+    siteplan_image: Mapped[str] = mapped_column(String(500), nullable=True)  # URL/path gambar siteplan (MinIO)
+    description: Mapped[str] = mapped_column(Text, nullable=True)
+    status: Mapped[ProjectStatus] = mapped_column(
+        SAEnum(ProjectStatus), default=ProjectStatus.SELLING, nullable=False
+    )
+
+    units: Mapped[list["Unit"]] = relationship(
+        "Unit", back_populates="project", cascade="all, delete-orphan"
+    )
+
+    def __repr__(self) -> str:
+        return f"<Project {self.name} [{self.status}]>"
+
+
+class Unit(BaseModel):
+    """Unit / kavling di dalam sebuah proyek."""
+    __tablename__ = "units"
+
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"),
+        nullable=False, index=True
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False, index=True
+    )
+    block: Mapped[str] = mapped_column(String(50), nullable=True)          # Blok / cluster (opsional)
+    unit_number: Mapped[str] = mapped_column(String(50), nullable=False)   # Nomor kavling/unit
+    unit_type: Mapped[str] = mapped_column(String(100), nullable=True)     # Tipe (36/60, dll)
+    land_area: Mapped[float] = mapped_column(Numeric(10, 2), nullable=True)     # Luas tanah (m2)
+    building_area: Mapped[float] = mapped_column(Numeric(10, 2), nullable=True) # Luas bangunan (m2)
+    price: Mapped[float] = mapped_column(Numeric(15, 2), nullable=True)
+    status: Mapped[UnitStatus] = mapped_column(
+        SAEnum(UnitStatus), default=UnitStatus.AVAILABLE, nullable=False
+    )
+    # Posisi untuk siteplan interaktif (mis. persen 0-100 relatif terhadap gambar)
+    position_x: Mapped[float] = mapped_column(Numeric(8, 4), nullable=True)
+    position_y: Mapped[float] = mapped_column(Numeric(8, 4), nullable=True)
+    notes: Mapped[str] = mapped_column(Text, nullable=True)
+
+    project: Mapped["Project"] = relationship("Project", back_populates="units")
+
+    def __repr__(self) -> str:
+        return f"<Unit {self.unit_number} [{self.status}]>"

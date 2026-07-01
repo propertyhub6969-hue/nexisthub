@@ -14,6 +14,7 @@ from app.core.database import Base
 from app.models.tenant import Tenant
 from app.models.user import User
 from app.models.marketing import Lead, Prospect, Client
+from app.models.property import Project, Unit
 from app.models.procurement import Vendor, PurchaseOrder, PurchaseOrderItem
 from app.models.legal import DocumentTemplate, LegalDocument
 from app.models.reporting import ReportConfig
