@@ -4,6 +4,7 @@ import {
   Users,
   UserCheck,
   Handshake,
+  Building2,
   ShoppingCart,
   FileText,
   BarChart3,
@@ -27,6 +28,11 @@ const navItems = [
       { label: 'Prospects', to: '/marketing/prospects', icon: UserCheck },
       { label: 'Clients', to: '/marketing/clients', icon: Handshake },
     ],
+  },
+  {
+    label: 'Properti',
+    icon: Building2,
+    to: '/property/projects',
   },
   {
     label: 'Procurement',

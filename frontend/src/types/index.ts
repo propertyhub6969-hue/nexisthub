@@ -108,6 +108,63 @@ export interface ClientCreate {
   status?: ClientStatus
 }
 
+// ── Property (Inventori) ──────────────────────────────────────────
+export type ProjectStatus = 'planning' | 'selling' | 'sold_out' | 'inactive'
+export type UnitStatus = 'available' | 'booked' | 'sold' | 'handover'
+
+export interface Project {
+  id: string
+  name: string
+  address?: string
+  city?: string
+  province?: string
+  total_units?: number
+  siteplan_image?: string
+  description?: string
+  status: ProjectStatus
+  created_at: string
+  updated_at: string
+}
+
+export interface ProjectCreate {
+  name: string
+  address?: string
+  city?: string
+  province?: string
+  total_units?: number
+  description?: string
+  status?: ProjectStatus
+}
+
+export interface Unit {
+  id: string
+  project_id: string
+  block?: string
+  unit_number: string
+  unit_type?: string
+  land_area?: number
+  building_area?: number
+  price?: number
+  position_x?: number
+  position_y?: number
+  notes?: string
+  status: UnitStatus
+  created_at: string
+  updated_at: string
+}
+
+export interface UnitCreate {
+  project_id: string
+  block?: string
+  unit_number: string
+  unit_type?: string
+  land_area?: number
+  building_area?: number
+  price?: number
+  notes?: string
+  status?: UnitStatus
+}
+
 // ── Pagination ────────────────────────────────────────────────────
 export interface PaginatedResponse<T> {
   items: T[]
