@@ -46,8 +46,14 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=coolify"
-      - "traefik.http.routers.nexisthub.rule=Host(`72.60.43.158`)"
+      - "traefik.http.routers.nexisthub.rule=Host(`app.nexisthub.id`)"
       - "traefik.http.routers.nexisthub.entrypoints=http"
+      - "traefik.http.routers.nexisthub.middlewares=nexisthub-https"
+      - "traefik.http.middlewares.nexisthub-https.redirectscheme.scheme=https"
+      - "traefik.http.routers.nexisthub-secure.rule=Host(`app.nexisthub.id`)"
+      - "traefik.http.routers.nexisthub-secure.entrypoints=https"
+      - "traefik.http.routers.nexisthub-secure.tls=true"
+      - "traefik.http.routers.nexisthub-secure.tls.certresolver=letsencrypt"
       - "traefik.http.services.nexisthub.loadbalancer.server.port=80"
     networks:
       - nexisthub_net
