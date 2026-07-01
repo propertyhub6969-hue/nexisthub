@@ -38,7 +38,11 @@ class Lead(BaseModel):
     phone: Mapped[str] = mapped_column(String(20), nullable=True)
     email: Mapped[str] = mapped_column(String(255), nullable=True)
     source: Mapped[str] = mapped_column(String(100), nullable=True)   # Instagram, referral, walk-in, dll
-    interest: Mapped[str] = mapped_column(String(200), nullable=True) # Tipe rumah yang diminati
+    interest: Mapped[str] = mapped_column(String(200), nullable=True) # (lama) teks bebas minat
+    interested_project_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("projects.id", ondelete="SET NULL"),
+        nullable=True, index=True
+    )  # Properti/proyek yang diminati
     notes: Mapped[str] = mapped_column(Text, nullable=True)
     status: Mapped[LeadStatus] = mapped_column(
         SAEnum(LeadStatus), default=LeadStatus.NEW, nullable=False

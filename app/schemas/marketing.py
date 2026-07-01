@@ -26,6 +26,7 @@ class LeadBase(BaseModel):
     email: Optional[EmailStr] = None
     source: Optional[str] = Field(None, max_length=100)
     interest: Optional[str] = Field(None, max_length=200)
+    interested_project_id: Optional[uuid.UUID] = None
     notes: Optional[str] = None
 
 
@@ -40,6 +41,7 @@ class LeadUpdate(BaseModel):
     email: Optional[EmailStr] = None
     source: Optional[str] = Field(None, max_length=100)
     interest: Optional[str] = Field(None, max_length=200)
+    interested_project_id: Optional[uuid.UUID] = None
     notes: Optional[str] = None
     status: Optional[LeadStatus] = None
     assigned_to: Optional[uuid.UUID] = None

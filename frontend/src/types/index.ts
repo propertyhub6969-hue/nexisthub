@@ -37,6 +37,7 @@ export interface Lead {
   email?: string
   source?: string
   interest?: string
+  interested_project_id?: string
   notes?: string
   status: LeadStatus
   assigned_to?: string
@@ -49,7 +50,7 @@ export interface LeadCreate {
   phone?: string
   email?: string
   source?: string
-  interest?: string
+  interested_project_id?: string
   notes?: string
   status?: LeadStatus
 }

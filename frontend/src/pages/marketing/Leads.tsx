@@ -3,8 +3,9 @@ import { Plus, Search, Trash2, Pencil, Loader2, MessageCircle } from 'lucide-rea
 import Badge from '../../components/ui/Badge'
 import Modal from '../../components/ui/Modal'
 import { marketingService } from '../../services/marketing'
+import { propertyService } from '../../services/property'
 import { waLink } from '../../utils/phone'
-import type { Lead, LeadCreate, LeadStatus } from '../../types'
+import type { Lead, LeadCreate, LeadStatus, Project } from '../../types'
 
 const statusConfig: Record<LeadStatus, { label: string; variant: 'blue' | 'yellow' | 'green' | 'gray' }> = {
   new:         { label: 'Baru',         variant: 'blue' },
@@ -24,10 +25,11 @@ const SOURCE_OPTIONS = [
   'Marketing Freelance',
 ]
 
-const emptyForm: LeadCreate = { full_name: '', phone: '', email: '', source: '', interest: '', status: 'new' }
+const emptyForm: LeadCreate = { full_name: '', phone: '', email: '', source: '', interested_project_id: '', status: 'new' }
 
 export default function Leads() {
   const [leads, setLeads] = useState<Lead[]>([])
+  const [projects, setProjects] = useState<Project[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [search, setSearch] = useState('')
@@ -35,6 +37,12 @@ export default function Leads() {
   const [form, setForm] = useState<LeadCreate>(emptyForm)
   const [saving, setSaving] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
+
+  const projectName = (id?: string) => projects.find((p) => p.id === id)?.name
+
+  useEffect(() => {
+    propertyService.listProjects({ size: 500 }).then((r) => setProjects(r.items)).catch(() => {})
+  }, [])
 
   const load = useCallback(async (term: string) => {
     setLoading(true)
@@ -67,7 +75,7 @@ export default function Leads() {
       phone: lead.phone ?? '',
       email: lead.email ?? '',
       source: lead.source ?? '',
-      interest: lead.interest ?? '',
+      interested_project_id: lead.interested_project_id ?? '',
       status: lead.status,
     })
     setModalOpen(true)
@@ -137,7 +145,7 @@ export default function Leads() {
         <table className="w-full text-sm">
           <thead className="bg-slate-50 border-b border-slate-200">
             <tr>
-              {['Nama', 'No. HP', 'Email', 'Sumber', 'Minat', 'Status', 'Tanggal', ''].map((h, i) => (
+              {['Nama', 'No. HP', 'Email', 'Sumber', 'Properti Diminati', 'Status', 'Tanggal', ''].map((h, i) => (
                 <th key={i} className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">
                   {h}
                 </th>
@@ -181,7 +189,7 @@ export default function Leads() {
                     </td>
                     <td className="px-4 py-3 text-slate-500">{lead.email ?? '—'}</td>
                     <td className="px-4 py-3 text-slate-500">{lead.source ?? '—'}</td>
-                    <td className="px-4 py-3 text-slate-500">{lead.interest ?? '—'}</td>
+                    <td className="px-4 py-3 text-slate-500">{projectName(lead.interested_project_id) ?? '—'}</td>
                     <td className="px-4 py-3">{s && <Badge label={s.label} variant={s.variant} />}</td>
                     <td className="px-4 py-3 text-slate-400 text-xs">
                       {new Date(lead.created_at).toLocaleDateString('id-ID')}
@@ -241,8 +249,11 @@ export default function Leads() {
               </select>
             </div>
             <div>
-              <label className="label">Minat</label>
-              <input className="input" placeholder="Tipe 45..." value={form.interest} onChange={(e) => setForm({ ...form, interest: e.target.value })} />
+              <label className="label">Properti Diminati</label>
+              <select className="input" value={form.interested_project_id} onChange={(e) => setForm({ ...form, interested_project_id: e.target.value })}>
+                <option value="">Pilih proyek...</option>
+                {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
             </div>
           </div>
           <div>
