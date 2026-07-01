@@ -1,8 +1,9 @@
 import { useEffect, useState, useCallback } from 'react'
-import { Plus, Search, Trash2, Loader2 } from 'lucide-react'
+import { Plus, Search, Trash2, Pencil, Loader2, MessageCircle } from 'lucide-react'
 import Badge from '../../components/ui/Badge'
 import Modal from '../../components/ui/Modal'
 import { marketingService } from '../../services/marketing'
+import { waLink } from '../../utils/phone'
 import type { Lead, LeadCreate, LeadStatus } from '../../types'
 
 const statusConfig: Record<LeadStatus, { label: string; variant: 'blue' | 'yellow' | 'green' | 'gray' }> = {
@@ -11,6 +12,17 @@ const statusConfig: Record<LeadStatus, { label: string; variant: 'blue' | 'yello
   qualified:   { label: 'Tervalidasi',  variant: 'green' },
   unqualified: { label: 'Tidak Sesuai', variant: 'gray' },
 }
+
+const SOURCE_OPTIONS = [
+  'Instagram',
+  'Visit Lokasi',
+  'Facebook',
+  'Iklan Social Media',
+  'Youtube',
+  'Teman',
+  'Marketing Inhouse',
+  'Marketing Freelance',
+]
 
 const emptyForm: LeadCreate = { full_name: '', phone: '', email: '', source: '', interest: '', status: 'new' }
 
@@ -22,6 +34,7 @@ export default function Leads() {
   const [modalOpen, setModalOpen] = useState(false)
   const [form, setForm] = useState<LeadCreate>(emptyForm)
   const [saving, setSaving] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
 
   const load = useCallback(async (term: string) => {
     setLoading(true)
@@ -41,7 +54,32 @@ export default function Leads() {
     return () => clearTimeout(t)
   }, [search, load])
 
-  async function handleCreate(e: React.FormEvent) {
+  function openCreate() {
+    setEditingId(null)
+    setForm(emptyForm)
+    setModalOpen(true)
+  }
+
+  function openEdit(lead: Lead) {
+    setEditingId(lead.id)
+    setForm({
+      full_name: lead.full_name,
+      phone: lead.phone ?? '',
+      email: lead.email ?? '',
+      source: lead.source ?? '',
+      interest: lead.interest ?? '',
+      status: lead.status,
+    })
+    setModalOpen(true)
+  }
+
+  function closeModal() {
+    setModalOpen(false)
+    setEditingId(null)
+    setForm(emptyForm)
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setSaving(true)
     try {
@@ -49,9 +87,12 @@ export default function Leads() {
       // buang field opsional yang kosong
       const rec = payload as unknown as Record<string, unknown>
       Object.keys(rec).forEach((k) => { if (rec[k] === '') delete rec[k] })
-      await marketingService.createLead(payload)
-      setModalOpen(false)
-      setForm(emptyForm)
+      if (editingId) {
+        await marketingService.updateLead(editingId, payload)
+      } else {
+        await marketingService.createLead(payload)
+      }
+      closeModal()
       await load(search)
     } catch {
       setError('Gagal menyimpan lead. Periksa isian Anda.')
@@ -83,7 +124,7 @@ export default function Leads() {
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
-        <button className="btn-primary flex items-center gap-2 text-sm" onClick={() => setModalOpen(true)}>
+        <button className="btn-primary flex items-center gap-2 text-sm" onClick={openCreate}>
           <Plus size={14} />
           Tambah Lead
         </button>
@@ -122,7 +163,22 @@ export default function Leads() {
                 return (
                   <tr key={lead.id} className="hover:bg-slate-50 transition-colors">
                     <td className="px-4 py-3 font-medium text-slate-900">{lead.full_name}</td>
-                    <td className="px-4 py-3 text-slate-600">{lead.phone ?? '—'}</td>
+                    <td className="px-4 py-3">
+                      {lead.phone ? (
+                        <a
+                          href={waLink(lead.phone)!}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1.5 text-emerald-600 hover:text-emerald-700 hover:underline"
+                          title="Chat via WhatsApp"
+                        >
+                          <MessageCircle size={14} />
+                          {lead.phone}
+                        </a>
+                      ) : (
+                        <span className="text-slate-400">—</span>
+                      )}
+                    </td>
                     <td className="px-4 py-3 text-slate-500">{lead.email ?? '—'}</td>
                     <td className="px-4 py-3 text-slate-500">{lead.source ?? '—'}</td>
                     <td className="px-4 py-3 text-slate-500">{lead.interest ?? '—'}</td>
@@ -130,14 +186,23 @@ export default function Leads() {
                     <td className="px-4 py-3 text-slate-400 text-xs">
                       {new Date(lead.created_at).toLocaleDateString('id-ID')}
                     </td>
-                    <td className="px-4 py-3 text-right">
-                      <button
-                        onClick={() => handleDelete(lead.id)}
-                        className="text-slate-400 hover:text-red-600 transition-colors"
-                        title="Hapus"
-                      >
-                        <Trash2 size={15} />
-                      </button>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center justify-end gap-3">
+                        <button
+                          onClick={() => openEdit(lead)}
+                          className="text-slate-400 hover:text-brand-600 transition-colors"
+                          title="Edit"
+                        >
+                          <Pencil size={15} />
+                        </button>
+                        <button
+                          onClick={() => handleDelete(lead.id)}
+                          className="text-slate-400 hover:text-red-600 transition-colors"
+                          title="Hapus"
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 )
@@ -147,9 +212,9 @@ export default function Leads() {
         </table>
       </div>
 
-      {/* Create modal */}
-      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title="Tambah Lead">
-        <form onSubmit={handleCreate} className="space-y-3">
+      {/* Create / Edit modal */}
+      <Modal open={modalOpen} onClose={closeModal} title={editingId ? 'Edit Lead' : 'Tambah Lead'}>
+        <form onSubmit={handleSubmit} className="space-y-3">
           <div>
             <label className="label">Nama Lengkap *</label>
             <input className="input" required minLength={2}
@@ -168,7 +233,12 @@ export default function Leads() {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="label">Sumber</label>
-              <input className="input" placeholder="Instagram, referral..." value={form.source} onChange={(e) => setForm({ ...form, source: e.target.value })} />
+              <select className="input" value={form.source} onChange={(e) => setForm({ ...form, source: e.target.value })}>
+                <option value="">Pilih sumber...</option>
+                {SOURCE_OPTIONS.map((opt) => (
+                  <option key={opt} value={opt}>{opt}</option>
+                ))}
+              </select>
             </div>
             <div>
               <label className="label">Minat</label>
@@ -184,10 +254,10 @@ export default function Leads() {
             </select>
           </div>
           <div className="flex justify-end gap-2 pt-2">
-            <button type="button" className="btn-secondary text-sm" onClick={() => setModalOpen(false)}>Batal</button>
+            <button type="button" className="btn-secondary text-sm" onClick={closeModal}>Batal</button>
             <button type="submit" className="btn-primary text-sm flex items-center gap-2" disabled={saving}>
               {saving && <Loader2 size={14} className="animate-spin" />}
-              Simpan
+              {editingId ? 'Simpan Perubahan' : 'Simpan'}
             </button>
           </div>
         </form>

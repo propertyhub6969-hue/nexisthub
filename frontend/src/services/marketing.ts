@@ -23,6 +23,10 @@ export const marketingService = {
     const { data } = await api.post<Lead>('/marketing/leads', payload)
     return data
   },
+  async updateLead(id: string, payload: Partial<LeadCreate>): Promise<Lead> {
+    const { data } = await api.patch<Lead>(`/marketing/leads/${id}`, payload)
+    return data
+  },
   async deleteLead(id: string): Promise<void> {
     await api.delete(`/marketing/leads/${id}`)
   },
@@ -36,6 +40,10 @@ export const marketingService = {
     const { data } = await api.post<Prospect>('/marketing/prospects', payload)
     return data
   },
+  async updateProspect(id: string, payload: Partial<ProspectCreate>): Promise<Prospect> {
+    const { data } = await api.patch<Prospect>(`/marketing/prospects/${id}`, payload)
+    return data
+  },
   async deleteProspect(id: string): Promise<void> {
     await api.delete(`/marketing/prospects/${id}`)
   },
@@ -47,6 +55,10 @@ export const marketingService = {
   },
   async createClient(payload: ClientCreate): Promise<Client> {
     const { data } = await api.post<Client>('/marketing/clients', payload)
+    return data
+  },
+  async updateClient(id: string, payload: Partial<ClientCreate>): Promise<Client> {
+    const { data } = await api.patch<Client>(`/marketing/clients/${id}`, payload)
     return data
   },
   async deleteClient(id: string): Promise<void> {

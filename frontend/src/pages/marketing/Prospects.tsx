@@ -1,8 +1,9 @@
 import { useEffect, useState, useCallback } from 'react'
-import { Plus, Search, Trash2, Loader2 } from 'lucide-react'
+import { Plus, Search, Trash2, Pencil, Loader2, MessageCircle } from 'lucide-react'
 import Badge from '../../components/ui/Badge'
 import Modal from '../../components/ui/Modal'
 import { marketingService } from '../../services/marketing'
+import { waLink } from '../../utils/phone'
 import type { Prospect, ProspectCreate, ProspectStatus } from '../../types'
 
 const statusConfig: Record<ProspectStatus, { label: string; variant: 'blue' | 'yellow' | 'green' | 'red' }> = {
@@ -25,6 +26,7 @@ export default function Prospects() {
   const [modalOpen, setModalOpen] = useState(false)
   const [form, setForm] = useState<ProspectCreate>(emptyForm)
   const [saving, setSaving] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
 
   const load = useCallback(async (term: string) => {
     setLoading(true)
@@ -44,7 +46,32 @@ export default function Prospects() {
     return () => clearTimeout(t)
   }, [search, load])
 
-  async function handleCreate(e: React.FormEvent) {
+  function openCreate() {
+    setEditingId(null)
+    setForm(emptyForm)
+    setModalOpen(true)
+  }
+
+  function openEdit(p: Prospect) {
+    setEditingId(p.id)
+    setForm({
+      full_name: p.full_name,
+      phone: p.phone ?? '',
+      email: p.email ?? '',
+      unit_type: p.unit_type ?? '',
+      budget: p.budget,
+      status: p.status,
+    })
+    setModalOpen(true)
+  }
+
+  function closeModal() {
+    setModalOpen(false)
+    setEditingId(null)
+    setForm(emptyForm)
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setSaving(true)
     try {
@@ -52,9 +79,12 @@ export default function Prospects() {
       if (!payload.budget) delete payload.budget
       const rec = payload as unknown as Record<string, unknown>
       ;['phone', 'email', 'unit_type'].forEach((k) => { if (rec[k] === '') delete rec[k] })
-      await marketingService.createProspect(payload)
-      setModalOpen(false)
-      setForm(emptyForm)
+      if (editingId) {
+        await marketingService.updateProspect(editingId, payload)
+      } else {
+        await marketingService.createProspect(payload)
+      }
+      closeModal()
       await load(search)
     } catch {
       setError('Gagal menyimpan prospect.')
@@ -85,7 +115,7 @@ export default function Prospects() {
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
-        <button className="btn-primary flex items-center gap-2 text-sm" onClick={() => setModalOpen(true)}>
+        <button className="btn-primary flex items-center gap-2 text-sm" onClick={openCreate}>
           <Plus size={14} />
           Tambah Prospect
         </button>
@@ -97,7 +127,7 @@ export default function Prospects() {
         <table className="w-full text-sm">
           <thead className="bg-slate-50 border-b border-slate-200">
             <tr>
-              {['Nama', 'Tipe Unit', 'Budget', 'Status', 'Tanggal', ''].map((h, i) => (
+              {['Nama', 'No. HP', 'Tipe Unit', 'Budget', 'Status', 'Tanggal', ''].map((h, i) => (
                 <th key={i} className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">
                   {h}
                 </th>
@@ -106,23 +136,36 @@ export default function Prospects() {
           </thead>
           <tbody className="divide-y divide-slate-100">
             {loading ? (
-              <tr><td colSpan={6} className="px-4 py-10 text-center text-slate-400"><Loader2 size={18} className="inline animate-spin" /></td></tr>
+              <tr><td colSpan={7} className="px-4 py-10 text-center text-slate-400"><Loader2 size={18} className="inline animate-spin" /></td></tr>
             ) : prospects.length === 0 ? (
-              <tr><td colSpan={6} className="px-4 py-8 text-center text-slate-400 text-sm">Belum ada prospect.</td></tr>
+              <tr><td colSpan={7} className="px-4 py-8 text-center text-slate-400 text-sm">Belum ada prospect.</td></tr>
             ) : (
               prospects.map((p) => {
                 const s = statusConfig[p.status]
                 return (
                   <tr key={p.id} className="hover:bg-slate-50 transition-colors">
                     <td className="px-4 py-3 font-medium text-slate-900">{p.full_name}</td>
+                    <td className="px-4 py-3">
+                      {p.phone ? (
+                        <a href={waLink(p.phone)!} target="_blank" rel="noopener noreferrer"
+                           className="inline-flex items-center gap-1.5 text-emerald-600 hover:text-emerald-700 hover:underline" title="Chat via WhatsApp">
+                          <MessageCircle size={14} />{p.phone}
+                        </a>
+                      ) : <span className="text-slate-400">—</span>}
+                    </td>
                     <td className="px-4 py-3 text-slate-500">{p.unit_type ?? '—'}</td>
                     <td className="px-4 py-3 text-slate-600">{fmt(p.budget)}</td>
                     <td className="px-4 py-3">{s && <Badge label={s.label} variant={s.variant} />}</td>
                     <td className="px-4 py-3 text-slate-400 text-xs">{new Date(p.created_at).toLocaleDateString('id-ID')}</td>
-                    <td className="px-4 py-3 text-right">
-                      <button onClick={() => handleDelete(p.id)} className="text-slate-400 hover:text-red-600 transition-colors" title="Hapus">
-                        <Trash2 size={15} />
-                      </button>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center justify-end gap-3">
+                        <button onClick={() => openEdit(p)} className="text-slate-400 hover:text-brand-600 transition-colors" title="Edit">
+                          <Pencil size={15} />
+                        </button>
+                        <button onClick={() => handleDelete(p.id)} className="text-slate-400 hover:text-red-600 transition-colors" title="Hapus">
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 )
@@ -132,8 +175,8 @@ export default function Prospects() {
         </table>
       </div>
 
-      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title="Tambah Prospect">
-        <form onSubmit={handleCreate} className="space-y-3">
+      <Modal open={modalOpen} onClose={closeModal} title={editingId ? 'Edit Prospect' : 'Tambah Prospect'}>
+        <form onSubmit={handleSubmit} className="space-y-3">
           <div>
             <label className="label">Nama Lengkap *</label>
             <input className="input" required minLength={2} value={form.full_name} onChange={(e) => setForm({ ...form, full_name: e.target.value })} />
@@ -167,10 +210,10 @@ export default function Prospects() {
             </select>
           </div>
           <div className="flex justify-end gap-2 pt-2">
-            <button type="button" className="btn-secondary text-sm" onClick={() => setModalOpen(false)}>Batal</button>
+            <button type="button" className="btn-secondary text-sm" onClick={closeModal}>Batal</button>
             <button type="submit" className="btn-primary text-sm flex items-center gap-2" disabled={saving}>
               {saving && <Loader2 size={14} className="animate-spin" />}
-              Simpan
+              {editingId ? 'Simpan Perubahan' : 'Simpan'}
             </button>
           </div>
         </form>
