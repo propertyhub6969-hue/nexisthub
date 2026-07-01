@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
-import { Plus, Search, Trash2, Pencil, Loader2 } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { Plus, Search, Trash2, Pencil, Loader2, Wallet } from 'lucide-react'
 import Badge from '../../components/ui/Badge'
 import Modal from '../../components/ui/Modal'
 import { saleService } from '../../services/sale'
@@ -178,6 +179,7 @@ export default function Sales() {
                     <td className="px-4 py-3">{st && <Badge label={st.label} variant={st.variant} />}</td>
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-end gap-3">
+                        <Link to={`/sales/${s.id}/payments`} className="text-slate-400 hover:text-brand-600 transition-colors" title="Pembayaran & Cicilan"><Wallet size={15} /></Link>
                         <button onClick={() => openEdit(s)} className="text-slate-400 hover:text-brand-600 transition-colors" title="Edit"><Pencil size={15} /></button>
                         <button onClick={() => handleDelete(s.id)} className="text-slate-400 hover:text-red-600 transition-colors" title="Hapus/Batal"><Trash2 size={15} /></button>
                       </div>

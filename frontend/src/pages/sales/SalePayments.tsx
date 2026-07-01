@@ -1,0 +1,296 @@
+import { useEffect, useState, useCallback } from 'react'
+import { useParams, Link } from 'react-router-dom'
+import { ArrowLeft, Plus, Trash2, Pencil, Loader2, CalendarClock, Wallet } from 'lucide-react'
+import Badge from '../../components/ui/Badge'
+import Modal from '../../components/ui/Modal'
+import { saleService } from '../../services/sale'
+import { paymentService } from '../../services/payment'
+import type {
+  Sale, PaymentSchedule, PaymentScheduleCreate, Payment, PaymentCreate,
+  PaymentSummary, PaymentMethod, PaymentSource,
+} from '../../types'
+
+const fmt = (n?: number) =>
+  n == null ? '—' : new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(Number(n))
+const fmtDate = (d?: string) => d ? new Date(d).toLocaleDateString('id-ID') : '—'
+
+const sourceConfig: Record<PaymentSource, { label: string; variant: 'blue' | 'green' }> = {
+  pembeli: { label: 'Pembeli', variant: 'blue' },
+  bank:    { label: 'Bank (KPR)', variant: 'green' },
+}
+const methodLabel: Record<PaymentMethod, string> = { transfer: 'Transfer', tunai: 'Tunai', lainnya: 'Lainnya' }
+
+const emptySchedule = (saleId: string): PaymentScheduleCreate => ({ sale_id: saleId, label: '', sequence: 0, amount: 0, due_date: '' })
+const emptyPayment = (saleId: string): PaymentCreate => ({ sale_id: saleId, schedule_id: '', amount: 0, payment_date: '', method: 'transfer', source: 'pembeli', receipt_number: '' })
+
+export default function SalePayments() {
+  const { saleId = '' } = useParams()
+  const [sale, setSale] = useState<Sale | null>(null)
+  const [summary, setSummary] = useState<PaymentSummary | null>(null)
+  const [schedules, setSchedules] = useState<PaymentSchedule[]>([])
+  const [payments, setPayments] = useState<Payment[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+
+  // schedule modal
+  const [schModal, setSchModal] = useState(false)
+  const [schForm, setSchForm] = useState<PaymentScheduleCreate>(emptySchedule(saleId))
+  const [schEditId, setSchEditId] = useState<string | null>(null)
+  // payment modal
+  const [payModal, setPayModal] = useState(false)
+  const [payForm, setPayForm] = useState<PaymentCreate>(emptyPayment(saleId))
+  const [payEditId, setPayEditId] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+
+  const load = useCallback(async () => {
+    setLoading(true); setError('')
+    try {
+      const [sl, sm, sc, pm] = await Promise.all([
+        saleService.get(saleId),
+        paymentService.summary(saleId),
+        paymentService.listSchedules(saleId),
+        paymentService.listPayments(saleId),
+      ])
+      setSale(sl); setSummary(sm); setSchedules(sc); setPayments(pm)
+    } catch {
+      setError('Gagal memuat data pembayaran.')
+    } finally { setLoading(false) }
+  }, [saleId])
+
+  useEffect(() => { load() }, [load])
+
+  const reload = async () => {
+    const [sm, sc, pm] = await Promise.all([
+      paymentService.summary(saleId), paymentService.listSchedules(saleId), paymentService.listPayments(saleId),
+    ])
+    setSummary(sm); setSchedules(sc); setPayments(pm)
+  }
+
+  // ── Schedule handlers ──
+  function openSchCreate() { setSchEditId(null); setSchForm({ ...emptySchedule(saleId), sequence: schedules.length + 1 }); setSchModal(true) }
+  function openSchEdit(s: PaymentSchedule) {
+    setSchEditId(s.id)
+    setSchForm({ sale_id: saleId, label: s.label, sequence: s.sequence, amount: s.amount, due_date: s.due_date ?? '', status: s.status })
+    setSchModal(true)
+  }
+  async function submitSchedule(e: React.FormEvent) {
+    e.preventDefault(); setSaving(true)
+    try {
+      const p = { ...schForm }
+      if (p.due_date === '') delete p.due_date
+      if (schEditId) await paymentService.updateSchedule(schEditId, p)
+      else await paymentService.createSchedule(p)
+      setSchModal(false); await reload()
+    } catch { setError('Gagal menyimpan termin.') } finally { setSaving(false) }
+  }
+  async function delSchedule(id: string) {
+    if (!confirm('Hapus termin ini?')) return
+    try { await paymentService.deleteSchedule(id); await reload() } catch { setError('Gagal menghapus termin.') }
+  }
+
+  // ── Payment handlers ──
+  function openPayCreate() { setPayEditId(null); setPayForm(emptyPayment(saleId)); setPayModal(true) }
+  function openPayEdit(p: Payment) {
+    setPayEditId(p.id)
+    setPayForm({ sale_id: saleId, schedule_id: p.schedule_id ?? '', amount: p.amount, payment_date: p.payment_date ?? '', method: p.method, source: p.source, receipt_number: p.receipt_number ?? '' })
+    setPayModal(true)
+  }
+  async function submitPayment(e: React.FormEvent) {
+    e.preventDefault(); setSaving(true)
+    try {
+      const p = { ...payForm }
+      const rec = p as unknown as Record<string, unknown>
+      ;['schedule_id', 'payment_date', 'receipt_number'].forEach((k) => { if (rec[k] === '') delete rec[k] })
+      if (payEditId) await paymentService.updatePayment(payEditId, p)
+      else await paymentService.createPayment(p)
+      setPayModal(false); await reload()
+    } catch { setError('Gagal menyimpan pembayaran.') } finally { setSaving(false) }
+  }
+  async function delPayment(id: string) {
+    if (!confirm('Hapus pembayaran ini?')) return
+    try { await paymentService.deletePayment(id); await reload() } catch { setError('Gagal menghapus pembayaran.') }
+  }
+
+  const scheduleLabel = (id?: string) => schedules.find((s) => s.id === id)?.label
+
+  if (loading) return <div className="py-16 text-center text-slate-400"><Loader2 size={20} className="inline animate-spin" /></div>
+
+  return (
+    <div className="space-y-5">
+      {/* Header */}
+      <div>
+        <Link to="/sales" className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-brand-600 mb-1">
+          <ArrowLeft size={14} /> Daftar Penjualan
+        </Link>
+        <h1 className="text-lg font-semibold text-slate-900">
+          {sale?.unit_label ?? 'Unit'} — {sale?.client_name ?? 'Pembeli'}
+        </h1>
+        <p className="text-sm text-slate-500">
+          {sale?.category === 'subsidi' ? 'Subsidi' : 'Komersial'} · {sale?.sale_number || 'tanpa no. booking'}
+        </p>
+      </div>
+
+      {error && <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-2">{error}</div>}
+
+      {/* Ringkasan */}
+      {summary && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="card p-4"><p className="text-xs text-slate-500">Harga</p><p className="text-lg font-semibold text-slate-900">{fmt(summary.price)}</p></div>
+          <div className="card p-4"><p className="text-xs text-slate-500">Terbayar</p><p className="text-lg font-semibold text-emerald-600">{fmt(summary.total_paid)}</p></div>
+          <div className="card p-4"><p className="text-xs text-slate-500">Sisa</p><p className="text-lg font-semibold text-amber-600">{fmt(summary.remaining)}</p></div>
+          <div className="card p-4">
+            <p className="text-xs text-slate-500">Progres {summary.progress_percent}%</p>
+            <div className="mt-2 h-2 rounded-full bg-slate-100 overflow-hidden">
+              <div className="h-full bg-brand-500" style={{ width: `${Math.min(summary.progress_percent, 100)}%` }} />
+            </div>
+            {summary.overdue_count > 0 && <p className="text-xs text-red-600 mt-1">{summary.overdue_count} termin terlambat</p>}
+          </div>
+        </div>
+      )}
+
+      {/* Jadwal Angsuran */}
+      <div className="card overflow-hidden">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
+          <h2 className="text-sm font-semibold text-slate-900 flex items-center gap-2"><CalendarClock size={15} /> Jadwal Angsuran</h2>
+          <button className="btn-primary text-xs flex items-center gap-1" onClick={openSchCreate}><Plus size={13} /> Tambah Termin</button>
+        </div>
+        <table className="w-full text-sm">
+          <thead className="bg-slate-50 border-b border-slate-200">
+            <tr>{['Termin', 'Nominal', 'Jatuh Tempo', 'Status', ''].map((h, i) => (
+              <th key={i} className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">{h}</th>))}</tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {schedules.length === 0 ? (
+              <tr><td colSpan={5} className="px-4 py-6 text-center text-slate-400 text-sm">Belum ada termin. Tambahkan DP, angsuran, atau pelunasan.</td></tr>
+            ) : schedules.map((s) => (
+              <tr key={s.id} className="hover:bg-slate-50">
+                <td className="px-4 py-2.5 font-medium text-slate-900">{s.label}</td>
+                <td className="px-4 py-2.5 text-slate-600">{fmt(s.amount)}</td>
+                <td className="px-4 py-2.5 text-slate-500 text-xs">{fmtDate(s.due_date)}</td>
+                <td className="px-4 py-2.5">
+                  {s.status === 'paid'
+                    ? <Badge label="Lunas" variant="green" />
+                    : s.is_overdue ? <Badge label="Terlambat" variant="red" /> : <Badge label="Belum" variant="gray" />}
+                </td>
+                <td className="px-4 py-2.5">
+                  <div className="flex items-center justify-end gap-3">
+                    <button onClick={() => openSchEdit(s)} className="text-slate-400 hover:text-brand-600" title="Edit"><Pencil size={14} /></button>
+                    <button onClick={() => delSchedule(s.id)} className="text-slate-400 hover:text-red-600" title="Hapus"><Trash2 size={14} /></button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Uang Masuk */}
+      <div className="card overflow-hidden">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
+          <h2 className="text-sm font-semibold text-slate-900 flex items-center gap-2"><Wallet size={15} /> Uang Masuk</h2>
+          <button className="btn-primary text-xs flex items-center gap-1" onClick={openPayCreate}><Plus size={13} /> Catat Pembayaran</button>
+        </div>
+        <table className="w-full text-sm">
+          <thead className="bg-slate-50 border-b border-slate-200">
+            <tr>{['Tanggal', 'Nominal', 'Sumber', 'Metode', 'Untuk Termin', 'No. Kwitansi', ''].map((h, i) => (
+              <th key={i} className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">{h}</th>))}</tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {payments.length === 0 ? (
+              <tr><td colSpan={7} className="px-4 py-6 text-center text-slate-400 text-sm">Belum ada pembayaran tercatat.</td></tr>
+            ) : payments.map((p) => {
+              const src = sourceConfig[p.source]
+              return (
+                <tr key={p.id} className="hover:bg-slate-50">
+                  <td className="px-4 py-2.5 text-slate-500 text-xs">{fmtDate(p.payment_date)}</td>
+                  <td className="px-4 py-2.5 font-medium text-emerald-600">{fmt(p.amount)}</td>
+                  <td className="px-4 py-2.5">{src && <Badge label={src.label} variant={src.variant} />}</td>
+                  <td className="px-4 py-2.5 text-slate-500">{methodLabel[p.method]}</td>
+                  <td className="px-4 py-2.5 text-slate-500">{scheduleLabel(p.schedule_id) ?? '—'}</td>
+                  <td className="px-4 py-2.5 text-slate-500">{p.receipt_number ?? '—'}</td>
+                  <td className="px-4 py-2.5">
+                    <div className="flex items-center justify-end gap-3">
+                      <button onClick={() => openPayEdit(p)} className="text-slate-400 hover:text-brand-600" title="Edit"><Pencil size={14} /></button>
+                      <button onClick={() => delPayment(p.id)} className="text-slate-400 hover:text-red-600" title="Hapus"><Trash2 size={14} /></button>
+                    </div>
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Modal Termin */}
+      <Modal open={schModal} onClose={() => setSchModal(false)} title={schEditId ? 'Edit Termin' : 'Tambah Termin'}>
+        <form onSubmit={submitSchedule} className="space-y-3">
+          <div>
+            <label className="label">Nama Termin *</label>
+            <input className="input" required placeholder="DP / Angsuran 1 / Pelunasan" value={schForm.label} onChange={(e) => setSchForm({ ...schForm, label: e.target.value })} />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="label">Nominal (Rp) *</label>
+              <input className="input" type="number" min={0} required value={schForm.amount || ''} onChange={(e) => setSchForm({ ...schForm, amount: Number(e.target.value) })} />
+            </div>
+            <div>
+              <label className="label">Jatuh Tempo</label>
+              <input className="input" type="date" value={schForm.due_date} onChange={(e) => setSchForm({ ...schForm, due_date: e.target.value })} />
+            </div>
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <button type="button" className="btn-secondary text-sm" onClick={() => setSchModal(false)}>Batal</button>
+            <button type="submit" className="btn-primary text-sm flex items-center gap-2" disabled={saving}>{saving && <Loader2 size={14} className="animate-spin" />}Simpan</button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Modal Pembayaran */}
+      <Modal open={payModal} onClose={() => setPayModal(false)} title={payEditId ? 'Edit Pembayaran' : 'Catat Pembayaran'}>
+        <form onSubmit={submitPayment} className="space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="label">Nominal (Rp) *</label>
+              <input className="input" type="number" min={0} required value={payForm.amount || ''} onChange={(e) => setPayForm({ ...payForm, amount: Number(e.target.value) })} />
+            </div>
+            <div>
+              <label className="label">Tanggal Bayar</label>
+              <input className="input" type="date" value={payForm.payment_date} onChange={(e) => setPayForm({ ...payForm, payment_date: e.target.value })} />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="label">Sumber</label>
+              <select className="input" value={payForm.source} onChange={(e) => setPayForm({ ...payForm, source: e.target.value as PaymentSource })}>
+                {(Object.keys(sourceConfig) as PaymentSource[]).map((k) => <option key={k} value={k}>{sourceConfig[k].label}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="label">Metode</label>
+              <select className="input" value={payForm.method} onChange={(e) => setPayForm({ ...payForm, method: e.target.value as PaymentMethod })}>
+                {(Object.keys(methodLabel) as PaymentMethod[]).map((k) => <option key={k} value={k}>{methodLabel[k]}</option>)}
+              </select>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="label">Untuk Termin</label>
+              <select className="input" value={payForm.schedule_id} onChange={(e) => setPayForm({ ...payForm, schedule_id: e.target.value })}>
+                <option value="">— (tanpa termin)</option>
+                {schedules.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="label">No. Kwitansi</label>
+              <input className="input" value={payForm.receipt_number} onChange={(e) => setPayForm({ ...payForm, receipt_number: e.target.value })} />
+            </div>
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <button type="button" className="btn-secondary text-sm" onClick={() => setPayModal(false)}>Batal</button>
+            <button type="submit" className="btn-primary text-sm flex items-center gap-2" disabled={saving}>{saving && <Loader2 size={14} className="animate-spin" />}Simpan</button>
+          </div>
+        </form>
+      </Modal>
+    </div>
+  )
+}

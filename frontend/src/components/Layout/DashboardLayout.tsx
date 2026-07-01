@@ -17,7 +17,9 @@ const pageTitles: Record<string, string> = {
 export default function DashboardLayout() {
   const { pathname } = useLocation()
   const title = pageTitles[pathname]
-    ?? (pathname.includes('/units') ? 'Kelola Unit' : 'NexistHub')
+    ?? (pathname.includes('/units') ? 'Kelola Unit'
+      : pathname.includes('/payments') ? 'Pembayaran & Cicilan'
+      : 'NexistHub')
 
   return (
     <div className="flex min-h-screen">

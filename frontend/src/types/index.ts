@@ -203,6 +203,72 @@ export interface SaleCreate {
   notes?: string
 }
 
+// ── Payments & Schedule (Pembayaran & Cicilan) ────────────────────
+export type ScheduleStatus = 'pending' | 'paid'
+export type PaymentMethod = 'transfer' | 'tunai' | 'lainnya'
+export type PaymentSource = 'pembeli' | 'bank'
+
+export interface PaymentSchedule {
+  id: string
+  sale_id: string
+  label: string
+  sequence: number
+  amount: number
+  due_date?: string
+  status: ScheduleStatus
+  is_overdue: boolean
+  notes?: string
+  created_at: string
+  updated_at: string
+}
+
+export interface PaymentScheduleCreate {
+  sale_id: string
+  label: string
+  sequence?: number
+  amount: number
+  due_date?: string
+  status?: ScheduleStatus
+  notes?: string
+}
+
+export interface Payment {
+  id: string
+  sale_id: string
+  schedule_id?: string
+  amount: number
+  payment_date?: string
+  method: PaymentMethod
+  source: PaymentSource
+  receipt_number?: string
+  notes?: string
+  created_at: string
+  updated_at: string
+}
+
+export interface PaymentCreate {
+  sale_id: string
+  schedule_id?: string
+  amount: number
+  payment_date?: string
+  method?: PaymentMethod
+  source?: PaymentSource
+  receipt_number?: string
+  notes?: string
+}
+
+export interface PaymentSummary {
+  sale_id: string
+  price: number
+  total_paid: number
+  remaining: number
+  progress_percent: number
+  schedule_count: number
+  schedule_paid: number
+  schedule_pending: number
+  overdue_count: number
+}
+
 // ── Pagination ────────────────────────────────────────────────────
 export interface PaginatedResponse<T> {
   items: T[]

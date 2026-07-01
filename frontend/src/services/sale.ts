@@ -15,6 +15,10 @@ export const saleService = {
     const { data } = await api.get<PaginatedResponse<Sale>>('/sales/', { params })
     return data
   },
+  async get(id: string): Promise<Sale> {
+    const { data } = await api.get<Sale>(`/sales/${id}`)
+    return data
+  },
   async create(payload: SaleCreate): Promise<Sale> {
     const { data } = await api.post<Sale>('/sales/', payload)
     return data
