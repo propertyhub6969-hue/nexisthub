@@ -71,6 +71,12 @@ export default function Clients() {
   }
   function closeModal() { setModalOpen(false); setEditingId(null); setForm(emptyForm) }
 
+  // pilih unit → harga otomatis dari data unit
+  function onSelectUnit(unitId: string) {
+    const u = units.find((x) => x.id === unitId)
+    setForm((f) => ({ ...f, unit_id: unitId, contract_value: u?.price != null ? Number(u.price) : f.contract_value }))
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault(); setSaving(true)
     try {
@@ -83,7 +89,10 @@ export default function Clients() {
       if (editingId) await marketingService.updateClient(editingId, payload)
       else await marketingService.createClient(payload)
       closeModal(); await load(search)
-    } catch { setError('Gagal menyimpan pembeli.') } finally { setSaving(false) }
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      setError(detail || 'Gagal menyimpan pembeli.')
+    } finally { setSaving(false) }
   }
 
   async function handleDelete(id: string) {
@@ -182,7 +191,7 @@ export default function Clients() {
             </div>
             <div>
               <label className="label">No. Unit / Kavling</label>
-              <select className="input" value={form.unit_id} onChange={(e) => setForm({ ...form, unit_id: e.target.value })} disabled={!form.project_id}>
+              <select className="input" value={form.unit_id} onChange={(e) => onSelectUnit(e.target.value)} disabled={!form.project_id}>
                 <option value="">{form.project_id ? 'Pilih unit...' : 'Pilih proyek dulu'}</option>
                 {formUnits.map((u) => <option key={u.id} value={u.id}>{unitLabel(u)} {u.unit_type ? `(${u.unit_type})` : ''}</option>)}
               </select>
@@ -194,8 +203,8 @@ export default function Clients() {
               <input className="input" type="number" min={0} value={form.contract_value ?? ''} onChange={(e) => setForm({ ...form, contract_value: e.target.value ? Number(e.target.value) : undefined })} />
             </div>
             <div>
-              <label className="label">Tanggal</label>
-              <input className="input" type="date" value={form.contract_date} onChange={(e) => setForm({ ...form, contract_date: e.target.value })} />
+              <label className="label">Tanggal *</label>
+              <input className="input" type="date" required value={form.contract_date} onChange={(e) => setForm({ ...form, contract_date: e.target.value })} />
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">

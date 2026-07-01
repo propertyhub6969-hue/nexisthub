@@ -234,11 +234,22 @@ async def create_client(
     ctx: AuthContext = Depends(get_current_context),
     db: AsyncSession = Depends(get_db),
 ):
+    if payload.unit_id:
+        await _assert_unit_free(db, ctx.tenant_id, payload.unit_id)
     # marketing otomatis = user yang login
     client = Client(tenant_id=ctx.tenant_id, marketing_user_id=ctx.user_id, **payload.model_dump())
     db.add(client)
     await db.flush()
     return await _get_client(db, ctx.tenant_id, client.id)
+
+
+async def _assert_unit_free(db, tenant_id, unit_id, exclude_id=None):
+    """Pastikan satu unit/kavling hanya dipakai satu pembeli."""
+    q = select(Client.id).where(Client.tenant_id == tenant_id, Client.unit_id == unit_id)
+    if exclude_id:
+        q = q.where(Client.id != exclude_id)
+    if (await db.execute(q)).scalar_one_or_none():
+        raise HTTPException(status.HTTP_409_CONFLICT, detail="Unit/kavling sudah dipakai pembeli lain")
 
 
 async def _get_client(db: AsyncSession, tenant_id: uuid.UUID, client_id: uuid.UUID) -> Client:
@@ -269,7 +280,10 @@ async def update_client(
     db: AsyncSession = Depends(get_db),
 ):
     client = await _get_client(db, ctx.tenant_id, client_id)
-    for field, value in payload.model_dump(exclude_unset=True).items():
+    data = payload.model_dump(exclude_unset=True)
+    if data.get("unit_id") and data["unit_id"] != client.unit_id:
+        await _assert_unit_free(db, ctx.tenant_id, data["unit_id"], exclude_id=client_id)
+    for field, value in data.items():
         setattr(client, field, value)
     await db.flush()
     return await _get_client(db, ctx.tenant_id, client_id)
