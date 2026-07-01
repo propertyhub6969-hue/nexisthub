@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.api.deps import get_current_context, AuthContext
-from app.models.sale import Sale
+from app.models.marketing import Client
 from app.models.payment import PaymentSchedule, Payment, ScheduleStatus
 from app.schemas.payment import (
     ScheduleCreate, ScheduleUpdate, ScheduleResponse,
@@ -18,11 +18,11 @@ from app.schemas.payment import (
 router = APIRouter()
 
 
-async def _get_sale(db, tenant_id, sale_id) -> Sale:
-    s = (await db.execute(select(Sale).where(Sale.id == sale_id, Sale.tenant_id == tenant_id))).scalar_one_or_none()
-    if s is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Penjualan tidak ditemukan")
-    return s
+async def _get_client(db, tenant_id, client_id) -> Client:
+    c = (await db.execute(select(Client).where(Client.id == client_id, Client.tenant_id == tenant_id))).scalar_one_or_none()
+    if c is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Pembeli tidak ditemukan")
+    return c
 
 
 async def _recompute_schedule(db, tenant_id, schedule_id):
@@ -43,27 +43,27 @@ async def _recompute_schedule(db, tenant_id, schedule_id):
 # ═══════════════════════ SUMMARY ═══════════════════════
 @router.get("/summary", response_model=PaymentSummary)
 async def payment_summary(
-    sale_id: uuid.UUID = Query(...),
+    client_id: uuid.UUID = Query(...),
     ctx: AuthContext = Depends(get_current_context),
     db: AsyncSession = Depends(get_db),
 ):
-    sale = await _get_sale(db, ctx.tenant_id, sale_id)
-    price = Decimal(sale.price or 0)
+    client = await _get_client(db, ctx.tenant_id, client_id)
+    price = Decimal(client.contract_value or 0)
     total_paid = Decimal(await db.scalar(
-        select(func.coalesce(func.sum(Payment.amount), 0)).where(Payment.sale_id == sale_id)
+        select(func.coalesce(func.sum(Payment.amount), 0)).where(Payment.client_id == client_id)
     ))
     remaining = price - total_paid
     progress = float(total_paid / price * 100) if price > 0 else 0.0
 
-    sch_total = await db.scalar(select(func.count()).select_from(PaymentSchedule).where(PaymentSchedule.sale_id == sale_id))
+    sch_total = await db.scalar(select(func.count()).select_from(PaymentSchedule).where(PaymentSchedule.client_id == client_id))
     sch_paid = await db.scalar(select(func.count()).select_from(PaymentSchedule).where(
-        PaymentSchedule.sale_id == sale_id, PaymentSchedule.status == ScheduleStatus.PAID))
+        PaymentSchedule.client_id == client_id, PaymentSchedule.status == ScheduleStatus.PAID))
     overdue = await db.scalar(select(func.count()).select_from(PaymentSchedule).where(
-        PaymentSchedule.sale_id == sale_id, PaymentSchedule.status == ScheduleStatus.PENDING,
+        PaymentSchedule.client_id == client_id, PaymentSchedule.status == ScheduleStatus.PENDING,
         PaymentSchedule.due_date < date.today()))
 
     return PaymentSummary(
-        sale_id=sale_id, price=price, total_paid=total_paid, remaining=remaining,
+        client_id=client_id, price=price, total_paid=total_paid, remaining=remaining,
         progress_percent=round(progress, 1),
         schedule_count=sch_total or 0, schedule_paid=sch_paid or 0,
         schedule_pending=(sch_total or 0) - (sch_paid or 0), overdue_count=overdue or 0,
@@ -73,13 +73,13 @@ async def payment_summary(
 # ═══════════════════════ SCHEDULES (Termin) ═══════════════════════
 @router.get("/schedules", response_model=list[ScheduleResponse])
 async def list_schedules(
-    sale_id: uuid.UUID = Query(...),
+    client_id: uuid.UUID = Query(...),
     ctx: AuthContext = Depends(get_current_context),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(
         select(PaymentSchedule)
-        .where(PaymentSchedule.sale_id == sale_id, PaymentSchedule.tenant_id == ctx.tenant_id)
+        .where(PaymentSchedule.client_id == client_id, PaymentSchedule.tenant_id == ctx.tenant_id)
         .order_by(PaymentSchedule.sequence, PaymentSchedule.due_date)
     )
     return result.scalars().all()
@@ -91,7 +91,7 @@ async def create_schedule(
     ctx: AuthContext = Depends(get_current_context),
     db: AsyncSession = Depends(get_db),
 ):
-    await _get_sale(db, ctx.tenant_id, payload.sale_id)
+    await _get_client(db, ctx.tenant_id, payload.client_id)
     sch = PaymentSchedule(tenant_id=ctx.tenant_id, **payload.model_dump())
     db.add(sch)
     await db.flush()
@@ -136,13 +136,13 @@ async def delete_schedule(
 # ═══════════════════════ PAYMENTS (Uang Masuk) ═══════════════════════
 @router.get("/records", response_model=list[PaymentResponse])
 async def list_payments(
-    sale_id: uuid.UUID = Query(...),
+    client_id: uuid.UUID = Query(...),
     ctx: AuthContext = Depends(get_current_context),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(
         select(Payment)
-        .where(Payment.sale_id == sale_id, Payment.tenant_id == ctx.tenant_id)
+        .where(Payment.client_id == client_id, Payment.tenant_id == ctx.tenant_id)
         .order_by(Payment.payment_date.desc(), Payment.created_at.desc())
     )
     return result.scalars().all()
@@ -154,7 +154,7 @@ async def create_payment(
     ctx: AuthContext = Depends(get_current_context),
     db: AsyncSession = Depends(get_db),
 ):
-    await _get_sale(db, ctx.tenant_id, payload.sale_id)
+    await _get_client(db, ctx.tenant_id, payload.client_id)
     pay = Payment(tenant_id=ctx.tenant_id, **payload.model_dump())
     db.add(pay)
     await db.flush()
@@ -184,7 +184,6 @@ async def update_payment(
     for f, v in payload.model_dump(exclude_unset=True).items():
         setattr(pay, f, v)
     await db.flush()
-    # recompute termin lama & baru
     await _recompute_schedule(db, ctx.tenant_id, old_schedule)
     if pay.schedule_id != old_schedule:
         await _recompute_schedule(db, ctx.tenant_id, pay.schedule_id)

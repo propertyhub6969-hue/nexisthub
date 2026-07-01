@@ -8,10 +8,9 @@ import Dashboard from './pages/Dashboard'
 import Leads from './pages/marketing/Leads'
 import Prospects from './pages/marketing/Prospects'
 import Clients from './pages/marketing/Clients'
+import ClientPayments from './pages/marketing/ClientPayments'
 import Projects from './pages/property/Projects'
 import ProjectUnits from './pages/property/ProjectUnits'
-import Sales from './pages/sales/Sales'
-import SalePayments from './pages/sales/SalePayments'
 import ComingSoon from './pages/ComingSoon'
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
@@ -42,10 +41,9 @@ export default function App() {
           <Route path="/marketing/leads"     element={<Leads />} />
           <Route path="/marketing/prospects" element={<Prospects />} />
           <Route path="/marketing/clients"   element={<Clients />} />
+          <Route path="/marketing/clients/:clientId/payments" element={<ClientPayments />} />
           <Route path="/property/projects"                 element={<Projects />} />
           <Route path="/property/projects/:projectId/units" element={<ProjectUnits />} />
-          <Route path="/sales"               element={<Sales />} />
-          <Route path="/sales/:saleId/payments" element={<SalePayments />} />
           <Route path="/procurement"         element={<ComingSoon name="Procurement" />} />
           <Route path="/legal"               element={<ComingSoon name="Legal & Dokumen" />} />
           <Route path="/reports"             element={<ComingSoon name="Laporan" />} />

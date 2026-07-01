@@ -220,7 +220,7 @@ export type PaymentSource = 'pembeli' | 'bank'
 
 export interface PaymentSchedule {
   id: string
-  sale_id: string
+  client_id: string
   label: string
   sequence: number
   amount: number
@@ -233,7 +233,7 @@ export interface PaymentSchedule {
 }
 
 export interface PaymentScheduleCreate {
-  sale_id: string
+  client_id: string
   label: string
   sequence?: number
   amount: number
@@ -244,7 +244,7 @@ export interface PaymentScheduleCreate {
 
 export interface Payment {
   id: string
-  sale_id: string
+  client_id: string
   schedule_id?: string
   amount: number
   payment_date?: string
@@ -257,7 +257,7 @@ export interface Payment {
 }
 
 export interface PaymentCreate {
-  sale_id: string
+  client_id: string
   schedule_id?: string
   amount: number
   payment_date?: string
@@ -268,7 +268,7 @@ export interface PaymentCreate {
 }
 
 export interface PaymentSummary {
-  sale_id: string
+  client_id: string
   price: number
   total_paid: number
   remaining: number

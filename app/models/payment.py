@@ -31,9 +31,13 @@ class PaymentSchedule(BaseModel):
         UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"),
         nullable=False, index=True
     )
+    client_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("clients.id", ondelete="CASCADE"),
+        nullable=True, index=True
+    )
     sale_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("sales.id", ondelete="CASCADE"),
-        nullable=False, index=True
+        nullable=True, index=True   # (lama) opsional, alur pindah ke client
     )
     label: Mapped[str] = mapped_column(String(100), nullable=False)   # "DP", "Angsuran 1", "Pelunasan"
     sequence: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
@@ -61,9 +65,13 @@ class Payment(BaseModel):
         UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"),
         nullable=False, index=True
     )
+    client_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("clients.id", ondelete="CASCADE"),
+        nullable=True, index=True
+    )
     sale_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("sales.id", ondelete="CASCADE"),
-        nullable=False, index=True
+        nullable=True, index=True   # (lama) opsional
     )
     schedule_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("payment_schedules.id", ondelete="SET NULL"),

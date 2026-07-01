@@ -5,14 +5,14 @@ import type {
 } from '../types'
 
 export const paymentService = {
-  async summary(saleId: string): Promise<PaymentSummary> {
-    const { data } = await api.get<PaymentSummary>('/payments/summary', { params: { sale_id: saleId } })
+  async summary(clientId: string): Promise<PaymentSummary> {
+    const { data } = await api.get<PaymentSummary>('/payments/summary', { params: { client_id: clientId } })
     return data
   },
 
   // ── Schedules (termin) ──
-  async listSchedules(saleId: string): Promise<PaymentSchedule[]> {
-    const { data } = await api.get<PaymentSchedule[]>('/payments/schedules', { params: { sale_id: saleId } })
+  async listSchedules(clientId: string): Promise<PaymentSchedule[]> {
+    const { data } = await api.get<PaymentSchedule[]>('/payments/schedules', { params: { client_id: clientId } })
     return data
   },
   async createSchedule(payload: PaymentScheduleCreate): Promise<PaymentSchedule> {
@@ -28,8 +28,8 @@ export const paymentService = {
   },
 
   // ── Payments (uang masuk) ──
-  async listPayments(saleId: string): Promise<Payment[]> {
-    const { data } = await api.get<Payment[]>('/payments/records', { params: { sale_id: saleId } })
+  async listPayments(clientId: string): Promise<Payment[]> {
+    const { data } = await api.get<Payment[]>('/payments/records', { params: { client_id: clientId } })
     return data
   },
   async createPayment(payload: PaymentCreate): Promise<Payment> {

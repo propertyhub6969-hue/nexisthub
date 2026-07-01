@@ -17,7 +17,7 @@ class ScheduleBase(BaseModel):
 
 
 class ScheduleCreate(ScheduleBase):
-    sale_id: uuid.UUID
+    client_id: uuid.UUID
     status: ScheduleStatus = ScheduleStatus.PENDING
 
 
@@ -32,7 +32,7 @@ class ScheduleUpdate(BaseModel):
 
 class ScheduleResponse(ScheduleBase):
     id: uuid.UUID
-    sale_id: uuid.UUID
+    client_id: uuid.UUID
     status: ScheduleStatus
     is_overdue: bool
     created_at: datetime
@@ -53,7 +53,7 @@ class PaymentBase(BaseModel):
 
 
 class PaymentCreate(PaymentBase):
-    sale_id: uuid.UUID
+    client_id: uuid.UUID
     schedule_id: Optional[uuid.UUID] = None
 
 
@@ -69,7 +69,7 @@ class PaymentUpdate(BaseModel):
 
 class PaymentResponse(PaymentBase):
     id: uuid.UUID
-    sale_id: uuid.UUID
+    client_id: uuid.UUID
     schedule_id: Optional[uuid.UUID] = None
     created_at: datetime
     updated_at: datetime
@@ -80,7 +80,7 @@ class PaymentResponse(PaymentBase):
 
 # ── Summary ───────────────────────────────────────────────────────
 class PaymentSummary(BaseModel):
-    sale_id: uuid.UUID
+    client_id: uuid.UUID
     price: Decimal
     total_paid: Decimal
     remaining: Decimal

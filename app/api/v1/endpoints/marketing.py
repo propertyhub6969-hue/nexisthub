@@ -9,7 +9,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.api.deps import get_current_context, AuthContext
-from app.models.marketing import Lead, Prospect, Client
+from app.models.marketing import Lead, Prospect, Client, ClientStatus
+from app.models.property import Unit, UnitStatus
 from app.schemas.marketing import (
     Paginated,
     LeadCreate, LeadUpdate, LeadResponse,
@@ -240,16 +241,39 @@ async def create_client(
     client = Client(tenant_id=ctx.tenant_id, marketing_user_id=ctx.user_id, **payload.model_dump())
     db.add(client)
     await db.flush()
+    # sinkronkan status unit yang dipilih
+    if client.unit_id:
+        await _set_unit_status(db, ctx.tenant_id, client.unit_id, _unit_status_for_client(client))
     return await _get_client(db, ctx.tenant_id, client.id)
 
 
 async def _assert_unit_free(db, tenant_id, unit_id, exclude_id=None):
-    """Pastikan satu unit/kavling hanya dipakai satu pembeli."""
-    q = select(Client.id).where(Client.tenant_id == tenant_id, Client.unit_id == unit_id)
+    """Pastikan satu unit/kavling hanya dipakai satu pembeli aktif (nonaktif/batal diabaikan)."""
+    q = select(Client.id).where(
+        Client.tenant_id == tenant_id, Client.unit_id == unit_id,
+        Client.status != ClientStatus.INACTIVE,
+    )
     if exclude_id:
         q = q.where(Client.id != exclude_id)
     if (await db.execute(q)).scalar_one_or_none():
         raise HTTPException(status.HTTP_409_CONFLICT, detail="Unit/kavling sudah dipakai pembeli lain")
+
+
+def _unit_status_for_client(client: Client):
+    """Status unit yang seharusnya berdasarkan status pembeli."""
+    if client.status == ClientStatus.INACTIVE:
+        return UnitStatus.AVAILABLE
+    if client.status == ClientStatus.COMPLETED:
+        return UnitStatus.SOLD
+    return UnitStatus.BOOKED  # active → dipesan
+
+
+async def _set_unit_status(db, tenant_id, unit_id, new_status):
+    if not unit_id:
+        return
+    u = (await db.execute(select(Unit).where(Unit.id == unit_id, Unit.tenant_id == tenant_id))).scalar_one_or_none()
+    if u:
+        u.status = new_status
 
 
 async def _get_client(db: AsyncSession, tenant_id: uuid.UUID, client_id: uuid.UUID) -> Client:
@@ -283,9 +307,15 @@ async def update_client(
     data = payload.model_dump(exclude_unset=True)
     if data.get("unit_id") and data["unit_id"] != client.unit_id:
         await _assert_unit_free(db, ctx.tenant_id, data["unit_id"], exclude_id=client_id)
+    old_unit_id = client.unit_id
     for field, value in data.items():
         setattr(client, field, value)
     await db.flush()
+    # bebaskan unit lama bila unit berganti; set status unit sekarang
+    if old_unit_id and old_unit_id != client.unit_id:
+        await _set_unit_status(db, ctx.tenant_id, old_unit_id, UnitStatus.AVAILABLE)
+    if client.unit_id:
+        await _set_unit_status(db, ctx.tenant_id, client.unit_id, _unit_status_for_client(client))
     return await _get_client(db, ctx.tenant_id, client_id)
 
 
@@ -296,4 +326,8 @@ async def delete_client(
     db: AsyncSession = Depends(get_db),
 ):
     client = await _get_client(db, ctx.tenant_id, client_id)
+    unit_id = client.unit_id
     await db.delete(client)
+    await db.flush()
+    # bebaskan unit-nya kembali
+    await _set_unit_status(db, ctx.tenant_id, unit_id, UnitStatus.AVAILABLE)

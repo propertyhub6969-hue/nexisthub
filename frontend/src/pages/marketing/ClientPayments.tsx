@@ -3,10 +3,11 @@ import { useParams, Link } from 'react-router-dom'
 import { ArrowLeft, Plus, Trash2, Pencil, Loader2, CalendarClock, Wallet } from 'lucide-react'
 import Badge from '../../components/ui/Badge'
 import Modal from '../../components/ui/Modal'
-import { saleService } from '../../services/sale'
+import { marketingService } from '../../services/marketing'
+import { propertyService } from '../../services/property'
 import { paymentService } from '../../services/payment'
 import type {
-  Sale, PaymentSchedule, PaymentScheduleCreate, Payment, PaymentCreate,
+  Client, Unit, PaymentSchedule, PaymentScheduleCreate, Payment, PaymentCreate,
   PaymentSummary, PaymentMethod, PaymentSource,
 } from '../../types'
 
@@ -20,57 +21,57 @@ const sourceConfig: Record<PaymentSource, { label: string; variant: 'blue' | 'gr
 }
 const methodLabel: Record<PaymentMethod, string> = { transfer: 'Transfer', tunai: 'Tunai', lainnya: 'Lainnya' }
 
-const emptySchedule = (saleId: string): PaymentScheduleCreate => ({ sale_id: saleId, label: '', sequence: 0, amount: 0, due_date: '' })
-const emptyPayment = (saleId: string): PaymentCreate => ({ sale_id: saleId, schedule_id: '', amount: 0, payment_date: '', method: 'transfer', source: 'pembeli', receipt_number: '' })
+const emptySchedule = (clientId: string): PaymentScheduleCreate => ({ client_id: clientId, label: '', sequence: 0, amount: 0, due_date: '' })
+const emptyPayment = (clientId: string): PaymentCreate => ({ client_id: clientId, schedule_id: '', amount: 0, payment_date: '', method: 'transfer', source: 'pembeli', receipt_number: '' })
 
-export default function SalePayments() {
-  const { saleId = '' } = useParams()
-  const [sale, setSale] = useState<Sale | null>(null)
+export default function ClientPayments() {
+  const { clientId = '' } = useParams()
+  const [client, setClient] = useState<Client | null>(null)
+  const [unit, setUnit] = useState<Unit | null>(null)
   const [summary, setSummary] = useState<PaymentSummary | null>(null)
   const [schedules, setSchedules] = useState<PaymentSchedule[]>([])
   const [payments, setPayments] = useState<Payment[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
-  // schedule modal
   const [schModal, setSchModal] = useState(false)
-  const [schForm, setSchForm] = useState<PaymentScheduleCreate>(emptySchedule(saleId))
+  const [schForm, setSchForm] = useState<PaymentScheduleCreate>(emptySchedule(clientId))
   const [schEditId, setSchEditId] = useState<string | null>(null)
-  // payment modal
   const [payModal, setPayModal] = useState(false)
-  const [payForm, setPayForm] = useState<PaymentCreate>(emptyPayment(saleId))
+  const [payForm, setPayForm] = useState<PaymentCreate>(emptyPayment(clientId))
   const [payEditId, setPayEditId] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true); setError('')
     try {
-      const [sl, sm, sc, pm] = await Promise.all([
-        saleService.get(saleId),
-        paymentService.summary(saleId),
-        paymentService.listSchedules(saleId),
-        paymentService.listPayments(saleId),
+      const [cl, sm, sc, pm] = await Promise.all([
+        marketingService.getClient(clientId),
+        paymentService.summary(clientId),
+        paymentService.listSchedules(clientId),
+        paymentService.listPayments(clientId),
       ])
-      setSale(sl); setSummary(sm); setSchedules(sc); setPayments(pm)
-    } catch {
-      setError('Gagal memuat data pembayaran.')
-    } finally { setLoading(false) }
-  }, [saleId])
+      setClient(cl); setSummary(sm); setSchedules(sc); setPayments(pm)
+      if (cl.unit_id) {
+        const u = await propertyService.listUnits({ project_id: cl.project_id, size: 500 })
+        setUnit(u.items.find((x) => x.id === cl.unit_id) ?? null)
+      }
+    } catch { setError('Gagal memuat data pembayaran.') } finally { setLoading(false) }
+  }, [clientId])
 
   useEffect(() => { load() }, [load])
 
   const reload = async () => {
     const [sm, sc, pm] = await Promise.all([
-      paymentService.summary(saleId), paymentService.listSchedules(saleId), paymentService.listPayments(saleId),
+      paymentService.summary(clientId), paymentService.listSchedules(clientId), paymentService.listPayments(clientId),
     ])
     setSummary(sm); setSchedules(sc); setPayments(pm)
   }
 
-  // ── Schedule handlers ──
-  function openSchCreate() { setSchEditId(null); setSchForm({ ...emptySchedule(saleId), sequence: schedules.length + 1 }); setSchModal(true) }
+  function openSchCreate() { setSchEditId(null); setSchForm({ ...emptySchedule(clientId), sequence: schedules.length + 1 }); setSchModal(true) }
   function openSchEdit(s: PaymentSchedule) {
     setSchEditId(s.id)
-    setSchForm({ sale_id: saleId, label: s.label, sequence: s.sequence, amount: s.amount, due_date: s.due_date ?? '', status: s.status })
+    setSchForm({ client_id: clientId, label: s.label, sequence: s.sequence, amount: s.amount, due_date: s.due_date ?? '', status: s.status })
     setSchModal(true)
   }
   async function submitSchedule(e: React.FormEvent) {
@@ -88,11 +89,10 @@ export default function SalePayments() {
     try { await paymentService.deleteSchedule(id); await reload() } catch { setError('Gagal menghapus termin.') }
   }
 
-  // ── Payment handlers ──
-  function openPayCreate() { setPayEditId(null); setPayForm(emptyPayment(saleId)); setPayModal(true) }
+  function openPayCreate() { setPayEditId(null); setPayForm(emptyPayment(clientId)); setPayModal(true) }
   function openPayEdit(p: Payment) {
     setPayEditId(p.id)
-    setPayForm({ sale_id: saleId, schedule_id: p.schedule_id ?? '', amount: p.amount, payment_date: p.payment_date ?? '', method: p.method, source: p.source, receipt_number: p.receipt_number ?? '' })
+    setPayForm({ client_id: clientId, schedule_id: p.schedule_id ?? '', amount: p.amount, payment_date: p.payment_date ?? '', method: p.method, source: p.source, receipt_number: p.receipt_number ?? '' })
     setPayModal(true)
   }
   async function submitPayment(e: React.FormEvent) {
@@ -117,22 +117,18 @@ export default function SalePayments() {
 
   return (
     <div className="space-y-5">
-      {/* Header */}
       <div>
-        <Link to="/sales" className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-brand-600 mb-1">
-          <ArrowLeft size={14} /> Daftar Penjualan
+        <Link to="/marketing/clients" className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-brand-600 mb-1">
+          <ArrowLeft size={14} /> Daftar Pembeli
         </Link>
-        <h1 className="text-lg font-semibold text-slate-900">
-          {sale?.unit_label ?? 'Unit'} — {sale?.client_name ?? 'Pembeli'}
-        </h1>
+        <h1 className="text-lg font-semibold text-slate-900">{client?.full_name ?? 'Pembeli'}</h1>
         <p className="text-sm text-slate-500">
-          {sale?.category === 'subsidi' ? 'Subsidi' : 'Komersial'} · {sale?.sale_number || 'tanpa no. booking'}
+          {unit ? [unit.block, unit.unit_number].filter(Boolean).join('-') : 'tanpa unit'} · Nilai kontrak {fmt(client?.contract_value)}
         </p>
       </div>
 
       {error && <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-2">{error}</div>}
 
-      {/* Ringkasan */}
       {summary && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <div className="card p-4"><p className="text-xs text-slate-500">Harga</p><p className="text-lg font-semibold text-slate-900">{fmt(summary.price)}</p></div>
@@ -148,7 +144,6 @@ export default function SalePayments() {
         </div>
       )}
 
-      {/* Jadwal Angsuran */}
       <div className="card overflow-hidden">
         <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
           <h2 className="text-sm font-semibold text-slate-900 flex items-center gap-2"><CalendarClock size={15} /> Jadwal Angsuran</h2>
@@ -168,8 +163,7 @@ export default function SalePayments() {
                 <td className="px-4 py-2.5 text-slate-600">{fmt(s.amount)}</td>
                 <td className="px-4 py-2.5 text-slate-500 text-xs">{fmtDate(s.due_date)}</td>
                 <td className="px-4 py-2.5">
-                  {s.status === 'paid'
-                    ? <Badge label="Lunas" variant="green" />
+                  {s.status === 'paid' ? <Badge label="Lunas" variant="green" />
                     : s.is_overdue ? <Badge label="Terlambat" variant="red" /> : <Badge label="Belum" variant="gray" />}
                 </td>
                 <td className="px-4 py-2.5">
@@ -184,7 +178,6 @@ export default function SalePayments() {
         </table>
       </div>
 
-      {/* Uang Masuk */}
       <div className="card overflow-hidden">
         <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
           <h2 className="text-sm font-semibold text-slate-900 flex items-center gap-2"><Wallet size={15} /> Uang Masuk</h2>
@@ -221,7 +214,6 @@ export default function SalePayments() {
         </table>
       </div>
 
-      {/* Modal Termin */}
       <Modal open={schModal} onClose={() => setSchModal(false)} title={schEditId ? 'Edit Termin' : 'Tambah Termin'}>
         <form onSubmit={submitSchedule} className="space-y-3">
           <div>
@@ -245,7 +237,6 @@ export default function SalePayments() {
         </form>
       </Modal>
 
-      {/* Modal Pembayaran */}
       <Modal open={payModal} onClose={() => setPayModal(false)} title={payEditId ? 'Edit Pembayaran' : 'Catat Pembayaran'}>
         <form onSubmit={submitPayment} className="space-y-3">
           <div className="grid grid-cols-2 gap-3">

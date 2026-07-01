@@ -53,6 +53,10 @@ export const marketingService = {
     const { data } = await api.get<PaginatedResponse<Client>>('/marketing/clients', { params })
     return data
   },
+  async getClient(id: string): Promise<Client> {
+    const { data } = await api.get<Client>(`/marketing/clients/${id}`)
+    return data
+  },
   async createClient(payload: ClientCreate): Promise<Client> {
     const { data } = await api.post<Client>('/marketing/clients', payload)
     return data
