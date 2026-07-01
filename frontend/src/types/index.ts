@@ -394,6 +394,54 @@ export interface DocumentCreate {
   notes?: string
 }
 
+// ── KPR ───────────────────────────────────────────────────────────
+export type KprStage = 'collect_berkas' | 'berkas_masuk_bank' | 'sp3k' | 'akad_kredit' | 'pencairan'
+
+export interface Bank {
+  id: string
+  name: string
+  notes?: string
+  created_at: string
+  updated_at: string
+}
+export interface BankCreate { name: string; notes?: string }
+
+export interface KprApplication {
+  id: string
+  client_id: string
+  bank_id?: string
+  bank_name?: string
+  stage: KprStage
+  plafond?: number
+  tenor_months?: number
+  interest_rate?: number
+  sp3k_number?: string
+  sikasep_number?: string
+  submitted_date?: string
+  sp3k_date?: string
+  akad_date?: string
+  pencairan_date?: string
+  pencairan_amount?: number
+  pencairan_payment_id?: string
+  notes?: string
+  created_at: string
+  updated_at: string
+}
+export interface KprCreate {
+  client_id: string
+  bank_id?: string
+  stage?: KprStage
+  plafond?: number
+  tenor_months?: number
+  interest_rate?: number
+  sp3k_number?: string
+  sikasep_number?: string
+  submitted_date?: string
+  sp3k_date?: string
+  akad_date?: string
+  notes?: string
+}
+
 // ── Audit ─────────────────────────────────────────────────────────
 export interface AuditEntry {
   id: string

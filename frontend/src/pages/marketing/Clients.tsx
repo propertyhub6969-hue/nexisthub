@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { Link } from 'react-router-dom'
-import { Plus, Search, Trash2, Pencil, Loader2, Wallet, Scale } from 'lucide-react'
+import { Plus, Search, Trash2, Pencil, Loader2, Wallet, Scale, Landmark } from 'lucide-react'
 import Badge from '../../components/ui/Badge'
 import Modal from '../../components/ui/Modal'
 import SignaturePad from '../../components/ui/SignaturePad'
@@ -148,6 +148,7 @@ export default function Clients() {
                       <div className="flex items-center justify-end gap-3">
                         <Link to={`/marketing/clients/${c.id}/payments`} className="text-slate-400 hover:text-brand-600 transition-colors" title="Pembayaran & Cicilan"><Wallet size={15} /></Link>
                         <Link to={`/marketing/clients/${c.id}/tax`} className="text-slate-400 hover:text-brand-600 transition-colors" title="Pajak & Notaris"><Scale size={15} /></Link>
+                        <Link to={`/marketing/clients/${c.id}/kpr`} className="text-slate-400 hover:text-brand-600 transition-colors" title="KPR"><Landmark size={15} /></Link>
                         <button onClick={() => openEdit(c)} className="text-slate-400 hover:text-brand-600 transition-colors" title="Edit"><Pencil size={15} /></button>
                         <button onClick={() => handleDelete(c.id)} className="text-slate-400 hover:text-red-600 transition-colors" title="Hapus"><Trash2 size={15} /></button>
                       </div>

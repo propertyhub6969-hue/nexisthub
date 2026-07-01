@@ -1,109 +1,153 @@
 import { useEffect, useState, useCallback } from 'react'
-import { Plus, Trash2, Pencil, Loader2, Scale } from 'lucide-react'
+import { Plus, Trash2, Pencil, Loader2, Scale, Landmark } from 'lucide-react'
 import Modal from '../../components/ui/Modal'
 import { taxService } from '../../services/tax'
-import type { Notary, NotaryCreate } from '../../types'
+import { kprService } from '../../services/kpr'
+import type { Notary, NotaryCreate, Bank, BankCreate } from '../../types'
 
-const emptyForm: NotaryCreate = { name: '', office: '', phone: '', address: '' }
+const emptyNotary: NotaryCreate = { name: '', office: '', phone: '', address: '' }
+const emptyBank: BankCreate = { name: '', notes: '' }
 
-export default function Notaries() {
-  const [items, setItems] = useState<Notary[]>([])
+export default function LegalMaster() {
+  const [notaries, setNotaries] = useState<Notary[]>([])
+  const [banks, setBanks] = useState<Bank[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [modalOpen, setModalOpen] = useState(false)
-  const [form, setForm] = useState<NotaryCreate>(emptyForm)
-  const [editingId, setEditingId] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+
+  // notary modal
+  const [nModal, setNModal] = useState(false)
+  const [nForm, setNForm] = useState<NotaryCreate>(emptyNotary)
+  const [nEditId, setNEditId] = useState<string | null>(null)
+  // bank modal
+  const [bModal, setBModal] = useState(false)
+  const [bForm, setBForm] = useState<BankCreate>(emptyBank)
+  const [bEditId, setBEditId] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true); setError('')
-    try { setItems(await taxService.listNotaries()) }
-    catch { setError('Gagal memuat data notaris.') } finally { setLoading(false) }
+    try {
+      const [no, bk] = await Promise.all([taxService.listNotaries(), kprService.listBanks()])
+      setNotaries(no); setBanks(bk)
+    } catch { setError('Gagal memuat master data.') } finally { setLoading(false) }
   }, [])
   useEffect(() => { load() }, [load])
 
-  function openCreate() { setEditingId(null); setForm(emptyForm); setModalOpen(true) }
-  function openEdit(n: Notary) {
-    setEditingId(n.id)
-    setForm({ name: n.name, office: n.office ?? '', phone: n.phone ?? '', address: n.address ?? '' })
-    setModalOpen(true)
-  }
-  async function handleSubmit(e: React.FormEvent) {
+  // ── Notary ──
+  function openNCreate() { setNEditId(null); setNForm(emptyNotary); setNModal(true) }
+  function openNEdit(n: Notary) { setNEditId(n.id); setNForm({ name: n.name, office: n.office ?? '', phone: n.phone ?? '', address: n.address ?? '' }); setNModal(true) }
+  async function submitN(e: React.FormEvent) {
     e.preventDefault(); setSaving(true)
     try {
-      const p = { ...form }
-      const rec = p as unknown as Record<string, unknown>
+      const p = { ...nForm }; const rec = p as unknown as Record<string, unknown>
       ;['office', 'phone', 'address'].forEach((k) => { if (rec[k] === '') delete rec[k] })
-      if (editingId) await taxService.updateNotary(editingId, p)
-      else await taxService.createNotary(p)
-      setModalOpen(false); await load()
+      if (nEditId) await taxService.updateNotary(nEditId, p); else await taxService.createNotary(p)
+      setNModal(false); setNotaries(await taxService.listNotaries())
     } catch { setError('Gagal menyimpan notaris.') } finally { setSaving(false) }
   }
-  async function handleDelete(id: string) {
-    if (!confirm('Hapus (arsipkan) notaris ini?')) return
-    try { await taxService.deleteNotary(id); setItems((p) => p.filter((n) => n.id !== id)) }
-    catch { setError('Gagal menghapus notaris.') }
+  async function delN(id: string) {
+    if (!confirm('Hapus notaris ini?')) return
+    try { await taxService.deleteNotary(id); setNotaries((p) => p.filter((n) => n.id !== id)) } catch { setError('Gagal menghapus.') }
   }
 
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-slate-700 flex items-center gap-2"><Scale size={16} /> Notaris / PPAT Rekanan</h2>
-        <button className="btn-primary flex items-center gap-2 text-sm" onClick={openCreate}><Plus size={14} /> Tambah Notaris</button>
-      </div>
+  // ── Bank ──
+  function openBCreate() { setBEditId(null); setBForm(emptyBank); setBModal(true) }
+  function openBEdit(b: Bank) { setBEditId(b.id); setBForm({ name: b.name, notes: b.notes ?? '' }); setBModal(true) }
+  async function submitB(e: React.FormEvent) {
+    e.preventDefault(); setSaving(true)
+    try {
+      const p = { ...bForm }; if (p.notes === '') delete p.notes
+      if (bEditId) await kprService.updateBank(bEditId, p); else await kprService.createBank(p)
+      setBModal(false); setBanks(await kprService.listBanks())
+    } catch { setError('Gagal menyimpan bank.') } finally { setSaving(false) }
+  }
+  async function delB(id: string) {
+    if (!confirm('Hapus bank ini?')) return
+    try { await kprService.deleteBank(id); setBanks((p) => p.filter((b) => b.id !== id)) } catch { setError('Gagal menghapus.') }
+  }
 
+  if (loading) return <div className="py-16 text-center text-slate-400"><Loader2 size={20} className="inline animate-spin" /></div>
+
+  return (
+    <div className="space-y-5">
       {error && <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-2">{error}</div>}
 
+      {/* Notaris */}
       <div className="card overflow-hidden">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
+          <h2 className="text-sm font-semibold text-slate-900 flex items-center gap-2"><Scale size={15} /> Notaris / PPAT Rekanan</h2>
+          <button className="btn-primary text-xs flex items-center gap-1" onClick={openNCreate}><Plus size={13} /> Tambah Notaris</button>
+        </div>
         <table className="w-full text-sm">
-          <thead className="bg-slate-50 border-b border-slate-200">
-            <tr>{['Nama', 'Kantor', 'No. HP', ''].map((h, i) => (
-              <th key={i} className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">{h}</th>))}</tr>
-          </thead>
+          <thead className="bg-slate-50 border-b border-slate-200"><tr>{['Nama', 'Kantor', 'No. HP', ''].map((h, i) => (
+            <th key={i} className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">{h}</th>))}</tr></thead>
           <tbody className="divide-y divide-slate-100">
-            {loading ? (
-              <tr><td colSpan={4} className="px-4 py-10 text-center text-slate-400"><Loader2 size={18} className="inline animate-spin" /></td></tr>
-            ) : items.length === 0 ? (
-              <tr><td colSpan={4} className="px-4 py-8 text-center text-slate-400 text-sm">Belum ada notaris. Tambahkan rekanan notaris/PPAT Anda.</td></tr>
-            ) : items.map((n) => (
+            {notaries.length === 0 ? (
+              <tr><td colSpan={4} className="px-4 py-6 text-center text-slate-400 text-sm">Belum ada notaris.</td></tr>
+            ) : notaries.map((n) => (
               <tr key={n.id} className="hover:bg-slate-50">
-                <td className="px-4 py-3 font-medium text-slate-900">{n.name}</td>
-                <td className="px-4 py-3 text-slate-500">{n.office ?? '—'}</td>
-                <td className="px-4 py-3 text-slate-500">{n.phone ?? '—'}</td>
-                <td className="px-4 py-3">
-                  <div className="flex items-center justify-end gap-3">
-                    <button onClick={() => openEdit(n)} className="text-slate-400 hover:text-brand-600" title="Edit"><Pencil size={15} /></button>
-                    <button onClick={() => handleDelete(n.id)} className="text-slate-400 hover:text-red-600" title="Hapus"><Trash2 size={15} /></button>
-                  </div>
-                </td>
+                <td className="px-4 py-2.5 font-medium text-slate-900">{n.name}</td>
+                <td className="px-4 py-2.5 text-slate-500">{n.office ?? '—'}</td>
+                <td className="px-4 py-2.5 text-slate-500">{n.phone ?? '—'}</td>
+                <td className="px-4 py-2.5"><div className="flex items-center justify-end gap-3">
+                  <button onClick={() => openNEdit(n)} className="text-slate-400 hover:text-brand-600"><Pencil size={14} /></button>
+                  <button onClick={() => delN(n.id)} className="text-slate-400 hover:text-red-600"><Trash2 size={14} /></button>
+                </div></td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
 
-      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editingId ? 'Edit Notaris' : 'Tambah Notaris'}>
-        <form onSubmit={handleSubmit} className="space-y-3">
-          <div>
-            <label className="label">Nama Notaris *</label>
-            <input className="input" required minLength={2} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-          </div>
-          <div>
-            <label className="label">Nama Kantor / PPAT</label>
-            <input className="input" value={form.office} onChange={(e) => setForm({ ...form, office: e.target.value })} />
-          </div>
+      {/* Bank */}
+      <div className="card overflow-hidden">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
+          <h2 className="text-sm font-semibold text-slate-900 flex items-center gap-2"><Landmark size={15} /> Bank KPR</h2>
+          <button className="btn-primary text-xs flex items-center gap-1" onClick={openBCreate}><Plus size={13} /> Tambah Bank</button>
+        </div>
+        <table className="w-full text-sm">
+          <thead className="bg-slate-50 border-b border-slate-200"><tr>{['Nama Bank', 'Catatan', ''].map((h, i) => (
+            <th key={i} className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">{h}</th>))}</tr></thead>
+          <tbody className="divide-y divide-slate-100">
+            {banks.length === 0 ? (
+              <tr><td colSpan={3} className="px-4 py-6 text-center text-slate-400 text-sm">Belum ada bank (mis. BTN, BCA, Mandiri).</td></tr>
+            ) : banks.map((b) => (
+              <tr key={b.id} className="hover:bg-slate-50">
+                <td className="px-4 py-2.5 font-medium text-slate-900">{b.name}</td>
+                <td className="px-4 py-2.5 text-slate-500">{b.notes ?? '—'}</td>
+                <td className="px-4 py-2.5"><div className="flex items-center justify-end gap-3">
+                  <button onClick={() => openBEdit(b)} className="text-slate-400 hover:text-brand-600"><Pencil size={14} /></button>
+                  <button onClick={() => delB(b.id)} className="text-slate-400 hover:text-red-600"><Trash2 size={14} /></button>
+                </div></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Modal Notaris */}
+      <Modal open={nModal} onClose={() => setNModal(false)} title={nEditId ? 'Edit Notaris' : 'Tambah Notaris'}>
+        <form onSubmit={submitN} className="space-y-3">
+          <div><label className="label">Nama Notaris *</label><input className="input" required minLength={2} value={nForm.name} onChange={(e) => setNForm({ ...nForm, name: e.target.value })} /></div>
+          <div><label className="label">Nama Kantor / PPAT</label><input className="input" value={nForm.office} onChange={(e) => setNForm({ ...nForm, office: e.target.value })} /></div>
           <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="label">No. HP</label>
-              <input className="input" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
-            </div>
-            <div>
-              <label className="label">Alamat</label>
-              <input className="input" value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} />
-            </div>
+            <div><label className="label">No. HP</label><input className="input" value={nForm.phone} onChange={(e) => setNForm({ ...nForm, phone: e.target.value })} /></div>
+            <div><label className="label">Alamat</label><input className="input" value={nForm.address} onChange={(e) => setNForm({ ...nForm, address: e.target.value })} /></div>
           </div>
           <div className="flex justify-end gap-2 pt-2">
-            <button type="button" className="btn-secondary text-sm" onClick={() => setModalOpen(false)}>Batal</button>
+            <button type="button" className="btn-secondary text-sm" onClick={() => setNModal(false)}>Batal</button>
+            <button type="submit" className="btn-primary text-sm flex items-center gap-2" disabled={saving}>{saving && <Loader2 size={14} className="animate-spin" />}Simpan</button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Modal Bank */}
+      <Modal open={bModal} onClose={() => setBModal(false)} title={bEditId ? 'Edit Bank' : 'Tambah Bank'}>
+        <form onSubmit={submitB} className="space-y-3">
+          <div><label className="label">Nama Bank *</label><input className="input" required placeholder="Bank BTN" value={bForm.name} onChange={(e) => setBForm({ ...bForm, name: e.target.value })} /></div>
+          <div><label className="label">Catatan</label><input className="input" value={bForm.notes} onChange={(e) => setBForm({ ...bForm, notes: e.target.value })} /></div>
+          <div className="flex justify-end gap-2 pt-2">
+            <button type="button" className="btn-secondary text-sm" onClick={() => setBModal(false)}>Batal</button>
             <button type="submit" className="btn-primary text-sm flex items-center gap-2" disabled={saving}>{saving && <Loader2 size={14} className="animate-spin" />}Simpan</button>
           </div>
         </form>

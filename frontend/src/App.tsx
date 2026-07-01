@@ -10,6 +10,7 @@ import Prospects from './pages/marketing/Prospects'
 import Clients from './pages/marketing/Clients'
 import ClientPayments from './pages/marketing/ClientPayments'
 import ClientTax from './pages/marketing/ClientTax'
+import ClientKpr from './pages/marketing/ClientKpr'
 import Notaries from './pages/legal/Notaries'
 import Projects from './pages/property/Projects'
 import ProjectUnits from './pages/property/ProjectUnits'
@@ -45,6 +46,7 @@ export default function App() {
           <Route path="/marketing/clients"   element={<Clients />} />
           <Route path="/marketing/clients/:clientId/payments" element={<ClientPayments />} />
           <Route path="/marketing/clients/:clientId/tax" element={<ClientTax />} />
+          <Route path="/marketing/clients/:clientId/kpr" element={<ClientKpr />} />
           <Route path="/property/projects"                 element={<Projects />} />
           <Route path="/property/projects/:projectId/units" element={<ProjectUnits />} />
           <Route path="/procurement"         element={<ComingSoon name="Procurement" />} />

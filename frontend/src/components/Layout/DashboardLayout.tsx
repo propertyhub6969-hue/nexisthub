@@ -20,6 +20,7 @@ export default function DashboardLayout() {
     ?? (pathname.includes('/units') ? 'Kelola Unit'
       : pathname.includes('/payments') ? 'Pembayaran & Cicilan'
       : pathname.includes('/tax') ? 'Pajak & Notaris'
+      : pathname.includes('/kpr') ? 'KPR'
       : 'NexistHub')
 
   return (
