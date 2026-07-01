@@ -367,6 +367,33 @@ export interface NotaryFeeCreate {
   notes?: string
 }
 
+// ── Dokumen & Legalitas ───────────────────────────────────────────
+export type DocStatus = 'belum' | 'proses' | 'terbit'
+
+export interface DocumentItem {
+  id: string
+  client_id: string
+  doc_type: string
+  name?: string
+  status: DocStatus
+  doc_date?: string
+  file_name?: string
+  file_type?: string
+  file_size?: number
+  has_file: boolean
+  notes?: string
+  created_at: string
+  updated_at: string
+}
+export interface DocumentCreate {
+  client_id: string
+  doc_type: string
+  name?: string
+  status?: DocStatus
+  doc_date?: string
+  notes?: string
+}
+
 // ── Audit ─────────────────────────────────────────────────────────
 export interface AuditEntry {
   id: string

@@ -18,6 +18,7 @@ from app.models.property import Project, Unit
 from app.models.sale import Sale
 from app.models.payment import PaymentSchedule, Payment
 from app.models.tax import Notary, TaxRecord, NotaryFee
+from app.models.document import Document
 from app.models.procurement import Vendor, PurchaseOrder, PurchaseOrderItem
 from app.models.legal import DocumentTemplate, LegalDocument
 from app.models.reporting import ReportConfig
