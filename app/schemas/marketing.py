@@ -103,10 +103,15 @@ class ClientBase(BaseModel):
     phone: Optional[str] = Field(None, max_length=20)
     email: Optional[EmailStr] = None
     nik: Optional[str] = Field(None, max_length=20)
+    address: Optional[str] = None
     unit_number: Optional[str] = Field(None, max_length=50)
     unit_type: Optional[str] = Field(None, max_length=100)
+    project_id: Optional[uuid.UUID] = None
+    unit_id: Optional[uuid.UUID] = None
     contract_value: Optional[Decimal] = None
     contract_date: Optional[date] = None
+    promo: Optional[str] = Field(None, max_length=200)
+    signature: Optional[str] = None
     notes: Optional[str] = None
 
 
@@ -120,10 +125,15 @@ class ClientUpdate(BaseModel):
     phone: Optional[str] = Field(None, max_length=20)
     email: Optional[EmailStr] = None
     nik: Optional[str] = Field(None, max_length=20)
+    address: Optional[str] = None
     unit_number: Optional[str] = Field(None, max_length=50)
     unit_type: Optional[str] = Field(None, max_length=100)
+    project_id: Optional[uuid.UUID] = None
+    unit_id: Optional[uuid.UUID] = None
     contract_value: Optional[Decimal] = None
     contract_date: Optional[date] = None
+    promo: Optional[str] = Field(None, max_length=200)
+    signature: Optional[str] = None
     notes: Optional[str] = None
     status: Optional[ClientStatus] = None
 
@@ -131,6 +141,8 @@ class ClientUpdate(BaseModel):
 class ClientResponse(ClientBase):
     id: uuid.UUID
     prospect_id: Optional[uuid.UUID] = None
+    marketing_user_id: Optional[uuid.UUID] = None
+    marketing_name: Optional[str] = None
     status: ClientStatus
     created_at: datetime
     updated_at: datetime

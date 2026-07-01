@@ -4,6 +4,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select, func, or_
+from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -220,7 +221,7 @@ async def list_clients(
 
     total = await db.scalar(select(func.count()).select_from(Client).where(*conditions))
     result = await db.execute(
-        select(Client).where(*conditions)
+        select(Client).options(selectinload(Client.marketing_user)).where(*conditions)
         .order_by(Client.created_at.desc())
         .offset((page - 1) * size).limit(size)
     )
@@ -233,16 +234,17 @@ async def create_client(
     ctx: AuthContext = Depends(get_current_context),
     db: AsyncSession = Depends(get_db),
 ):
-    client = Client(tenant_id=ctx.tenant_id, **payload.model_dump())
+    # marketing otomatis = user yang login
+    client = Client(tenant_id=ctx.tenant_id, marketing_user_id=ctx.user_id, **payload.model_dump())
     db.add(client)
     await db.flush()
-    await db.refresh(client)
-    return client
+    return await _get_client(db, ctx.tenant_id, client.id)
 
 
 async def _get_client(db: AsyncSession, tenant_id: uuid.UUID, client_id: uuid.UUID) -> Client:
     result = await db.execute(
-        select(Client).where(Client.id == client_id, Client.tenant_id == tenant_id)
+        select(Client).options(selectinload(Client.marketing_user))
+        .where(Client.id == client_id, Client.tenant_id == tenant_id)
     )
     client = result.scalar_one_or_none()
     if client is None:
@@ -270,8 +272,7 @@ async def update_client(
     for field, value in payload.model_dump(exclude_unset=True).items():
         setattr(client, field, value)
     await db.flush()
-    await db.refresh(client)
-    return client
+    return await _get_client(db, ctx.tenant_id, client_id)
 
 
 @router.delete("/clients/{client_id}", status_code=status.HTTP_204_NO_CONTENT)

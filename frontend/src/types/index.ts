@@ -86,10 +86,17 @@ export interface Client {
   phone?: string
   email?: string
   nik?: string
+  address?: string
   unit_number?: string
   unit_type?: string
+  project_id?: string
+  unit_id?: string
+  marketing_user_id?: string
+  marketing_name?: string
   contract_value?: number
   contract_date?: string
+  promo?: string
+  signature?: string
   notes?: string
   status: ClientStatus
   created_at: string
@@ -101,10 +108,13 @@ export interface ClientCreate {
   phone?: string
   email?: string
   nik?: string
-  unit_number?: string
-  unit_type?: string
+  address?: string
+  project_id?: string
+  unit_id?: string
   contract_value?: number
   contract_date?: string
+  promo?: string
+  signature?: string
   notes?: string
   status?: ClientStatus
 }

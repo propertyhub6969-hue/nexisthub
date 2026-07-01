@@ -17,6 +17,11 @@ export const authService = {
     return data
   },
 
+  async me(): Promise<UserResponse> {
+    const { data } = await api.get<UserResponse>('/auth/me')
+    return data
+  },
+
   setTokens(token: Token) {
     localStorage.setItem('access_token', token.access_token)
     localStorage.setItem('refresh_token', token.refresh_token)
