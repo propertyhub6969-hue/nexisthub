@@ -1,56 +1,74 @@
-import { useState } from 'react'
-import { Plus, Search } from 'lucide-react'
+import { useEffect, useState, useCallback } from 'react'
+import { Plus, Search, Trash2, Loader2 } from 'lucide-react'
 import Badge from '../../components/ui/Badge'
-import type { LeadStatus } from '../../types'
-
-// Dummy data — akan diganti API calls di sprint berikutnya
-const dummyLeads = [
-  {
-    id: '1',
-    full_name: 'Budi Santoso',
-    phone: '08123456789',
-    email: 'budi@gmail.com',
-    source: 'Instagram',
-    interest: 'Tipe 45',
-    status: 'NEW' as LeadStatus,
-    created_at: '2026-06-28T10:00:00Z',
-  },
-  {
-    id: '2',
-    full_name: 'Siti Rahayu',
-    phone: '08234567890',
-    email: 'siti@gmail.com',
-    source: 'Referral',
-    interest: 'Tipe 60',
-    status: 'CONTACTED' as LeadStatus,
-    created_at: '2026-06-29T09:00:00Z',
-  },
-  {
-    id: '3',
-    full_name: 'Agus Hermawan',
-    phone: '08345678901',
-    email: 'agus@gmail.com',
-    source: 'Website',
-    interest: 'Tipe 36',
-    status: 'QUALIFIED' as LeadStatus,
-    created_at: '2026-06-30T08:00:00Z',
-  },
-]
+import Modal from '../../components/ui/Modal'
+import { marketingService } from '../../services/marketing'
+import type { Lead, LeadCreate, LeadStatus } from '../../types'
 
 const statusConfig: Record<LeadStatus, { label: string; variant: 'blue' | 'yellow' | 'green' | 'gray' }> = {
-  NEW:          { label: 'Baru',          variant: 'blue' },
-  CONTACTED:    { label: 'Dihubungi',     variant: 'yellow' },
-  QUALIFIED:    { label: 'Tervalidasi',   variant: 'green' },
-  UNQUALIFIED:  { label: 'Tidak Sesuai', variant: 'gray' },
+  new:         { label: 'Baru',         variant: 'blue' },
+  contacted:   { label: 'Dihubungi',    variant: 'yellow' },
+  qualified:   { label: 'Tervalidasi',  variant: 'green' },
+  unqualified: { label: 'Tidak Sesuai', variant: 'gray' },
 }
 
-export default function Leads() {
-  const [search, setSearch] = useState('')
+const emptyForm: LeadCreate = { full_name: '', phone: '', email: '', source: '', interest: '', status: 'new' }
 
-  const filtered = dummyLeads.filter((l) =>
-    l.full_name.toLowerCase().includes(search.toLowerCase()) ||
-    l.phone.includes(search)
-  )
+export default function Leads() {
+  const [leads, setLeads] = useState<Lead[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [search, setSearch] = useState('')
+  const [modalOpen, setModalOpen] = useState(false)
+  const [form, setForm] = useState<LeadCreate>(emptyForm)
+  const [saving, setSaving] = useState(false)
+
+  const load = useCallback(async (term: string) => {
+    setLoading(true)
+    setError('')
+    try {
+      const res = await marketingService.listLeads({ search: term || undefined, size: 100 })
+      setLeads(res.items)
+    } catch {
+      setError('Gagal memuat data lead.')
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    const t = setTimeout(() => load(search), 300)
+    return () => clearTimeout(t)
+  }, [search, load])
+
+  async function handleCreate(e: React.FormEvent) {
+    e.preventDefault()
+    setSaving(true)
+    try {
+      const payload: LeadCreate = { ...form }
+      // buang field opsional yang kosong
+      const rec = payload as unknown as Record<string, unknown>
+      Object.keys(rec).forEach((k) => { if (rec[k] === '') delete rec[k] })
+      await marketingService.createLead(payload)
+      setModalOpen(false)
+      setForm(emptyForm)
+      await load(search)
+    } catch {
+      setError('Gagal menyimpan lead. Periksa isian Anda.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleDelete(id: string) {
+    if (!confirm('Hapus lead ini?')) return
+    try {
+      await marketingService.deleteLead(id)
+      setLeads((prev) => prev.filter((l) => l.id !== id))
+    } catch {
+      setError('Gagal menghapus lead.')
+    }
+  }
 
   return (
     <div className="space-y-4">
@@ -65,46 +83,61 @@ export default function Leads() {
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
-        <button className="btn-primary flex items-center gap-2 text-sm">
+        <button className="btn-primary flex items-center gap-2 text-sm" onClick={() => setModalOpen(true)}>
           <Plus size={14} />
           Tambah Lead
         </button>
       </div>
+
+      {error && <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-2">{error}</div>}
 
       {/* Table */}
       <div className="card overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-slate-50 border-b border-slate-200">
             <tr>
-              {['Nama', 'No. HP', 'Email', 'Sumber', 'Minat', 'Status', 'Tanggal'].map((h) => (
-                <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">
+              {['Nama', 'No. HP', 'Email', 'Sumber', 'Minat', 'Status', 'Tanggal', ''].map((h, i) => (
+                <th key={i} className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">
                   {h}
                 </th>
               ))}
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {filtered.length === 0 ? (
+            {loading ? (
               <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-slate-400 text-sm">
+                <td colSpan={8} className="px-4 py-10 text-center text-slate-400">
+                  <Loader2 size={18} className="inline animate-spin" />
+                </td>
+              </tr>
+            ) : leads.length === 0 ? (
+              <tr>
+                <td colSpan={8} className="px-4 py-8 text-center text-slate-400 text-sm">
                   Belum ada lead. Klik "Tambah Lead" untuk mulai.
                 </td>
               </tr>
             ) : (
-              filtered.map((lead) => {
+              leads.map((lead) => {
                 const s = statusConfig[lead.status]
                 return (
                   <tr key={lead.id} className="hover:bg-slate-50 transition-colors">
                     <td className="px-4 py-3 font-medium text-slate-900">{lead.full_name}</td>
-                    <td className="px-4 py-3 text-slate-600">{lead.phone}</td>
+                    <td className="px-4 py-3 text-slate-600">{lead.phone ?? '—'}</td>
                     <td className="px-4 py-3 text-slate-500">{lead.email ?? '—'}</td>
                     <td className="px-4 py-3 text-slate-500">{lead.source ?? '—'}</td>
                     <td className="px-4 py-3 text-slate-500">{lead.interest ?? '—'}</td>
-                    <td className="px-4 py-3">
-                      <Badge label={s.label} variant={s.variant} />
-                    </td>
+                    <td className="px-4 py-3">{s && <Badge label={s.label} variant={s.variant} />}</td>
                     <td className="px-4 py-3 text-slate-400 text-xs">
                       {new Date(lead.created_at).toLocaleDateString('id-ID')}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <button
+                        onClick={() => handleDelete(lead.id)}
+                        className="text-slate-400 hover:text-red-600 transition-colors"
+                        title="Hapus"
+                      >
+                        <Trash2 size={15} />
+                      </button>
                     </td>
                   </tr>
                 )
@@ -113,6 +146,52 @@ export default function Leads() {
           </tbody>
         </table>
       </div>
+
+      {/* Create modal */}
+      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title="Tambah Lead">
+        <form onSubmit={handleCreate} className="space-y-3">
+          <div>
+            <label className="label">Nama Lengkap *</label>
+            <input className="input" required minLength={2}
+              value={form.full_name} onChange={(e) => setForm({ ...form, full_name: e.target.value })} />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="label">No. HP</label>
+              <input className="input" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
+            </div>
+            <div>
+              <label className="label">Email</label>
+              <input className="input" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="label">Sumber</label>
+              <input className="input" placeholder="Instagram, referral..." value={form.source} onChange={(e) => setForm({ ...form, source: e.target.value })} />
+            </div>
+            <div>
+              <label className="label">Minat</label>
+              <input className="input" placeholder="Tipe 45..." value={form.interest} onChange={(e) => setForm({ ...form, interest: e.target.value })} />
+            </div>
+          </div>
+          <div>
+            <label className="label">Status</label>
+            <select className="input" value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value as LeadStatus })}>
+              {(Object.keys(statusConfig) as LeadStatus[]).map((k) => (
+                <option key={k} value={k}>{statusConfig[k].label}</option>
+              ))}
+            </select>
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <button type="button" className="btn-secondary text-sm" onClick={() => setModalOpen(false)}>Batal</button>
+            <button type="submit" className="btn-primary text-sm flex items-center gap-2" disabled={saving}>
+              {saving && <Loader2 size={14} className="animate-spin" />}
+              Simpan
+            </button>
+          </div>
+        </form>
+      </Modal>
     </div>
   )
 }

@@ -19,10 +19,10 @@ def get_password_hash(password: str) -> str:
 
 
 def create_access_token(
-    subject: Union[str, int],
+    data: dict,
     expires_delta: Optional[timedelta] = None
 ) -> str:
-    """Create a JWT access token."""
+    """Create a JWT access token. `data` becomes the token claims (e.g. sub, tenant_id)."""
     if expires_delta:
         expire = datetime.utcnow() + expires_delta
     else:
@@ -30,22 +30,16 @@ def create_access_token(
             minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES
         )
 
-    to_encode = {
-        "exp": expire,
-        "sub": str(subject),
-        "type": "access"
-    }
+    to_encode = data.copy()
+    to_encode.update({"exp": expire, "type": "access"})
     return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
 
-def create_refresh_token(subject: Union[str, int]) -> str:
-    """Create a JWT refresh token."""
+def create_refresh_token(data: dict) -> str:
+    """Create a JWT refresh token. `data` becomes the token claims (e.g. sub, tenant_id)."""
     expire = datetime.utcnow() + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
-    to_encode = {
-        "exp": expire,
-        "sub": str(subject),
-        "type": "refresh"
-    }
+    to_encode = data.copy()
+    to_encode.update({"exp": expire, "type": "refresh"})
     return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
 

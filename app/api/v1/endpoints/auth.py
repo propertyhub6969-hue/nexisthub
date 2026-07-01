@@ -9,6 +9,7 @@ from app.core.security import (
 from app.schemas.auth import UserRegister, UserLogin, Token, TokenRefresh, UserResponse
 from app.models.tenant import Tenant, TenantStatus
 from app.models.user import User, UserRole
+from app.api.deps import get_current_context, AuthContext
 import re
 
 router = APIRouter()
@@ -141,7 +142,15 @@ async def refresh_token(
 
 @router.get("/me", response_model=UserResponse)
 async def get_me(
-    db: AsyncSession = Depends(get_db)
+    ctx: AuthContext = Depends(get_current_context),
+    db: AsyncSession = Depends(get_db),
 ):
-    """Placeholder — implement with JWT middleware."""
-    raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail="Use JWT middleware")
+    """Return the currently authenticated user."""
+    result = await db.execute(select(User).where(User.id == ctx.user_id))
+    user = result.scalar_one_or_none()
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User tidak ditemukan",
+        )
+    return user

@@ -25,43 +25,87 @@ export interface UserResponse {
 }
 
 // ── Marketing ─────────────────────────────────────────────────────
-export type LeadStatus = 'NEW' | 'CONTACTED' | 'QUALIFIED' | 'UNQUALIFIED'
-export type ProspectStatus = 'ACTIVE' | 'NEGOTIATION' | 'WON' | 'LOST'
-export type ClientStatus = 'ACTIVE' | 'COMPLETED' | 'INACTIVE'
+// NB: status values match backend enum values (lowercase).
+export type LeadStatus = 'new' | 'contacted' | 'qualified' | 'unqualified'
+export type ProspectStatus = 'active' | 'negotiation' | 'won' | 'lost'
+export type ClientStatus = 'active' | 'completed' | 'inactive'
 
 export interface Lead {
   id: string
   full_name: string
-  phone: string
+  phone?: string
   email?: string
   source?: string
   interest?: string
   notes?: string
   status: LeadStatus
+  assigned_to?: string
   created_at: string
   updated_at: string
 }
 
+export interface LeadCreate {
+  full_name: string
+  phone?: string
+  email?: string
+  source?: string
+  interest?: string
+  notes?: string
+  status?: LeadStatus
+}
+
 export interface Prospect {
   id: string
-  lead_id: string
+  lead_id?: string
+  full_name: string
+  phone?: string
+  email?: string
   unit_type?: string
   budget?: number
+  notes?: string
   status: ProspectStatus
   created_at: string
   updated_at: string
 }
 
+export interface ProspectCreate {
+  full_name: string
+  phone?: string
+  email?: string
+  unit_type?: string
+  budget?: number
+  notes?: string
+  status?: ProspectStatus
+}
+
 export interface Client {
   id: string
-  prospect_id: string
+  prospect_id?: string
+  full_name: string
+  phone?: string
+  email?: string
   nik?: string
   unit_number?: string
+  unit_type?: string
   contract_value?: number
   contract_date?: string
+  notes?: string
   status: ClientStatus
   created_at: string
   updated_at: string
+}
+
+export interface ClientCreate {
+  full_name: string
+  phone?: string
+  email?: string
+  nik?: string
+  unit_number?: string
+  unit_type?: string
+  contract_value?: number
+  contract_date?: string
+  notes?: string
+  status?: ClientStatus
 }
 
 // ── Pagination ────────────────────────────────────────────────────
