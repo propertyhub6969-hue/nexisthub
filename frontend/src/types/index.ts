@@ -279,6 +279,22 @@ export interface PaymentSummary {
   overdue_count: number
 }
 
+// ── Dashboard ─────────────────────────────────────────────────────
+export interface DashboardStats {
+  leads_total: number
+  prospects_active: number
+  clients_total: number
+  units_total: number
+  units_available: number
+  units_booked: number
+  units_sold: number
+  payments_this_month: number
+  total_contract: number
+  total_paid: number
+  outstanding: number
+  overdue_count: number
+}
+
 // ── Audit ─────────────────────────────────────────────────────────
 export interface AuditEntry {
   id: string
