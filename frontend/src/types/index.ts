@@ -279,6 +279,16 @@ export interface PaymentSummary {
   overdue_count: number
 }
 
+// ── Audit ─────────────────────────────────────────────────────────
+export interface AuditEntry {
+  id: string
+  action: string
+  resource: string
+  resource_id?: string
+  user_name?: string
+  created_at: string
+}
+
 // ── Pagination ────────────────────────────────────────────────────
 export interface PaginatedResponse<T> {
   items: T[]

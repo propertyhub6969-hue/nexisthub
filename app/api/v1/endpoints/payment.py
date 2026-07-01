@@ -1,5 +1,5 @@
 import uuid
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.api.deps import get_current_context, AuthContext
+from app.core.audit import record_audit
 from app.models.marketing import Client
 from app.models.payment import PaymentSchedule, Payment, ScheduleStatus
 from app.schemas.payment import (
@@ -30,12 +31,14 @@ async def _recompute_schedule(db, tenant_id, schedule_id):
     if not schedule_id:
         return
     sch = (await db.execute(
-        select(PaymentSchedule).where(PaymentSchedule.id == schedule_id, PaymentSchedule.tenant_id == tenant_id)
+        select(PaymentSchedule).where(PaymentSchedule.id == schedule_id, PaymentSchedule.tenant_id == tenant_id,
+                                      PaymentSchedule.is_deleted == False)  # noqa: E712
     )).scalar_one_or_none()
     if sch is None:
         return
     paid = await db.scalar(
-        select(func.coalesce(func.sum(Payment.amount), 0)).where(Payment.schedule_id == schedule_id)
+        select(func.coalesce(func.sum(Payment.amount), 0)).where(
+            Payment.schedule_id == schedule_id, Payment.is_deleted == False)  # noqa: E712
     )
     sch.status = ScheduleStatus.PAID if Decimal(paid) >= sch.amount else ScheduleStatus.PENDING
 
@@ -50,16 +53,18 @@ async def payment_summary(
     client = await _get_client(db, ctx.tenant_id, client_id)
     price = Decimal(client.contract_value or 0)
     total_paid = Decimal(await db.scalar(
-        select(func.coalesce(func.sum(Payment.amount), 0)).where(Payment.client_id == client_id)
+        select(func.coalesce(func.sum(Payment.amount), 0)).where(
+            Payment.client_id == client_id, Payment.is_deleted == False)  # noqa: E712
     ))
     remaining = price - total_paid
     progress = float(total_paid / price * 100) if price > 0 else 0.0
 
-    sch_total = await db.scalar(select(func.count()).select_from(PaymentSchedule).where(PaymentSchedule.client_id == client_id))
+    _sch = [PaymentSchedule.client_id == client_id, PaymentSchedule.is_deleted == False]  # noqa: E712
+    sch_total = await db.scalar(select(func.count()).select_from(PaymentSchedule).where(*_sch))
     sch_paid = await db.scalar(select(func.count()).select_from(PaymentSchedule).where(
-        PaymentSchedule.client_id == client_id, PaymentSchedule.status == ScheduleStatus.PAID))
+        *_sch, PaymentSchedule.status == ScheduleStatus.PAID))
     overdue = await db.scalar(select(func.count()).select_from(PaymentSchedule).where(
-        PaymentSchedule.client_id == client_id, PaymentSchedule.status == ScheduleStatus.PENDING,
+        *_sch, PaymentSchedule.status == ScheduleStatus.PENDING,
         PaymentSchedule.due_date < date.today()))
 
     return PaymentSummary(
@@ -79,7 +84,8 @@ async def list_schedules(
 ):
     result = await db.execute(
         select(PaymentSchedule)
-        .where(PaymentSchedule.client_id == client_id, PaymentSchedule.tenant_id == ctx.tenant_id)
+        .where(PaymentSchedule.client_id == client_id, PaymentSchedule.tenant_id == ctx.tenant_id,
+               PaymentSchedule.is_deleted == False)  # noqa: E712
         .order_by(PaymentSchedule.sequence, PaymentSchedule.due_date)
     )
     return result.scalars().all()
@@ -101,7 +107,8 @@ async def create_schedule(
 
 async def _get_schedule(db, tenant_id, schedule_id) -> PaymentSchedule:
     sch = (await db.execute(
-        select(PaymentSchedule).where(PaymentSchedule.id == schedule_id, PaymentSchedule.tenant_id == tenant_id)
+        select(PaymentSchedule).where(PaymentSchedule.id == schedule_id, PaymentSchedule.tenant_id == tenant_id,
+                                      PaymentSchedule.is_deleted == False)  # noqa: E712
     )).scalar_one_or_none()
     if sch is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Termin tidak ditemukan")
@@ -130,7 +137,10 @@ async def delete_schedule(
     db: AsyncSession = Depends(get_db),
 ):
     sch = await _get_schedule(db, ctx.tenant_id, schedule_id)
-    await db.delete(sch)
+    sch.is_deleted = True
+    sch.deleted_at = datetime.utcnow()
+    await record_audit(db, ctx.tenant_id, ctx.user_id, "DELETE", "payment_schedules", schedule_id,
+                       old_data={"label": sch.label, "amount": str(sch.amount)})
 
 
 # ═══════════════════════ PAYMENTS (Uang Masuk) ═══════════════════════
@@ -142,7 +152,8 @@ async def list_payments(
 ):
     result = await db.execute(
         select(Payment)
-        .where(Payment.client_id == client_id, Payment.tenant_id == ctx.tenant_id)
+        .where(Payment.client_id == client_id, Payment.tenant_id == ctx.tenant_id,
+               Payment.is_deleted == False)  # noqa: E712
         .order_by(Payment.payment_date.desc(), Payment.created_at.desc())
     )
     return result.scalars().all()
@@ -159,13 +170,15 @@ async def create_payment(
     db.add(pay)
     await db.flush()
     await _recompute_schedule(db, ctx.tenant_id, pay.schedule_id)
+    await record_audit(db, ctx.tenant_id, ctx.user_id, "CREATE", "payments", pay.id, new_data=payload)
     await db.refresh(pay)
     return pay
 
 
 async def _get_payment(db, tenant_id, payment_id) -> Payment:
     pay = (await db.execute(
-        select(Payment).where(Payment.id == payment_id, Payment.tenant_id == tenant_id)
+        select(Payment).where(Payment.id == payment_id, Payment.tenant_id == tenant_id,
+                              Payment.is_deleted == False)  # noqa: E712
     )).scalar_one_or_none()
     if pay is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Pembayaran tidak ditemukan")
@@ -199,6 +212,9 @@ async def delete_payment(
 ):
     pay = await _get_payment(db, ctx.tenant_id, payment_id)
     sched = pay.schedule_id
-    await db.delete(pay)
+    pay.is_deleted = True
+    pay.deleted_at = datetime.utcnow()
     await db.flush()
     await _recompute_schedule(db, ctx.tenant_id, sched)
+    await record_audit(db, ctx.tenant_id, ctx.user_id, "DELETE", "payments", payment_id,
+                       old_data={"amount": str(pay.amount), "source": pay.source.value})

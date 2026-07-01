@@ -1,15 +1,22 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { ArrowLeft, Plus, Trash2, Pencil, Loader2, CalendarClock, Wallet } from 'lucide-react'
+import { ArrowLeft, Plus, Trash2, Pencil, Loader2, CalendarClock, Wallet, History } from 'lucide-react'
 import Badge from '../../components/ui/Badge'
 import Modal from '../../components/ui/Modal'
 import { marketingService } from '../../services/marketing'
 import { propertyService } from '../../services/property'
 import { paymentService } from '../../services/payment'
+import { auditService } from '../../services/audit'
 import type {
   Client, Unit, PaymentSchedule, PaymentScheduleCreate, Payment, PaymentCreate,
-  PaymentSummary, PaymentMethod, PaymentSource,
+  PaymentSummary, PaymentMethod, PaymentSource, AuditEntry,
 } from '../../types'
+
+const actionLabel: Record<string, { label: string; variant: 'green' | 'blue' | 'red' }> = {
+  CREATE: { label: 'Dibuat', variant: 'green' },
+  UPDATE: { label: 'Diubah', variant: 'blue' },
+  DELETE: { label: 'Dihapus', variant: 'red' },
+}
 
 const fmt = (n?: number) =>
   n == null ? '—' : new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(Number(n))
@@ -31,6 +38,7 @@ export default function ClientPayments() {
   const [summary, setSummary] = useState<PaymentSummary | null>(null)
   const [schedules, setSchedules] = useState<PaymentSchedule[]>([])
   const [payments, setPayments] = useState<Payment[]>([])
+  const [audit, setAudit] = useState<AuditEntry[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
@@ -52,6 +60,7 @@ export default function ClientPayments() {
         paymentService.listPayments(clientId),
       ])
       setClient(cl); setSummary(sm); setSchedules(sc); setPayments(pm)
+      auditService.list({ resource: 'clients', resource_id: clientId, limit: 30 }).then(setAudit).catch(() => {})
       if (cl.unit_id) {
         const u = await propertyService.listUnits({ project_id: cl.project_id, size: 500 })
         setUnit(u.items.find((x) => x.id === cl.unit_id) ?? null)
@@ -212,6 +221,29 @@ export default function ClientPayments() {
             })}
           </tbody>
         </table>
+      </div>
+
+      {/* Riwayat (audit) */}
+      <div className="card overflow-hidden">
+        <div className="px-4 py-3 border-b border-slate-100">
+          <h2 className="text-sm font-semibold text-slate-900 flex items-center gap-2"><History size={15} /> Riwayat Data Pembeli</h2>
+        </div>
+        {audit.length === 0 ? (
+          <p className="px-4 py-6 text-center text-slate-400 text-sm">Belum ada riwayat.</p>
+        ) : (
+          <ul className="divide-y divide-slate-100">
+            {audit.map((a) => {
+              const act = actionLabel[a.action] ?? { label: a.action, variant: 'blue' as const }
+              return (
+                <li key={a.id} className="px-4 py-2.5 flex items-center gap-3 text-sm">
+                  <Badge label={act.label} variant={act.variant} />
+                  <span className="text-slate-600">oleh {a.user_name ?? '—'}</span>
+                  <span className="ml-auto text-xs text-slate-400">{new Date(a.created_at).toLocaleString('id-ID')}</span>
+                </li>
+              )
+            })}
+          </ul>
+        )}
       </div>
 
       <Modal open={schModal} onClose={() => setSchModal(false)} title={schEditId ? 'Edit Termin' : 'Tambah Termin'}>

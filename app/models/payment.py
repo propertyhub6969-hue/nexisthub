@@ -4,7 +4,7 @@ from datetime import date
 from sqlalchemy import String, Text, ForeignKey, Enum as SAEnum, Numeric, Integer, Date
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID
-from app.models.base import BaseModel
+from app.models.base import BaseModel, SoftDeleteMixin
 
 
 class ScheduleStatus(str, enum.Enum):
@@ -23,7 +23,7 @@ class PaymentSource(str, enum.Enum):
     BANK = "bank"         # Pencairan KPR dari bank
 
 
-class PaymentSchedule(BaseModel):
+class PaymentSchedule(BaseModel, SoftDeleteMixin):
     """Satu baris jadwal angsuran (termin) di bawah sebuah penjualan: DP / Angsuran / Pelunasan."""
     __tablename__ = "payment_schedules"
 
@@ -57,7 +57,7 @@ class PaymentSchedule(BaseModel):
         return f"<PaymentSchedule {self.label} [{self.status}]>"
 
 
-class Payment(BaseModel):
+class Payment(BaseModel, SoftDeleteMixin):
     """Pencatatan uang masuk (dari pembeli atau pencairan bank)."""
     __tablename__ = "payments"
 

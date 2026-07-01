@@ -3,7 +3,7 @@ import enum
 from sqlalchemy import String, Text, ForeignKey, Enum as SAEnum, Numeric, Integer, Date
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID
-from app.models.base import BaseModel
+from app.models.base import BaseModel, SoftDeleteMixin
 
 
 class LeadStatus(str, enum.Enum):
@@ -86,7 +86,7 @@ class Prospect(BaseModel):
         return f"<Prospect {self.full_name} [{self.status}]>"
 
 
-class Client(BaseModel):
+class Client(BaseModel, SoftDeleteMixin):
     """Pembeli yang sudah deal / tanda tangan kontrak."""
     __tablename__ = "clients"
 

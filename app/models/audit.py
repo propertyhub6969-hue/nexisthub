@@ -1,6 +1,6 @@
 import uuid
 from sqlalchemy import String, Text, ForeignKey
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID
 from app.models.base import BaseModel
 
@@ -23,6 +23,12 @@ class AuditLog(BaseModel):
     old_data: Mapped[str] = mapped_column(Text, nullable=True)          # JSON sebelum
     new_data: Mapped[str] = mapped_column(Text, nullable=True)          # JSON sesudah
     ip_address: Mapped[str] = mapped_column(String(50), nullable=True)
+
+    user: Mapped["User"] = relationship("User", foreign_keys=[user_id])
+
+    @property
+    def user_name(self):
+        return self.user.full_name if self.user else None
 
     def __repr__(self) -> str:
         return f"<AuditLog {self.action} on {self.resource}>"

@@ -1,5 +1,6 @@
 import uuid
 import math
+from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -11,6 +12,7 @@ from app.core.database import get_db
 from app.api.deps import get_current_context, AuthContext
 from app.models.marketing import Lead, Prospect, Client, ClientStatus
 from app.models.property import Unit, UnitStatus
+from app.core.audit import record_audit
 from app.schemas.marketing import (
     Paginated,
     LeadCreate, LeadUpdate, LeadResponse,
@@ -209,7 +211,7 @@ async def list_clients(
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=500),
 ):
-    conditions = [Client.tenant_id == ctx.tenant_id]
+    conditions = [Client.tenant_id == ctx.tenant_id, Client.is_deleted == False]  # noqa: E712
     if search:
         term = f"%{search}%"
         conditions.append(or_(
@@ -244,6 +246,7 @@ async def create_client(
     # sinkronkan status unit yang dipilih
     if client.unit_id:
         await _set_unit_status(db, ctx.tenant_id, client.unit_id, _unit_status_for_client(client))
+    await record_audit(db, ctx.tenant_id, ctx.user_id, "CREATE", "clients", client.id, new_data=payload)
     return await _get_client(db, ctx.tenant_id, client.id)
 
 
@@ -251,7 +254,7 @@ async def _assert_unit_free(db, tenant_id, unit_id, exclude_id=None):
     """Pastikan satu unit/kavling hanya dipakai satu pembeli aktif (nonaktif/batal diabaikan)."""
     q = select(Client.id).where(
         Client.tenant_id == tenant_id, Client.unit_id == unit_id,
-        Client.status != ClientStatus.INACTIVE,
+        Client.status != ClientStatus.INACTIVE, Client.is_deleted == False,  # noqa: E712
     )
     if exclude_id:
         q = q.where(Client.id != exclude_id)
@@ -279,7 +282,7 @@ async def _set_unit_status(db, tenant_id, unit_id, new_status):
 async def _get_client(db: AsyncSession, tenant_id: uuid.UUID, client_id: uuid.UUID) -> Client:
     result = await db.execute(
         select(Client).options(selectinload(Client.marketing_user))
-        .where(Client.id == client_id, Client.tenant_id == tenant_id)
+        .where(Client.id == client_id, Client.tenant_id == tenant_id, Client.is_deleted == False)  # noqa: E712
     )
     client = result.scalar_one_or_none()
     if client is None:
@@ -316,6 +319,7 @@ async def update_client(
         await _set_unit_status(db, ctx.tenant_id, old_unit_id, UnitStatus.AVAILABLE)
     if client.unit_id:
         await _set_unit_status(db, ctx.tenant_id, client.unit_id, _unit_status_for_client(client))
+    await record_audit(db, ctx.tenant_id, ctx.user_id, "UPDATE", "clients", client_id, new_data=data)
     return await _get_client(db, ctx.tenant_id, client_id)
 
 
@@ -327,7 +331,11 @@ async def delete_client(
 ):
     client = await _get_client(db, ctx.tenant_id, client_id)
     unit_id = client.unit_id
-    await db.delete(client)
+    # SOFT DELETE (arsip) — histori tak hilang
+    client.is_deleted = True
+    client.deleted_at = datetime.utcnow()
     await db.flush()
     # bebaskan unit-nya kembali
     await _set_unit_status(db, ctx.tenant_id, unit_id, UnitStatus.AVAILABLE)
+    await record_audit(db, ctx.tenant_id, ctx.user_id, "DELETE", "clients", client_id,
+                       old_data={"full_name": client.full_name})
