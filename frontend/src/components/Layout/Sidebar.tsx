@@ -26,8 +26,8 @@ const navItems = [
     icon: Users,
     children: [
       { label: 'Leads', to: '/marketing/leads', icon: Users },
-      { label: 'Prospects', to: '/marketing/prospects', icon: UserCheck },
-      { label: 'Clients', to: '/marketing/clients', icon: Handshake },
+      { label: 'Prospek', to: '/marketing/prospects', icon: UserCheck },
+      { label: 'Pembeli', to: '/marketing/clients', icon: Handshake },
     ],
   },
   {

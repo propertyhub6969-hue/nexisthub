@@ -5,8 +5,10 @@ import Header from './Header'
 const pageTitles: Record<string, string> = {
   '/dashboard': 'Dashboard',
   '/marketing/leads': 'Leads',
-  '/marketing/prospects': 'Prospects',
-  '/marketing/clients': 'Clients',
+  '/marketing/prospects': 'Prospek',
+  '/marketing/clients': 'Pembeli',
+  '/property/projects': 'Properti',
+  '/sales': 'Penjualan',
   '/procurement': 'Procurement',
   '/legal': 'Legal',
   '/reports': 'Reports',
@@ -14,7 +16,8 @@ const pageTitles: Record<string, string> = {
 
 export default function DashboardLayout() {
   const { pathname } = useLocation()
-  const title = pageTitles[pathname] ?? 'NexistHub'
+  const title = pageTitles[pathname]
+    ?? (pathname.includes('/units') ? 'Kelola Unit' : 'NexistHub')
 
   return (
     <div className="flex min-h-screen">

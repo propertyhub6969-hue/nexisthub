@@ -34,7 +34,7 @@ export default function Clients() {
       const res = await marketingService.listClients({ search: term || undefined, size: 100 })
       setClients(res.items)
     } catch {
-      setError('Gagal memuat data client.')
+      setError('Gagal memuat data pembeli.')
     } finally {
       setLoading(false)
     }
@@ -87,19 +87,19 @@ export default function Clients() {
       closeModal()
       await load(search)
     } catch {
-      setError('Gagal menyimpan client.')
+      setError('Gagal menyimpan pembeli.')
     } finally {
       setSaving(false)
     }
   }
 
   async function handleDelete(id: string) {
-    if (!confirm('Hapus client ini?')) return
+    if (!confirm('Hapus pembeli ini?')) return
     try {
       await marketingService.deleteClient(id)
       setClients((prev) => prev.filter((c) => c.id !== id))
     } catch {
-      setError('Gagal menghapus client.')
+      setError('Gagal menghapus pembeli.')
     }
   }
 
@@ -117,7 +117,7 @@ export default function Clients() {
         </div>
         <button className="btn-primary flex items-center gap-2 text-sm" onClick={openCreate}>
           <Plus size={14} />
-          Tambah Client
+          Tambah Pembeli
         </button>
       </div>
 
@@ -127,7 +127,7 @@ export default function Clients() {
         <table className="w-full text-sm">
           <thead className="bg-slate-50 border-b border-slate-200">
             <tr>
-              {['Nama Client', 'No. HP', 'No. Unit', 'Nilai Kontrak', 'Tgl Kontrak', 'Status', ''].map((h, i) => (
+              {['Nama Pembeli', 'No. HP', 'No. Unit', 'Nilai Kontrak', 'Tgl Kontrak', 'Status', ''].map((h, i) => (
                 <th key={i} className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">
                   {h}
                 </th>
@@ -138,7 +138,7 @@ export default function Clients() {
             {loading ? (
               <tr><td colSpan={7} className="px-4 py-10 text-center text-slate-400"><Loader2 size={18} className="inline animate-spin" /></td></tr>
             ) : clients.length === 0 ? (
-              <tr><td colSpan={7} className="px-4 py-8 text-center text-slate-400 text-sm">Belum ada client.</td></tr>
+              <tr><td colSpan={7} className="px-4 py-8 text-center text-slate-400 text-sm">Belum ada pembeli.</td></tr>
             ) : (
               clients.map((c) => {
                 const s = statusConfig[c.status]
@@ -175,7 +175,7 @@ export default function Clients() {
         </table>
       </div>
 
-      <Modal open={modalOpen} onClose={closeModal} title={editingId ? 'Edit Client' : 'Tambah Client'}>
+      <Modal open={modalOpen} onClose={closeModal} title={editingId ? 'Edit Pembeli' : 'Tambah Pembeli'}>
         <form onSubmit={handleSubmit} className="space-y-3">
           <div>
             <label className="label">Nama Lengkap *</label>

@@ -35,7 +35,7 @@ export default function Prospects() {
       const res = await marketingService.listProspects({ search: term || undefined, size: 100 })
       setProspects(res.items)
     } catch {
-      setError('Gagal memuat data prospect.')
+      setError('Gagal memuat data prospek.')
     } finally {
       setLoading(false)
     }
@@ -87,19 +87,19 @@ export default function Prospects() {
       closeModal()
       await load(search)
     } catch {
-      setError('Gagal menyimpan prospect.')
+      setError('Gagal menyimpan prospek.')
     } finally {
       setSaving(false)
     }
   }
 
   async function handleDelete(id: string) {
-    if (!confirm('Hapus prospect ini?')) return
+    if (!confirm('Hapus prospek ini?')) return
     try {
       await marketingService.deleteProspect(id)
       setProspects((prev) => prev.filter((p) => p.id !== id))
     } catch {
-      setError('Gagal menghapus prospect.')
+      setError('Gagal menghapus prospek.')
     }
   }
 
@@ -117,7 +117,7 @@ export default function Prospects() {
         </div>
         <button className="btn-primary flex items-center gap-2 text-sm" onClick={openCreate}>
           <Plus size={14} />
-          Tambah Prospect
+          Tambah Prospek
         </button>
       </div>
 
@@ -138,7 +138,7 @@ export default function Prospects() {
             {loading ? (
               <tr><td colSpan={7} className="px-4 py-10 text-center text-slate-400"><Loader2 size={18} className="inline animate-spin" /></td></tr>
             ) : prospects.length === 0 ? (
-              <tr><td colSpan={7} className="px-4 py-8 text-center text-slate-400 text-sm">Belum ada prospect.</td></tr>
+              <tr><td colSpan={7} className="px-4 py-8 text-center text-slate-400 text-sm">Belum ada prospek.</td></tr>
             ) : (
               prospects.map((p) => {
                 const s = statusConfig[p.status]
@@ -175,7 +175,7 @@ export default function Prospects() {
         </table>
       </div>
 
-      <Modal open={modalOpen} onClose={closeModal} title={editingId ? 'Edit Prospect' : 'Tambah Prospect'}>
+      <Modal open={modalOpen} onClose={closeModal} title={editingId ? 'Edit Prospek' : 'Tambah Prospek'}>
         <form onSubmit={handleSubmit} className="space-y-3">
           <div>
             <label className="label">Nama Lengkap *</label>

@@ -216,7 +216,7 @@ export default function Sales() {
               <option value="">Pilih pembeli...</option>
               {clients.map((c) => <option key={c.id} value={c.id}>{c.full_name}</option>)}
             </select>
-            {clients.length === 0 && <p className="text-xs text-amber-600 mt-1">Belum ada pembeli. Tambahkan dulu di menu Marketing → Clients.</p>}
+            {clients.length === 0 && <p className="text-xs text-amber-600 mt-1">Belum ada pembeli. Tambahkan dulu di menu Marketing → Pembeli.</p>}
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
