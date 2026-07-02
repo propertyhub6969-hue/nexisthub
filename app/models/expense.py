@@ -34,6 +34,9 @@ class Expense(BaseModel, SoftDeleteMixin):
     vendor_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("vendors.id", ondelete="SET NULL"), nullable=True
     )
+    contract_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("contractor_contracts.id", ondelete="SET NULL"), nullable=True, index=True
+    )  # tautan ke kontrak borongan (opname)
     category: Mapped[ExpenseCategory] = mapped_column(
         SAEnum(ExpenseCategory), default=ExpenseCategory.LAIN, nullable=False
     )

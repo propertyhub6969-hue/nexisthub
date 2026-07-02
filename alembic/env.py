@@ -25,6 +25,7 @@ from app.models.stock import StockMovement
 from app.models.expense import Expense
 from app.models.rab import RabTemplate, RabTemplateLine, UnitRabAdjustment
 from app.models.construction import UnitConstruction
+from app.models.contractor import ContractorContract
 from app.models.legal import DocumentTemplate, LegalDocument
 from app.models.reporting import ReportConfig
 from app.models.audit import AuditLog

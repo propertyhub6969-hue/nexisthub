@@ -667,6 +667,32 @@ export interface ConstructionUpsert {
   notes?: string
 }
 
+// ── Kontraktor Borongan ───────────────────────────────────────────
+export interface ContractorContract {
+  id: string
+  project_id: string
+  unit_id: string
+  unit_label: string
+  vendor_id?: string
+  vendor_name?: string
+  title?: string
+  total_value: number
+  paid: number
+  remaining: number
+  notes?: string
+  created_at: string
+  updated_at: string
+}
+export interface ContractCreate {
+  unit_id: string
+  vendor_id?: string
+  title?: string
+  total_value: number
+  notes?: string
+}
+export interface Opname { id: string; amount: number; expense_date?: string; description: string }
+export interface OpnameCreate { amount: number; expense_date?: string; description?: string }
+
 // ── Audit ─────────────────────────────────────────────────────────
 export interface AuditEntry {
   id: string
