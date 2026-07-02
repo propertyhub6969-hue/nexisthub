@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from app.api.v1.endpoints import auth, marketing, property, sale, payment, audit, tax, document, kpr, procurement, stock, legal, reporting
+from app.api.v1.endpoints import auth, marketing, property, sale, payment, audit, tax, document, kpr, procurement, stock, expense, legal, reporting
 
 api_router = APIRouter()
 
@@ -14,5 +14,6 @@ api_router.include_router(document.router,     prefix="/legal",       tags=["Leg
 api_router.include_router(kpr.router,          prefix="/kpr",         tags=["KPR"])
 api_router.include_router(procurement.router, prefix="/procurement", tags=["Procurement"])
 api_router.include_router(stock.router,        prefix="/procurement", tags=["Stock"])
+api_router.include_router(expense.router,      prefix="/procurement", tags=["Expense"])
 api_router.include_router(legal.router,       prefix="/legal",       tags=["Legal"])
 api_router.include_router(reporting.router,   prefix="/reporting",   tags=["Reporting"])

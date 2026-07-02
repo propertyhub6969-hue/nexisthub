@@ -7,7 +7,12 @@ import { propertyService } from '../../services/property'
 import type {
   Vendor, VendorCreate, PurchaseOrder, POCreate, POItemIn, VendorPayment,
   POStatus, Project, Unit, StockBalance, StockMovement, StockInCreate, StockOutCreate,
+  Expense, ExpenseCreate, ExpenseCategory, CostSummary,
 } from '../../types'
+
+const expCatLabel: Record<ExpenseCategory, string> = {
+  material: 'Material', upah: 'Upah', kontraktor: 'Kontraktor', operasional: 'Operasional', perizinan: 'Perizinan', lain: 'Lain-lain',
+}
 
 const fmt = (n?: number) => n == null ? 'Rp 0' : new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(Number(n))
 const poStatusCfg: Record<POStatus, { label: string; variant: 'gray' | 'blue' | 'green' | 'red' }> = {
@@ -19,9 +24,10 @@ const emptyVendor: VendorCreate = { name: '', category: 'Material', contact_name
 
 const emptyStockIn = (pid: string): StockInCreate => ({ project_id: pid, material_name: '', unit: '', quantity: 0, unit_price: 0, movement_date: '' })
 const emptyStockOut = (pid: string): StockOutCreate => ({ project_id: pid, material_name: '', unit: '', quantity: 0, unit_id: '', movement_date: '' })
+const emptyExpense = (pid: string): ExpenseCreate => ({ project_id: pid, unit_id: '', category: 'upah', description: '', amount: 0, expense_date: '', is_paid: true })
 
 export default function Procurement() {
-  const [tab, setTab] = useState<'po' | 'stock' | 'vendor'>('po')
+  const [tab, setTab] = useState<'po' | 'stock' | 'biaya' | 'vendor'>('po')
   const [vendors, setVendors] = useState<Vendor[]>([])
   const [projects, setProjects] = useState<Project[]>([])
   const [units, setUnits] = useState<Unit[]>([])
@@ -52,6 +58,12 @@ export default function Procurement() {
   const [inForm, setInForm] = useState<StockInCreate>(emptyStockIn(''))
   const [outModal, setOutModal] = useState(false)
   const [outForm, setOutForm] = useState<StockOutCreate>(emptyStockOut(''))
+  // Biaya
+  const [expenses, setExpenses] = useState<Expense[]>([])
+  const [cost, setCost] = useState<CostSummary | null>(null)
+  const [expModal, setExpModal] = useState(false)
+  const [expForm, setExpForm] = useState<ExpenseCreate>(emptyExpense(''))
+  const [expEditId, setExpEditId] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true); setError('')
@@ -109,6 +121,33 @@ export default function Procurement() {
     try { await procurementService.deleteMovement(id); await loadStock(stockProject) } catch { /* noop */ }
   }
   const stockUnits = units.filter((u) => u.project_id === stockProject)
+
+  const loadCost = useCallback(async (pid: string) => {
+    if (!pid) { setExpenses([]); setCost(null); return }
+    const [ex, cs] = await Promise.all([procurementService.listExpenses(pid), procurementService.costSummary(pid)])
+    setExpenses(ex); setCost(cs)
+  }, [])
+  useEffect(() => { if (tab === 'biaya' && stockProject) loadCost(stockProject) }, [tab, stockProject, loadCost])
+
+  function openExpCreate() { setExpEditId(null); setExpForm(emptyExpense(stockProject)); setExpModal(true) }
+  function openExpEdit(x: Expense) {
+    setExpEditId(x.id)
+    setExpForm({ project_id: stockProject, unit_id: x.unit_id ?? '', category: x.category, description: x.description, amount: x.amount, expense_date: x.expense_date ?? '', is_paid: x.is_paid })
+    setExpModal(true)
+  }
+  async function submitExp(e: React.FormEvent) {
+    e.preventDefault(); setSaving(true)
+    try {
+      const p = { ...expForm }; const rec = p as unknown as Record<string, unknown>
+      ;['unit_id', 'expense_date'].forEach((k) => { if (rec[k] === '') delete rec[k] })
+      if (expEditId) await procurementService.updateExpense(expEditId, p); else await procurementService.createExpense(p)
+      setExpModal(false); await loadCost(stockProject)
+    } catch { setError('Gagal menyimpan biaya.') } finally { setSaving(false) }
+  }
+  async function delExp(id: string) {
+    if (!confirm('Hapus (arsipkan) biaya ini?')) return
+    try { await procurementService.deleteExpense(id); await loadCost(stockProject) } catch { setError('Gagal menghapus biaya.') }
+  }
 
   // ── PO ──
   function openPoCreate() { setPoEditId(null); setPoForm(emptyPO()); setPoModal(true) }
@@ -193,10 +232,10 @@ export default function Procurement() {
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2 border-b border-slate-200">
-        {(['po', 'stock', 'vendor'] as const).map((t) => (
+        {(['po', 'stock', 'biaya', 'vendor'] as const).map((t) => (
           <button key={t} onClick={() => setTab(t)}
             className={`px-4 py-2 text-sm font-medium -mb-px border-b-2 ${tab === t ? 'border-brand-500 text-brand-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
-            {t === 'po' ? 'Purchase Order' : t === 'stock' ? 'Stok Material' : 'Vendor'}
+            {t === 'po' ? 'Purchase Order' : t === 'stock' ? 'Stok Material' : t === 'biaya' ? 'Biaya & Rollup' : 'Vendor'}
           </button>
         ))}
       </div>
@@ -291,6 +330,71 @@ export default function Procurement() {
                     <td className="px-4 py-2.5 text-slate-500">{fmt(m.unit_price)}</td>
                     <td className="px-4 py-2.5 text-slate-500">{m.movement_type === 'out' ? (unitLabel(m.unit_id) ?? 'Umum') : '—'}</td>
                     <td className="px-4 py-2.5"><button onClick={() => delMovement(m.id)} className="text-slate-400 hover:text-red-600"><Trash2 size={13} /></button></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      ) : tab === 'biaya' ? (
+        <>
+          <div className="flex items-center justify-between gap-3">
+            <select className="input max-w-xs" value={stockProject} onChange={(e) => setStockProject(e.target.value)}>
+              <option value="">Pilih proyek...</option>
+              {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+            <button className="btn-primary text-sm flex items-center gap-1" onClick={openExpCreate} disabled={!stockProject}><Plus size={14} /> Tambah Biaya</button>
+          </div>
+
+          {/* Rollup biaya per unit & umum */}
+          <div className="card overflow-hidden">
+            <div className="px-4 py-2.5 border-b border-slate-100 text-sm font-semibold text-slate-900">Rekap Biaya per Unit & Umum Proyek</div>
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 border-b border-slate-200"><tr>{['Alokasi', 'Material (stok)', 'Biaya lain', 'Total'].map((h, i) => (
+                <th key={i} className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">{h}</th>))}</tr></thead>
+              <tbody className="divide-y divide-slate-100">
+                {!cost || cost.rows.length === 0 ? (
+                  <tr><td colSpan={4} className="px-4 py-6 text-center text-slate-400 text-sm">Belum ada biaya. Distribusi material atau tambahkan biaya.</td></tr>
+                ) : cost.rows.map((r, i) => (
+                  <tr key={i} className="hover:bg-slate-50">
+                    <td className="px-4 py-2.5 font-medium text-slate-900">{r.unit_label}</td>
+                    <td className="px-4 py-2.5 text-slate-500">{fmt(r.material_cost)}</td>
+                    <td className="px-4 py-2.5 text-slate-500">{fmt(r.expense_cost)}</td>
+                    <td className="px-4 py-2.5 font-medium text-slate-900">{fmt(r.total)}</td>
+                  </tr>
+                ))}
+              </tbody>
+              {cost && (
+                <tfoot className="bg-slate-50 border-t border-slate-200"><tr>
+                  <td className="px-4 py-2.5 font-semibold">TOTAL PROYEK</td>
+                  <td className="px-4 py-2.5 font-semibold">{fmt(cost.total_material)}</td>
+                  <td className="px-4 py-2.5 font-semibold">{fmt(cost.total_expense)}</td>
+                  <td className="px-4 py-2.5 font-semibold text-brand-600">{fmt(cost.grand_total)}</td>
+                </tr></tfoot>
+              )}
+            </table>
+          </div>
+
+          {/* Ledger biaya */}
+          <div className="card overflow-hidden">
+            <div className="px-4 py-2.5 border-b border-slate-100 text-sm font-semibold text-slate-900">Daftar Biaya</div>
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 border-b border-slate-200"><tr>{['Tanggal', 'Kategori', 'Uraian', 'Alokasi', 'Jumlah', ''].map((h, i) => (
+                <th key={i} className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">{h}</th>))}</tr></thead>
+              <tbody className="divide-y divide-slate-100">
+                {expenses.length === 0 ? (
+                  <tr><td colSpan={6} className="px-4 py-6 text-center text-slate-400 text-sm">Belum ada biaya tercatat.</td></tr>
+                ) : expenses.map((x) => (
+                  <tr key={x.id} className="hover:bg-slate-50">
+                    <td className="px-4 py-2.5 text-slate-500 text-xs">{x.expense_date ? new Date(x.expense_date).toLocaleDateString('id-ID') : '—'}</td>
+                    <td className="px-4 py-2.5"><Badge label={expCatLabel[x.category]} variant="blue" /></td>
+                    <td className="px-4 py-2.5 font-medium text-slate-900">{x.description}</td>
+                    <td className="px-4 py-2.5 text-slate-500">{x.unit_id ? (unitLabel(x.unit_id) ?? 'Unit') : 'Umum'}</td>
+                    <td className="px-4 py-2.5 text-slate-600">{fmt(x.amount)}</td>
+                    <td className="px-4 py-2.5"><div className="flex items-center justify-end gap-3">
+                      <button onClick={() => openExpEdit(x)} className="text-slate-400 hover:text-brand-600"><Pencil size={14} /></button>
+                      <button onClick={() => delExp(x.id)} className="text-slate-400 hover:text-red-600"><Trash2 size={14} /></button>
+                    </div></td>
                   </tr>
                 ))}
               </tbody>
@@ -444,6 +548,32 @@ export default function Procurement() {
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" className="btn-secondary text-sm" onClick={() => setOutModal(false)}>Batal</button>
             <button type="submit" className="btn-primary text-sm flex items-center gap-2" disabled={saving}>{saving && <Loader2 size={14} className="animate-spin" />}Distribusi</button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Modal Biaya */}
+      <Modal open={expModal} onClose={() => setExpModal(false)} title={expEditId ? 'Edit Biaya' : 'Tambah Biaya'}>
+        <form onSubmit={submitExp} className="space-y-3">
+          <div><label className="label">Uraian *</label><input className="input" required value={expForm.description} onChange={(e) => setExpForm({ ...expForm, description: e.target.value })} /></div>
+          <div className="grid grid-cols-2 gap-3">
+            <div><label className="label">Kategori</label>
+              <select className="input" value={expForm.category} onChange={(e) => setExpForm({ ...expForm, category: e.target.value as ExpenseCategory })}>
+                {(Object.keys(expCatLabel) as ExpenseCategory[]).map((k) => <option key={k} value={k}>{expCatLabel[k]}</option>)}
+              </select></div>
+            <div><label className="label">Jumlah (Rp) *</label><input className="input" type="number" min={0} required value={expForm.amount || ''} onChange={(e) => setExpForm({ ...expForm, amount: Number(e.target.value) })} /></div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div><label className="label">Alokasi ke Unit</label>
+              <select className="input" value={expForm.unit_id} onChange={(e) => setExpForm({ ...expForm, unit_id: e.target.value })}>
+                <option value="">Umum proyek (tanpa unit)</option>
+                {stockUnits.map((u) => <option key={u.id} value={u.id}>{[u.block, u.unit_number].filter(Boolean).join('-')}</option>)}
+              </select></div>
+            <div><label className="label">Tanggal</label><input className="input" type="date" value={expForm.expense_date} onChange={(e) => setExpForm({ ...expForm, expense_date: e.target.value })} /></div>
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <button type="button" className="btn-secondary text-sm" onClick={() => setExpModal(false)}>Batal</button>
+            <button type="submit" className="btn-primary text-sm flex items-center gap-2" disabled={saving}>{saving && <Loader2 size={14} className="animate-spin" />}Simpan</button>
           </div>
         </form>
       </Modal>

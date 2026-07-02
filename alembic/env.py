@@ -22,6 +22,7 @@ from app.models.document import Document
 from app.models.kpr import Bank, KprApplication
 from app.models.procurement import Vendor, PurchaseOrder, PurchaseOrderItem, VendorPayment
 from app.models.stock import StockMovement
+from app.models.expense import Expense
 from app.models.legal import DocumentTemplate, LegalDocument
 from app.models.reporting import ReportConfig
 from app.models.audit import AuditLog

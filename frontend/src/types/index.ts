@@ -583,6 +583,50 @@ export interface StockOutCreate {
   notes?: string
 }
 
+// ── Biaya (Expense) & Rollup ──────────────────────────────────────
+export type ExpenseCategory = 'material' | 'upah' | 'kontraktor' | 'operasional' | 'perizinan' | 'lain'
+
+export interface Expense {
+  id: string
+  project_id: string
+  unit_id?: string
+  vendor_id?: string
+  vendor_name?: string
+  category: ExpenseCategory
+  description: string
+  amount: number
+  expense_date?: string
+  is_paid: boolean
+  notes?: string
+  created_at: string
+  updated_at: string
+}
+export interface ExpenseCreate {
+  project_id: string
+  unit_id?: string
+  vendor_id?: string
+  category?: ExpenseCategory
+  description: string
+  amount: number
+  expense_date?: string
+  is_paid?: boolean
+  notes?: string
+}
+export interface CostRow {
+  unit_id?: string
+  unit_label: string
+  material_cost: number
+  expense_cost: number
+  total: number
+}
+export interface CostSummary {
+  project_id: string
+  rows: CostRow[]
+  total_material: number
+  total_expense: number
+  grand_total: number
+}
+
 // ── Audit ─────────────────────────────────────────────────────────
 export interface AuditEntry {
   id: string

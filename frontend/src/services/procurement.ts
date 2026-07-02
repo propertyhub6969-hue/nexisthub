@@ -2,6 +2,7 @@ import api from './api'
 import type {
   Vendor, VendorCreate, PurchaseOrder, POCreate, VendorPayment, VendorPaymentCreate, PaginatedResponse,
   StockBalance, StockMovement, StockInCreate, StockOutCreate,
+  Expense, ExpenseCreate, CostSummary,
 } from '../types'
 
 export const procurementService = {
@@ -80,5 +81,27 @@ export const procurementService = {
   async deleteMovement(id: string): Promise<void> {
     await api.delete(`/procurement/stock/movements/${id}`)
   },
+
+  // ── Biaya (Expense) ──
+  async listExpenses(projectId: string): Promise<Expense[]> {
+    const { data } = await api.get<Expense[]>('/procurement/expenses', { params: { project_id: projectId } })
+    return data
+  },
+  async createExpense(payload: ExpenseCreate): Promise<Expense> {
+    const { data } = await api.post<Expense>('/procurement/expenses', payload)
+    return data
+  },
+  async updateExpense(id: string, payload: Partial<ExpenseCreate>): Promise<Expense> {
+    const { data } = await api.patch<Expense>(`/procurement/expenses/${id}`, payload)
+    return data
+  },
+  async deleteExpense(id: string): Promise<void> {
+    await api.delete(`/procurement/expenses/${id}`)
+  },
+  async costSummary(projectId: string): Promise<CostSummary> {
+    const { data } = await api.get<CostSummary>('/procurement/cost-summary', { params: { project_id: projectId } })
+    return data
+  },
 }
+
 
