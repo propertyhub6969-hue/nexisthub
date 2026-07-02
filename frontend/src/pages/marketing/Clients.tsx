@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { Plus, Search, Trash2, Pencil, Loader2, Wallet, Scale, Landmark } from 'lucide-react'
 import Badge from '../../components/ui/Badge'
@@ -54,8 +54,14 @@ export default function Clients() {
     authService.me().then(setMe).catch(() => {})
   }, [])
 
+  const firstLoad = useRef(true)
   useEffect(() => {
-    const t = setTimeout(() => load(search), 300)
+    if (firstLoad.current) {
+      firstLoad.current = false
+      load(search)          // load pertama langsung, tanpa jeda
+      return
+    }
+    const t = setTimeout(() => load(search), 300)  // debounce hanya untuk pencarian
     return () => clearTimeout(t)
   }, [search, load])
 
