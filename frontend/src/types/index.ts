@@ -627,6 +627,17 @@ export interface CostSummary {
   grand_total: number
 }
 
+// ── RAB & Kebocoran ───────────────────────────────────────────────
+export interface RabLine { id?: string; category: ExpenseCategory; amount: number }
+export interface RabTemplate { id: string; project_id: string; name: string; notes?: string; lines: RabLine[]; total: number; created_at: string; updated_at: string }
+export interface RabTemplateCreate { project_id: string; name: string; notes?: string; lines: { category: ExpenseCategory; amount: number }[] }
+export interface CatAmount { category: ExpenseCategory; amount: number }
+export interface RabAdjustment { id: string; unit_id: string; category: ExpenseCategory; description?: string; amount: number }
+export interface UnitRab { unit_id: string; rab_template_id?: string; template_name?: string; effective: CatAmount[]; effective_total: number; adjustments: RabAdjustment[] }
+export interface LeakageRow { unit_id: string; unit_label: string; rab_total: number; realisasi_total: number; selisih: number }
+export interface LeakageCat { category: ExpenseCategory; rab: number; realisasi: number; selisih: number }
+export interface LeakageDetail { unit_id: string; unit_label: string; rows: LeakageCat[]; rab_total: number; realisasi_total: number; selisih: number }
+
 // ── Audit ─────────────────────────────────────────────────────────
 export interface AuditEntry {
   id: string

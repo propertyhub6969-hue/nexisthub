@@ -3,6 +3,7 @@ import type {
   Vendor, VendorCreate, PurchaseOrder, POCreate, VendorPayment, VendorPaymentCreate, PaginatedResponse,
   StockBalance, StockMovement, StockInCreate, StockOutCreate,
   Expense, ExpenseCreate, CostSummary,
+  RabTemplate, RabTemplateCreate, UnitRab, RabAdjustment, LeakageRow, LeakageDetail, ExpenseCategory,
 } from '../types'
 
 export const procurementService = {
@@ -102,6 +103,47 @@ export const procurementService = {
     const { data } = await api.get<CostSummary>('/procurement/cost-summary', { params: { project_id: projectId } })
     return data
   },
+
+  // ── RAB & Kebocoran ──
+  async listTemplates(projectId: string): Promise<RabTemplate[]> {
+    const { data } = await api.get<RabTemplate[]>('/procurement/rab-templates', { params: { project_id: projectId } })
+    return data
+  },
+  async createTemplate(payload: RabTemplateCreate): Promise<RabTemplate> {
+    const { data } = await api.post<RabTemplate>('/procurement/rab-templates', payload)
+    return data
+  },
+  async updateTemplate(id: string, payload: Partial<RabTemplateCreate>): Promise<RabTemplate> {
+    const { data } = await api.patch<RabTemplate>(`/procurement/rab-templates/${id}`, payload)
+    return data
+  },
+  async deleteTemplate(id: string): Promise<void> {
+    await api.delete(`/procurement/rab-templates/${id}`)
+  },
+  async getUnitRab(unitId: string): Promise<UnitRab> {
+    const { data } = await api.get<UnitRab>(`/procurement/units/${unitId}/rab`)
+    return data
+  },
+  async setUnitTemplate(unitId: string, rab_template_id: string | null): Promise<UnitRab> {
+    const { data } = await api.patch<UnitRab>(`/procurement/units/${unitId}/rab`, { rab_template_id })
+    return data
+  },
+  async addAdjustment(unitId: string, payload: { category: ExpenseCategory; description?: string; amount: number }): Promise<RabAdjustment> {
+    const { data } = await api.post<RabAdjustment>(`/procurement/units/${unitId}/rab/adjustments`, payload)
+    return data
+  },
+  async deleteAdjustment(id: string): Promise<void> {
+    await api.delete(`/procurement/rab-adjustments/${id}`)
+  },
+  async leakage(projectId: string): Promise<LeakageRow[]> {
+    const { data } = await api.get<LeakageRow[]>('/procurement/leakage', { params: { project_id: projectId } })
+    return data
+  },
+  async leakageDetail(unitId: string): Promise<LeakageDetail> {
+    const { data } = await api.get<LeakageDetail>(`/procurement/leakage/${unitId}`)
+    return data
+  },
 }
+
 
 

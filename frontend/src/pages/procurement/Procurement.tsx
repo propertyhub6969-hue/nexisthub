@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react'
-import { Plus, Trash2, Pencil, Loader2, Wallet, X, PackageCheck, ArrowDownToLine, ArrowUpFromLine } from 'lucide-react'
+import { Plus, Trash2, Pencil, Loader2, Wallet, X, PackageCheck, ArrowDownToLine, ArrowUpFromLine, ClipboardList } from 'lucide-react'
 import Badge from '../../components/ui/Badge'
 import Modal from '../../components/ui/Modal'
 import { procurementService } from '../../services/procurement'
@@ -8,6 +8,7 @@ import type {
   Vendor, VendorCreate, PurchaseOrder, POCreate, POItemIn, VendorPayment,
   POStatus, Project, Unit, StockBalance, StockMovement, StockInCreate, StockOutCreate,
   Expense, ExpenseCreate, ExpenseCategory, CostSummary,
+  RabTemplate, RabTemplateCreate, UnitRab, LeakageRow, LeakageDetail,
 } from '../../types'
 
 const expCatLabel: Record<ExpenseCategory, string> = {
@@ -25,9 +26,10 @@ const emptyVendor: VendorCreate = { name: '', category: 'Material', contact_name
 const emptyStockIn = (pid: string): StockInCreate => ({ project_id: pid, material_name: '', unit: '', quantity: 0, unit_price: 0, movement_date: '' })
 const emptyStockOut = (pid: string): StockOutCreate => ({ project_id: pid, material_name: '', unit: '', quantity: 0, unit_id: '', movement_date: '' })
 const emptyExpense = (pid: string): ExpenseCreate => ({ project_id: pid, unit_id: '', category: 'upah', description: '', amount: 0, expense_date: '', is_paid: true })
+const emptyTpl = (pid: string): RabTemplateCreate => ({ project_id: pid, name: '', lines: [] })
 
 export default function Procurement() {
-  const [tab, setTab] = useState<'po' | 'stock' | 'biaya' | 'vendor'>('po')
+  const [tab, setTab] = useState<'po' | 'stock' | 'biaya' | 'rab' | 'vendor'>('po')
   const [vendors, setVendors] = useState<Vendor[]>([])
   const [projects, setProjects] = useState<Project[]>([])
   const [units, setUnits] = useState<Unit[]>([])
@@ -64,6 +66,16 @@ export default function Procurement() {
   const [expModal, setExpModal] = useState(false)
   const [expForm, setExpForm] = useState<ExpenseCreate>(emptyExpense(''))
   const [expEditId, setExpEditId] = useState<string | null>(null)
+  // RAB & kebocoran
+  const [templates, setTemplates] = useState<RabTemplate[]>([])
+  const [leakRows, setLeakRows] = useState<LeakageRow[]>([])
+  const [tplModal, setTplModal] = useState(false)
+  const [tplForm, setTplForm] = useState<RabTemplateCreate>(emptyTpl(''))
+  const [tplEditId, setTplEditId] = useState<string | null>(null)
+  const [unitRabModal, setUnitRabModal] = useState(false)
+  const [unitRab, setUnitRab] = useState<UnitRab | null>(null)
+  const [leakDetail, setLeakDetail] = useState<LeakageDetail | null>(null)
+  const [adjForm, setAdjForm] = useState<{ category: ExpenseCategory; description: string; amount: number }>({ category: 'material', description: '', amount: 0 })
 
   const load = useCallback(async () => {
     setLoading(true); setError('')
@@ -149,6 +161,61 @@ export default function Procurement() {
     try { await procurementService.deleteExpense(id); await loadCost(stockProject) } catch { setError('Gagal menghapus biaya.') }
   }
 
+  // ── RAB & kebocoran ──
+  const loadRab = useCallback(async (pid: string) => {
+    if (!pid) { setTemplates([]); setLeakRows([]); return }
+    const [tp, lk] = await Promise.all([procurementService.listTemplates(pid), procurementService.leakage(pid)])
+    setTemplates(tp); setLeakRows(lk)
+  }, [])
+  useEffect(() => { if (tab === 'rab' && stockProject) loadRab(stockProject) }, [tab, stockProject, loadRab])
+
+  function openTplCreate() { setTplEditId(null); setTplForm({ ...emptyTpl(stockProject), lines: [{ category: 'material', amount: 0 }] }); setTplModal(true) }
+  function openTplEdit(t: RabTemplate) {
+    setTplEditId(t.id)
+    setTplForm({ project_id: stockProject, name: t.name, notes: t.notes, lines: t.lines.map((l) => ({ category: l.category, amount: Number(l.amount) })) })
+    setTplModal(true)
+  }
+  const tplTotal = tplForm.lines.reduce((a, l) => a + Number(l.amount || 0), 0)
+  function addTplLine() { setTplForm((f) => ({ ...f, lines: [...f.lines, { category: 'material', amount: 0 }] })) }
+  function setTplLine(i: number, patch: Partial<{ category: ExpenseCategory; amount: number }>) {
+    setTplForm((f) => ({ ...f, lines: f.lines.map((l, idx) => idx === i ? { ...l, ...patch } : l) }))
+  }
+  function removeTplLine(i: number) { setTplForm((f) => ({ ...f, lines: f.lines.filter((_, idx) => idx !== i) })) }
+  async function submitTpl(e: React.FormEvent) {
+    e.preventDefault(); setSaving(true)
+    try {
+      if (tplEditId) await procurementService.updateTemplate(tplEditId, tplForm); else await procurementService.createTemplate(tplForm)
+      setTplModal(false); await loadRab(stockProject)
+    } catch { setError('Gagal menyimpan template RAB.') } finally { setSaving(false) }
+  }
+  async function delTpl(id: string) {
+    if (!confirm('Hapus template RAB ini?')) return
+    try { await procurementService.deleteTemplate(id); await loadRab(stockProject) } catch { setError('Gagal menghapus template.') }
+  }
+
+  async function openUnitRab(row: LeakageRow) {
+    const [ur, det] = await Promise.all([procurementService.getUnitRab(row.unit_id), procurementService.leakageDetail(row.unit_id)])
+    setUnitRab(ur); setLeakDetail(det); setAdjForm({ category: 'material', description: '', amount: 0 }); setUnitRabModal(true)
+  }
+  async function refreshUnitRab(unitId: string) {
+    const [ur, det, lk] = await Promise.all([procurementService.getUnitRab(unitId), procurementService.leakageDetail(unitId), procurementService.leakage(stockProject)])
+    setUnitRab(ur); setLeakDetail(det); setLeakRows(lk)
+  }
+  async function setUnitTpl(unitId: string, tid: string) {
+    try { await procurementService.setUnitTemplate(unitId, tid || null); await refreshUnitRab(unitId) } catch { setError('Gagal set template.') }
+  }
+  async function addAdj(e: React.FormEvent) {
+    e.preventDefault()
+    if (!unitRab || !adjForm.amount) return
+    setSaving(true)
+    try { await procurementService.addAdjustment(unitRab.unit_id, adjForm); setAdjForm({ category: 'material', description: '', amount: 0 }); await refreshUnitRab(unitRab.unit_id) }
+    catch { setError('Gagal menambah penyesuaian.') } finally { setSaving(false) }
+  }
+  async function delAdj(id: string) {
+    if (!unitRab) return
+    try { await procurementService.deleteAdjustment(id); await refreshUnitRab(unitRab.unit_id) } catch { /* noop */ }
+  }
+
   // ── PO ──
   function openPoCreate() { setPoEditId(null); setPoForm(emptyPO()); setPoModal(true) }
   function openPoEdit(po: PurchaseOrder) {
@@ -232,10 +299,10 @@ export default function Procurement() {
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2 border-b border-slate-200">
-        {(['po', 'stock', 'biaya', 'vendor'] as const).map((t) => (
+        {(['po', 'stock', 'biaya', 'rab', 'vendor'] as const).map((t) => (
           <button key={t} onClick={() => setTab(t)}
             className={`px-4 py-2 text-sm font-medium -mb-px border-b-2 ${tab === t ? 'border-brand-500 text-brand-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
-            {t === 'po' ? 'Purchase Order' : t === 'stock' ? 'Stok Material' : t === 'biaya' ? 'Biaya & Rollup' : 'Vendor'}
+            {t === 'po' ? 'Purchase Order' : t === 'stock' ? 'Stok Material' : t === 'biaya' ? 'Biaya & Rollup' : t === 'rab' ? 'RAB & Kebocoran' : 'Vendor'}
           </button>
         ))}
       </div>
@@ -395,6 +462,64 @@ export default function Procurement() {
                       <button onClick={() => openExpEdit(x)} className="text-slate-400 hover:text-brand-600"><Pencil size={14} /></button>
                       <button onClick={() => delExp(x.id)} className="text-slate-400 hover:text-red-600"><Trash2 size={14} /></button>
                     </div></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      ) : tab === 'rab' ? (
+        <>
+          <div className="flex items-center justify-between gap-3">
+            <select className="input max-w-xs" value={stockProject} onChange={(e) => setStockProject(e.target.value)}>
+              <option value="">Pilih proyek...</option>
+              {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+            <button className="btn-secondary text-sm flex items-center gap-1" onClick={openTplCreate} disabled={!stockProject}><Plus size={14} /> Template RAB</button>
+          </div>
+
+          {/* Templates */}
+          <div className="card overflow-hidden">
+            <div className="px-4 py-2.5 border-b border-slate-100 text-sm font-semibold text-slate-900">Template RAB per Tipe</div>
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 border-b border-slate-200"><tr>{['Tipe', 'Jumlah Kategori', 'Total RAB', ''].map((h, i) => (
+                <th key={i} className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">{h}</th>))}</tr></thead>
+              <tbody className="divide-y divide-slate-100">
+                {templates.length === 0 ? (
+                  <tr><td colSpan={4} className="px-4 py-6 text-center text-slate-400 text-sm">Belum ada template. Buat RAB per tipe (Tipe 36, dll).</td></tr>
+                ) : templates.map((t) => (
+                  <tr key={t.id} className="hover:bg-slate-50">
+                    <td className="px-4 py-2.5 font-medium text-slate-900">{t.name}</td>
+                    <td className="px-4 py-2.5 text-slate-500">{t.lines.length} kategori</td>
+                    <td className="px-4 py-2.5 text-slate-600">{fmt(t.total)}</td>
+                    <td className="px-4 py-2.5"><div className="flex items-center justify-end gap-3">
+                      <button onClick={() => openTplEdit(t)} className="text-slate-400 hover:text-brand-600"><Pencil size={14} /></button>
+                      <button onClick={() => delTpl(t.id)} className="text-slate-400 hover:text-red-600"><Trash2 size={14} /></button>
+                    </div></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Laporan Kebocoran */}
+          <div className="card overflow-hidden">
+            <div className="px-4 py-2.5 border-b border-slate-100 text-sm font-semibold text-slate-900 flex items-center gap-2"><ClipboardList size={15} /> Laporan Kebocoran per Unit</div>
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 border-b border-slate-200"><tr>{['Unit', 'RAB Efektif', 'Realisasi', 'Selisih', ''].map((h, i) => (
+                <th key={i} className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">{h}</th>))}</tr></thead>
+              <tbody className="divide-y divide-slate-100">
+                {leakRows.length === 0 ? (
+                  <tr><td colSpan={5} className="px-4 py-6 text-center text-slate-400 text-sm">Belum ada data. Assign template RAB ke unit & catat biaya/distribusi.</td></tr>
+                ) : leakRows.map((r) => (
+                  <tr key={r.unit_id} className="hover:bg-slate-50 cursor-pointer" onClick={() => openUnitRab(r)}>
+                    <td className="px-4 py-2.5 font-medium text-slate-900">{r.unit_label}</td>
+                    <td className="px-4 py-2.5 text-slate-500">{fmt(r.rab_total)}</td>
+                    <td className="px-4 py-2.5 text-slate-500">{fmt(r.realisasi_total)}</td>
+                    <td className={`px-4 py-2.5 font-medium ${Number(r.selisih) < 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                      {Number(r.selisih) < 0 ? `Over ${fmt(Math.abs(Number(r.selisih)))}` : `Sisa ${fmt(r.selisih)}`}
+                    </td>
+                    <td className="px-4 py-2.5 text-right text-xs text-brand-600">Kelola →</td>
                   </tr>
                 ))}
               </tbody>
@@ -576,6 +701,94 @@ export default function Procurement() {
             <button type="submit" className="btn-primary text-sm flex items-center gap-2" disabled={saving}>{saving && <Loader2 size={14} className="animate-spin" />}Simpan</button>
           </div>
         </form>
+      </Modal>
+
+      {/* Modal Template RAB */}
+      <Modal open={tplModal} onClose={() => setTplModal(false)} title={tplEditId ? 'Edit Template RAB' : 'Template RAB per Tipe'}>
+        <form onSubmit={submitTpl} className="space-y-3">
+          <div><label className="label">Nama Tipe *</label><input className="input" required placeholder="Tipe 36" value={tplForm.name} onChange={(e) => setTplForm({ ...tplForm, name: e.target.value })} /></div>
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="label mb-0">Anggaran per Kategori</label>
+              <button type="button" onClick={addTplLine} className="text-xs text-brand-600 hover:underline flex items-center gap-1"><Plus size={12} /> Baris</button>
+            </div>
+            <div className="space-y-2">
+              {tplForm.lines.map((l, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <select className="input flex-[2]" value={l.category} onChange={(e) => setTplLine(i, { category: e.target.value as ExpenseCategory })}>
+                    {(Object.keys(expCatLabel) as ExpenseCategory[]).map((k) => <option key={k} value={k}>{expCatLabel[k]}</option>)}
+                  </select>
+                  <input className="input flex-[2]" type="number" min={0} placeholder="anggaran" value={l.amount || ''} onChange={(e) => setTplLine(i, { amount: Number(e.target.value) })} />
+                  <button type="button" onClick={() => removeTplLine(i)} className="text-slate-400 hover:text-red-600"><X size={14} /></button>
+                </div>
+              ))}
+            </div>
+            <div className="text-right mt-2 text-sm font-semibold">Total: {fmt(tplTotal)}</div>
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <button type="button" className="btn-secondary text-sm" onClick={() => setTplModal(false)}>Batal</button>
+            <button type="submit" className="btn-primary text-sm flex items-center gap-2" disabled={saving}>{saving && <Loader2 size={14} className="animate-spin" />}Simpan</button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Modal Kelola RAB Unit */}
+      <Modal open={unitRabModal} onClose={() => setUnitRabModal(false)} title={`RAB & Kebocoran — ${leakDetail?.unit_label ?? ''}`}>
+        {unitRab && leakDetail && (
+          <div className="space-y-4">
+            <div>
+              <label className="label">Template Tipe</label>
+              <select className="input" value={unitRab.rab_template_id ?? ''} onChange={(e) => setUnitTpl(unitRab.unit_id, e.target.value)}>
+                <option value="">— belum dipilih —</option>
+                {templates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+              </select>
+            </div>
+
+            <div>
+              <p className="text-xs font-semibold text-slate-500 uppercase mb-1">Kebocoran per Kategori</p>
+              <table className="w-full text-sm">
+                <thead className="bg-slate-50"><tr>{['Kategori', 'RAB', 'Realisasi', 'Selisih'].map((h, i) => (
+                  <th key={i} className="px-2 py-1.5 text-left text-xs font-semibold text-slate-500">{h}</th>))}</tr></thead>
+                <tbody className="divide-y divide-slate-100">
+                  {leakDetail.rows.map((c, i) => (
+                    <tr key={i}>
+                      <td className="px-2 py-1.5">{expCatLabel[c.category]}</td>
+                      <td className="px-2 py-1.5 text-slate-500">{fmt(c.rab)}</td>
+                      <td className="px-2 py-1.5 text-slate-500">{fmt(c.realisasi)}</td>
+                      <td className={`px-2 py-1.5 font-medium ${Number(c.selisih) < 0 ? 'text-red-600' : 'text-emerald-600'}`}>{fmt(c.selisih)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot className="bg-slate-50 border-t"><tr>
+                  <td className="px-2 py-1.5 font-semibold">Total</td>
+                  <td className="px-2 py-1.5 font-semibold">{fmt(leakDetail.rab_total)}</td>
+                  <td className="px-2 py-1.5 font-semibold">{fmt(leakDetail.realisasi_total)}</td>
+                  <td className={`px-2 py-1.5 font-semibold ${Number(leakDetail.selisih) < 0 ? 'text-red-600' : 'text-emerald-600'}`}>{fmt(leakDetail.selisih)}</td>
+                </tr></tfoot>
+              </table>
+            </div>
+
+            <div>
+              <p className="text-xs font-semibold text-slate-500 uppercase mb-1">Penyesuaian (tambahan mutu)</p>
+              {unitRab.adjustments.map((a) => (
+                <div key={a.id} className="flex items-center justify-between text-sm border-b border-slate-100 py-1.5">
+                  <span>{expCatLabel[a.category]} — {a.description || '—'}</span>
+                  <span className="flex items-center gap-2"><span className="text-slate-600">{fmt(a.amount)}</span>
+                    <button onClick={() => delAdj(a.id)} className="text-slate-400 hover:text-red-600"><Trash2 size={13} /></button></span>
+                </div>
+              ))}
+              <form onSubmit={addAdj} className="flex items-end gap-2 pt-2">
+                <div className="flex-[2]"><label className="label">Kategori</label>
+                  <select className="input" value={adjForm.category} onChange={(e) => setAdjForm({ ...adjForm, category: e.target.value as ExpenseCategory })}>
+                    {(Object.keys(expCatLabel) as ExpenseCategory[]).map((k) => <option key={k} value={k}>{expCatLabel[k]}</option>)}
+                  </select></div>
+                <div className="flex-[3]"><label className="label">Uraian</label><input className="input" placeholder="Upgrade granit" value={adjForm.description} onChange={(e) => setAdjForm({ ...adjForm, description: e.target.value })} /></div>
+                <div className="flex-[2]"><label className="label">Nilai (±)</label><input className="input" type="number" required value={adjForm.amount || ''} onChange={(e) => setAdjForm({ ...adjForm, amount: Number(e.target.value) })} /></div>
+                <button type="submit" className="btn-primary text-sm h-[38px]">+</button>
+              </form>
+            </div>
+          </div>
+        )}
       </Modal>
 
       {/* Modal Vendor */}

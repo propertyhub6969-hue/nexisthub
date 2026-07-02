@@ -68,6 +68,10 @@ class Unit(BaseModel):
     status: Mapped[UnitStatus] = mapped_column(
         SAEnum(UnitStatus), default=UnitStatus.AVAILABLE, nullable=False
     )
+    rab_template_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("rab_templates.id", ondelete="SET NULL"),
+        nullable=True, index=True
+    )  # RAB tipe yang dipakai unit ini
     # Posisi untuk siteplan interaktif (mis. persen 0-100 relatif terhadap gambar)
     position_x: Mapped[float] = mapped_column(Numeric(8, 4), nullable=True)
     position_y: Mapped[float] = mapped_column(Numeric(8, 4), nullable=True)
