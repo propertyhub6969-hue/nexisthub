@@ -10,6 +10,7 @@ from app.core.database import get_db
 from app.core.audit import record_audit
 from app.api.deps import get_current_context, AuthContext
 from app.models.kpr import Bank, KprApplication, KprStage
+from app.models.marketing import Client
 from app.models.payment import Payment, PaymentSource, PaymentMethod
 from app.schemas.kpr import (
     BankCreate, BankUpdate, BankResponse,
@@ -80,7 +81,15 @@ async def list_kpr(client_id: uuid.UUID = Query(...), ctx: AuthContext = Depends
 
 @router.post("/applications", response_model=KprResponse, status_code=status.HTTP_201_CREATED)
 async def create_kpr(payload: KprCreate, ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db)):
-    k = KprApplication(tenant_id=ctx.tenant_id, **payload.model_dump())
+    data = payload.model_dump()
+    # Tgl Collect Berkas default = tanggal pembeli pertama kali dientri (bila tak diisi manual)
+    if data.get("submitted_date") is None:
+        client = (await db.execute(
+            select(Client).where(Client.id == payload.client_id, Client.tenant_id == ctx.tenant_id)
+        )).scalar_one_or_none()
+        if client is not None:
+            data["submitted_date"] = client.created_at.date()
+    k = KprApplication(tenant_id=ctx.tenant_id, **data)
     db.add(k); await db.flush()
     await record_audit(db, ctx.tenant_id, ctx.user_id, "CREATE", "kpr_applications", k.id, new_data=payload)
     return await _load_kpr(db, ctx.tenant_id, k.id)

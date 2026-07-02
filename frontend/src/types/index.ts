@@ -447,6 +447,7 @@ export interface KprApplication {
   sp3k_number?: string
   sikasep_number?: string
   submitted_date?: string
+  bank_submission_date?: string
   sp3k_date?: string
   akad_date?: string
   pencairan_date?: string
@@ -466,6 +467,7 @@ export interface KprCreate {
   sp3k_number?: string
   sikasep_number?: string
   submitted_date?: string
+  bank_submission_date?: string
   sp3k_date?: string
   akad_date?: string
   notes?: string

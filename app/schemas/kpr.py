@@ -40,7 +40,8 @@ class KprBase(BaseModel):
     interest_rate: Optional[Decimal] = Field(None, ge=0)
     sp3k_number: Optional[str] = Field(None, max_length=100)
     sikasep_number: Optional[str] = Field(None, max_length=100)
-    submitted_date: Optional[date] = None
+    submitted_date: Optional[date] = None      # Tgl Collect Berkas
+    bank_submission_date: Optional[date] = None  # Tgl Pengajuan ke Bank
     sp3k_date: Optional[date] = None
     akad_date: Optional[date] = None
     notes: Optional[str] = None
@@ -59,6 +60,7 @@ class KprUpdate(BaseModel):
     sp3k_number: Optional[str] = Field(None, max_length=100)
     sikasep_number: Optional[str] = Field(None, max_length=100)
     submitted_date: Optional[date] = None
+    bank_submission_date: Optional[date] = None
     sp3k_date: Optional[date] = None
     akad_date: Optional[date] = None
     notes: Optional[str] = None

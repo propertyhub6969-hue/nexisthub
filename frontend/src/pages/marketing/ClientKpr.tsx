@@ -60,7 +60,8 @@ export default function ClientKpr() {
         bank_id: kpr.bank_id || undefined, stage: kpr.stage,
         plafond: kpr.plafond, tenor_months: kpr.tenor_months, interest_rate: kpr.interest_rate,
         sp3k_number: kpr.sp3k_number || undefined, sikasep_number: kpr.sikasep_number || undefined,
-        submitted_date: kpr.submitted_date || undefined, sp3k_date: kpr.sp3k_date || undefined, akad_date: kpr.akad_date || undefined,
+        submitted_date: kpr.submitted_date || undefined, bank_submission_date: kpr.bank_submission_date || undefined,
+        sp3k_date: kpr.sp3k_date || undefined, akad_date: kpr.akad_date || undefined,
         notes: kpr.notes || undefined,
       })
       setKpr(k)
@@ -146,14 +147,24 @@ export default function ClientKpr() {
               <div><label className="label">Tenor (bulan)</label><input className="input" type="number" min={0} value={kpr.tenor_months ?? ''} onChange={(e) => set('tenor_months', e.target.value ? Number(e.target.value) : undefined)} /></div>
               <div><label className="label">Bunga (%)</label><input className="input" type="number" step="0.01" min={0} value={kpr.interest_rate ?? ''} onChange={(e) => set('interest_rate', e.target.value ? Number(e.target.value) : undefined)} /></div>
             </div>
-            <div><label className="label">Tgl Pengajuan</label><input className="input max-w-[240px]" type="date" value={kpr.submitted_date ?? ''} onChange={(e) => set('submitted_date', e.target.value)} /></div>
+            <div>
+              <label className="label">Tgl Collect Berkas</label>
+              <input className="input max-w-[240px]" type="date" value={kpr.submitted_date ?? ''} onChange={(e) => set('submitted_date', e.target.value)} />
+              <p className="text-xs text-slate-400 mt-1">Default terisi otomatis dari tanggal pembeli pertama kali dientri.</p>
+            </div>
 
             {curIdx >= stageIndex('berkas_masuk_bank') && (
               <div className="pt-2 border-t border-slate-100">
                 <p className="text-xs font-medium text-slate-400 mb-2">Berkas Masuk Bank</p>
-                <div className="max-w-xs">
-                  <label className="label">No. SiKasep/SiKumbang</label>
-                  <input className="input" placeholder="untuk subsidi" value={kpr.sikasep_number ?? ''} onChange={(e) => set('sikasep_number', e.target.value)} />
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="label">Tgl Pengajuan ke Bank</label>
+                    <input className="input" type="date" value={kpr.bank_submission_date ?? ''} onChange={(e) => set('bank_submission_date', e.target.value)} />
+                  </div>
+                  <div>
+                    <label className="label">No. SiKasep/SiKumbang</label>
+                    <input className="input" placeholder="untuk subsidi" value={kpr.sikasep_number ?? ''} onChange={(e) => set('sikasep_number', e.target.value)} />
+                  </div>
                 </div>
               </div>
             )}
