@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { ArrowLeft, Loader2, Landmark, CheckCircle2, Banknote } from 'lucide-react'
+import { ArrowLeft, Loader2, Landmark, CheckCircle2, Banknote, Check } from 'lucide-react'
 import Modal from '../../components/ui/Modal'
 import { marketingService } from '../../services/marketing'
 import { kprService } from '../../services/kpr'
@@ -25,6 +25,7 @@ export default function ClientKpr() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
+  const [savedTick, setSavedTick] = useState(0) // berubah tiap simpan sukses → memicu indikator "Tersimpan"
   const [disModal, setDisModal] = useState(false)
   const [disAmount, setDisAmount] = useState<number | undefined>(undefined)
   const [disDate, setDisDate] = useState('')
@@ -53,6 +54,7 @@ export default function ClientKpr() {
   async function save() {
     if (!kpr) return
     setSaving(true)
+    setError('')
     try {
       const k = await kprService.updateApplication(kpr.id, {
         bank_id: kpr.bank_id || undefined, stage: kpr.stage,
@@ -62,8 +64,16 @@ export default function ClientKpr() {
         notes: kpr.notes || undefined,
       })
       setKpr(k)
-    } catch { setError('Gagal menyimpan.') } finally { setSaving(false) }
+      setSavedTick((t) => t + 1)
+    } catch { setError('Gagal menyimpan. Periksa isian Anda.') } finally { setSaving(false) }
   }
+
+  // Sembunyikan indikator "Tersimpan" otomatis setelah 2.5 detik
+  useEffect(() => {
+    if (savedTick === 0) return
+    const t = setTimeout(() => setSavedTick(0), 2500)
+    return () => clearTimeout(t)
+  }, [savedTick])
 
   async function submitDisburse(e: React.FormEvent) {
     e.preventDefault()
@@ -114,7 +124,7 @@ export default function ClientKpr() {
             </div>
           </div>
 
-          {/* Form */}
+          {/* Form — field tahap lanjut baru muncul setelah tahap itu tercapai */}
           <div className="card p-5 space-y-3">
             <div className="grid grid-cols-2 gap-3">
               <div>
@@ -136,16 +146,44 @@ export default function ClientKpr() {
               <div><label className="label">Tenor (bulan)</label><input className="input" type="number" min={0} value={kpr.tenor_months ?? ''} onChange={(e) => set('tenor_months', e.target.value ? Number(e.target.value) : undefined)} /></div>
               <div><label className="label">Bunga (%)</label><input className="input" type="number" step="0.01" min={0} value={kpr.interest_rate ?? ''} onChange={(e) => set('interest_rate', e.target.value ? Number(e.target.value) : undefined)} /></div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div><label className="label">No. SP3K</label><input className="input" value={kpr.sp3k_number ?? ''} onChange={(e) => set('sp3k_number', e.target.value)} /></div>
-              <div><label className="label">No. SiKasep/SiKumbang</label><input className="input" placeholder="untuk subsidi" value={kpr.sikasep_number ?? ''} onChange={(e) => set('sikasep_number', e.target.value)} /></div>
-            </div>
-            <div className="grid grid-cols-3 gap-3">
-              <div><label className="label">Tgl Pengajuan</label><input className="input" type="date" value={kpr.submitted_date ?? ''} onChange={(e) => set('submitted_date', e.target.value)} /></div>
-              <div><label className="label">Tgl SP3K</label><input className="input" type="date" value={kpr.sp3k_date ?? ''} onChange={(e) => set('sp3k_date', e.target.value)} /></div>
-              <div><label className="label">Tgl Akad</label><input className="input" type="date" value={kpr.akad_date ?? ''} onChange={(e) => set('akad_date', e.target.value)} /></div>
-            </div>
-            <div className="flex justify-end">
+            <div><label className="label">Tgl Pengajuan</label><input className="input max-w-[240px]" type="date" value={kpr.submitted_date ?? ''} onChange={(e) => set('submitted_date', e.target.value)} /></div>
+
+            {curIdx >= stageIndex('berkas_masuk_bank') && (
+              <div className="pt-2 border-t border-slate-100">
+                <p className="text-xs font-medium text-slate-400 mb-2">Berkas Masuk Bank</p>
+                <div className="max-w-xs">
+                  <label className="label">No. SiKasep/SiKumbang</label>
+                  <input className="input" placeholder="untuk subsidi" value={kpr.sikasep_number ?? ''} onChange={(e) => set('sikasep_number', e.target.value)} />
+                </div>
+              </div>
+            )}
+
+            {curIdx >= stageIndex('sp3k') && (
+              <div className="pt-2 border-t border-slate-100">
+                <p className="text-xs font-medium text-slate-400 mb-2">SP3K</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div><label className="label">No. SP3K</label><input className="input" value={kpr.sp3k_number ?? ''} onChange={(e) => set('sp3k_number', e.target.value)} /></div>
+                  <div><label className="label">Tgl SP3K</label><input className="input" type="date" value={kpr.sp3k_date ?? ''} onChange={(e) => set('sp3k_date', e.target.value)} /></div>
+                </div>
+              </div>
+            )}
+
+            {curIdx >= stageIndex('akad_kredit') && (
+              <div className="pt-2 border-t border-slate-100">
+                <p className="text-xs font-medium text-slate-400 mb-2">Akad Kredit</p>
+                <div className="max-w-[240px]">
+                  <label className="label">Tgl Akad</label>
+                  <input className="input" type="date" value={kpr.akad_date ?? ''} onChange={(e) => set('akad_date', e.target.value)} />
+                </div>
+              </div>
+            )}
+
+            <div className="flex items-center justify-end gap-3">
+              {savedTick > 0 && (
+                <span className="text-sm text-emerald-600 flex items-center gap-1.5">
+                  <Check size={15} /> Tersimpan
+                </span>
+              )}
               <button className="btn-primary text-sm flex items-center gap-2" onClick={save} disabled={saving}>{saving && <Loader2 size={14} className="animate-spin" />}Simpan</button>
             </div>
           </div>
