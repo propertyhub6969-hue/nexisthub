@@ -1,6 +1,7 @@
 import api from './api'
 import type {
   Vendor, VendorCreate, PurchaseOrder, POCreate, VendorPayment, VendorPaymentCreate, PaginatedResponse,
+  StockBalance, StockMovement, StockInCreate, StockOutCreate,
 } from '../types'
 
 export const procurementService = {
@@ -54,4 +55,30 @@ export const procurementService = {
   async deletePayment(id: string): Promise<void> {
     await api.delete(`/procurement/vendor-payments/${id}`)
   },
+
+  // ── Stok Material ──
+  async stockBalance(projectId: string): Promise<StockBalance[]> {
+    const { data } = await api.get<StockBalance[]>('/procurement/stock', { params: { project_id: projectId } })
+    return data
+  },
+  async stockMovements(projectId: string): Promise<StockMovement[]> {
+    const { data } = await api.get<StockMovement[]>('/procurement/stock/movements', { params: { project_id: projectId } })
+    return data
+  },
+  async stockIn(payload: StockInCreate): Promise<StockMovement> {
+    const { data } = await api.post<StockMovement>('/procurement/stock/in', payload)
+    return data
+  },
+  async stockOut(payload: StockOutCreate): Promise<StockMovement> {
+    const { data } = await api.post<StockMovement>('/procurement/stock/out', payload)
+    return data
+  },
+  async receivePO(poId: string): Promise<StockMovement[]> {
+    const { data } = await api.post<StockMovement[]>(`/procurement/stock/receive-po/${poId}`)
+    return data
+  },
+  async deleteMovement(id: string): Promise<void> {
+    await api.delete(`/procurement/stock/movements/${id}`)
+  },
 }
+

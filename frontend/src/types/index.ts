@@ -536,6 +536,53 @@ export interface VendorPaymentCreate {
   notes?: string
 }
 
+// ── Stok Material ─────────────────────────────────────────────────
+export type MovementType = 'in' | 'out'
+
+export interface StockBalance {
+  material_name: string
+  unit?: string
+  qty_in: number
+  qty_out: number
+  balance: number
+  avg_price: number
+  value: number
+}
+export interface StockMovement {
+  id: string
+  project_id: string
+  material_name: string
+  unit?: string
+  movement_type: MovementType
+  source: string
+  quantity: number
+  unit_price: number
+  unit_id?: string
+  po_id?: string
+  movement_date?: string
+  notes?: string
+  created_at: string
+}
+export interface StockInCreate {
+  project_id: string
+  material_name: string
+  unit?: string
+  quantity: number
+  unit_price?: number
+  movement_date?: string
+  po_id?: string
+  notes?: string
+}
+export interface StockOutCreate {
+  project_id: string
+  material_name: string
+  unit?: string
+  quantity: number
+  unit_id?: string
+  movement_date?: string
+  notes?: string
+}
+
 // ── Audit ─────────────────────────────────────────────────────────
 export interface AuditEntry {
   id: string
