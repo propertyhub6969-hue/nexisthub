@@ -2,7 +2,7 @@ import uuid
 import math
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, Query, status, UploadFile, File, Request
 from fastapi.responses import Response
 from sqlalchemy import select, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -141,18 +141,30 @@ async def upload_siteplan(
 @router.get("/projects/{project_id}/siteplan")
 async def get_siteplan(
     project_id: uuid.UUID,
+    request: Request,
     ctx: AuthContext = Depends(get_current_context),
     db: AsyncSession = Depends(get_db),
 ):
-    """Ambil gambar siteplan proyek."""
-    row = (await db.execute(
-        select(Project.siteplan_data, Project.siteplan_type).where(
+    """Ambil gambar siteplan proyek (dengan ETag agar kunjungan berikutnya cepat/304)."""
+    # Ambil metadata dulu (tanpa blob) untuk hitung ETag & cek If-None-Match
+    meta = (await db.execute(
+        select(Project.siteplan_size, Project.siteplan_type, Project.updated_at).where(
             Project.id == project_id, Project.tenant_id == ctx.tenant_id)
     )).first()
-    if row is None or row[0] is None:
+    if meta is None or meta[0] is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Siteplan belum ada")
-    data, ctype = row
-    return Response(content=data, media_type=ctype or "image/png")
+    size, ctype, updated = meta
+    etag = f'"sp-{size}-{int(updated.timestamp())}"'
+    cache_headers = {"ETag": etag, "Cache-Control": "private, max-age=60, must-revalidate"}
+    if request.headers.get("if-none-match") == etag:
+        return Response(status_code=status.HTTP_304_NOT_MODIFIED, headers=cache_headers)
+    data = (await db.execute(
+        select(Project.siteplan_data).where(
+            Project.id == project_id, Project.tenant_id == ctx.tenant_id)
+    )).scalar_one_or_none()
+    if data is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Siteplan belum ada")
+    return Response(content=data, media_type=ctype or "image/png", headers=cache_headers)
 
 
 @router.delete("/projects/{project_id}/siteplan", response_model=ProjectResponse)

@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { ArrowLeft, Loader2, Upload, ImageOff, Trash2, Save, MapPin, Eye, Pencil } from 'lucide-react'
+import { ArrowLeft, Loader2, Upload, ImageOff, Trash2, Save, MapPin, Eye, Pencil, LayoutGrid } from 'lucide-react'
 import Badge from '../../components/ui/Badge'
 import { propertyService } from '../../services/property'
 import type { Project, Unit, UnitStatus } from '../../types'
@@ -16,6 +16,33 @@ const fmt = (n?: number) =>
   n == null ? '—' : new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(Number(n))
 
 type Pos = { x: number; y: number }
+
+// Tata semua unit dalam grid rapi (diurutkan per blok lalu nomor) sebagai posisi awal.
+// Cocok untuk proyek besar (200+ unit) — developer tinggal geser yang perlu dirapikan.
+function gridLayout(list: Unit[]): Record<string, Pos> {
+  const n = list.length
+  if (n === 0) return {}
+  const sorted = [...list].sort((a, b) => {
+    const bl = (a.block || '').localeCompare(b.block || '')
+    if (bl !== 0) return bl
+    return a.unit_number.localeCompare(b.unit_number, undefined, { numeric: true })
+  })
+  const cols = Math.max(1, Math.ceil(Math.sqrt(n * 1.6))) // sedikit melebar (denah umumnya landscape)
+  const rows = Math.ceil(n / cols)
+  const mX = 6, mY = 6
+  const spanX = 100 - 2 * mX, spanY = 100 - 2 * mY
+  const stepX = cols > 1 ? spanX / (cols - 1) : 0
+  const stepY = rows > 1 ? spanY / (rows - 1) : 0
+  const out: Record<string, Pos> = {}
+  sorted.forEach((u, i) => {
+    const r = Math.floor(i / cols), c = i % cols
+    out[u.id] = {
+      x: +(cols > 1 ? mX + c * stepX : 50).toFixed(2),
+      y: +(rows > 1 ? mY + r * stepY : 50).toFixed(2),
+    }
+  })
+  return out
+}
 
 // Perkecil gambar besar di sisi klien sebelum upload → transfer cepat & DB hemat.
 // Denah tetap tajam: lebar maksimal 2200px, kualitas JPEG 0.85. File kecil dilewati.
@@ -66,9 +93,11 @@ export default function Siteplan() {
     setLoading(true)
     setError('')
     try {
-      const [proj, res] = await Promise.all([
+      // Ambil proyek, unit, dan gambar sekaligus (getSiteplanUrl → null bila belum ada)
+      const [proj, res, url] = await Promise.all([
         propertyService.getProject(projectId),
         propertyService.listUnits({ project_id: projectId, size: 500 }),
+        propertyService.getSiteplanUrl(projectId),
       ])
       setProject(proj)
       setUnits(res.items)
@@ -77,10 +106,7 @@ export default function Siteplan() {
         if (u.position_x != null && u.position_y != null) p[u.id] = { x: Number(u.position_x), y: Number(u.position_y) }
       })
       setPos(p)
-      if (proj.has_siteplan) {
-        const url = await propertyService.getSiteplanUrl(projectId)
-        setImgUrl(url)
-      }
+      setImgUrl(url)
     } catch {
       setError('Gagal memuat data siteplan.')
     } finally {
@@ -94,6 +120,7 @@ export default function Siteplan() {
 
   const placed = units.filter((u) => pos[u.id])
   const unplaced = units.filter((u) => !pos[u.id])
+  const dense = placed.length > 80  // marker lebih ringkas untuk proyek padat
 
   function pctFromEvent(clientX: number, clientY: number): Pos {
     const rect = mapRef.current!.getBoundingClientRect()
@@ -145,6 +172,15 @@ export default function Siteplan() {
 
   function removePlacement(unitId: string) {
     setPos((prev) => { const n = { ...prev }; delete n[unitId]; return n })
+    setDirty(true)
+  }
+
+  function autoLayout() {
+    const n = units.length
+    if (!n) return
+    if (!confirm(`Tata ${n} unit otomatis dalam grid? Posisi yang sudah diatur akan ditimpa.`)) return
+    setPos(gridLayout(units))
+    setSelectedUnplaced(null)
     setDirty(true)
   }
 
@@ -227,10 +263,17 @@ export default function Siteplan() {
             ><Pencil size={14} /> Atur</button>
           </div>
           {mode === 'edit' && (
-            <button onClick={handleSave} disabled={!dirty || saving}
-              className="btn-primary flex items-center gap-2 text-sm disabled:opacity-50">
-              {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Simpan Posisi
-            </button>
+            <>
+              <button onClick={autoLayout} disabled={units.length === 0}
+                className="btn-secondary flex items-center gap-2 text-sm disabled:opacity-50"
+                title="Tata semua unit dalam grid otomatis">
+                <LayoutGrid size={14} /> Tata Otomatis
+              </button>
+              <button onClick={handleSave} disabled={!dirty || saving}
+                className="btn-primary flex items-center gap-2 text-sm disabled:opacity-50">
+                {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Simpan Posisi
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -286,10 +329,10 @@ export default function Siteplan() {
                     onMouseDown={(e) => startDrag(e, u.id)}
                     onClick={(e) => onMarkerClick(e, u)}
                     style={{ left: `${p.x}%`, top: `${p.y}%` }}
-                    className={`absolute -translate-x-1/2 -translate-y-1/2 ${sc.dot} text-white text-[10px] font-semibold px-1.5 py-0.5 rounded-md border border-white shadow ring-1 ring-black/10 ${mode === 'edit' ? 'cursor-move' : 'cursor-pointer hover:scale-110'} transition-transform`}
+                    className={`absolute -translate-x-1/2 -translate-y-1/2 ${sc.dot} text-white font-semibold rounded-md border border-white shadow ring-1 ring-black/10 ${dense ? 'text-[8px] px-1 py-0 leading-tight' : 'text-[10px] px-1.5 py-0.5'} ${mode === 'edit' ? 'cursor-move' : 'cursor-pointer hover:scale-110'} transition-transform`}
                     title={`${u.block ? u.block + '-' : ''}${u.unit_number} · ${sc.label}`}
                   >
-                    {u.block ? `${u.block}-` : ''}{u.unit_number}
+                    {dense ? u.unit_number : `${u.block ? `${u.block}-` : ''}${u.unit_number}`}
                   </button>
                 )
               })}
