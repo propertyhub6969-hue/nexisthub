@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
-import { Plus, Search, Trash2, Pencil, Loader2, MessageCircle } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import { Plus, Search, Trash2, Pencil, Loader2, MessageCircle, ArrowRightCircle } from 'lucide-react'
 import Badge from '../../components/ui/Badge'
 import Modal from '../../components/ui/Modal'
 import { marketingService } from '../../services/marketing'
@@ -19,6 +20,7 @@ const fmt = (n?: number) =>
 const emptyForm: ProspectCreate = { full_name: '', phone: '', email: '', unit_type: '', budget: undefined, status: 'active' }
 
 export default function Prospects() {
+  const navigate = useNavigate()
   const [prospects, setProspects] = useState<Prospect[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -103,6 +105,17 @@ export default function Prospects() {
     }
   }
 
+  async function handleConvert(p: Prospect) {
+    if (!confirm(`Jadikan "${p.full_name}" sebagai Pembeli? Data & budget akan terbawa.`)) return
+    try {
+      await marketingService.convertProspect(p.id)
+      navigate('/marketing/clients')
+    } catch (err: unknown) {
+      const d = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      setError(d || 'Gagal konversi prospek.')
+    }
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3">
@@ -159,6 +172,9 @@ export default function Prospects() {
                     <td className="px-4 py-3 text-slate-400 text-xs">{new Date(p.created_at).toLocaleDateString('id-ID')}</td>
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-end gap-3">
+                        <button onClick={() => handleConvert(p)} className="text-slate-400 hover:text-emerald-600 transition-colors" title="Jadikan Pembeli">
+                          <ArrowRightCircle size={15} />
+                        </button>
                         <button onClick={() => openEdit(p)} className="text-slate-400 hover:text-brand-600 transition-colors" title="Edit">
                           <Pencil size={15} />
                         </button>

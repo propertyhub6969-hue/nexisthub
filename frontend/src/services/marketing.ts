@@ -30,6 +30,10 @@ export const marketingService = {
   async deleteLead(id: string): Promise<void> {
     await api.delete(`/marketing/leads/${id}`)
   },
+  async convertLead(id: string): Promise<Prospect> {
+    const { data } = await api.post<Prospect>(`/marketing/leads/${id}/convert`)
+    return data
+  },
 
   // ── Prospects ──
   async listProspects(params: ListParams = {}): Promise<PaginatedResponse<Prospect>> {
@@ -46,6 +50,10 @@ export const marketingService = {
   },
   async deleteProspect(id: string): Promise<void> {
     await api.delete(`/marketing/prospects/${id}`)
+  },
+  async convertProspect(id: string): Promise<Client> {
+    const { data } = await api.post<Client>(`/marketing/prospects/${id}/convert`)
+    return data
   },
 
   // ── Clients ──

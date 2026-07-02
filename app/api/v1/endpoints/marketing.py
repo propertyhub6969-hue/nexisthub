@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.api.deps import get_current_context, AuthContext
-from app.models.marketing import Lead, Prospect, Client, ClientStatus
+from app.models.marketing import Lead, Prospect, Client, LeadStatus, ProspectStatus, ClientStatus
 from app.models.property import Unit, UnitStatus
 from app.core.audit import record_audit
 from app.schemas.marketing import (
@@ -118,6 +118,32 @@ async def delete_lead(
     await db.delete(lead)
 
 
+@router.post("/leads/{lead_id}/convert", response_model=ProspectResponse, status_code=status.HTTP_201_CREATED)
+async def convert_lead(
+    lead_id: uuid.UUID,
+    ctx: AuthContext = Depends(get_current_context),
+    db: AsyncSession = Depends(get_db),
+):
+    """Jadikan lead → prospek (data terbawa). Lead ditandai 'qualified'."""
+    lead = await _get_lead(db, ctx.tenant_id, lead_id)
+    dup = (await db.execute(
+        select(Prospect.id).where(Prospect.tenant_id == ctx.tenant_id, Prospect.lead_id == lead_id)
+    )).scalar_one_or_none()
+    if dup:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail="Lead ini sudah dikonversi jadi prospek")
+
+    prospect = Prospect(
+        tenant_id=ctx.tenant_id, lead_id=lead.id,
+        full_name=lead.full_name, phone=lead.phone, email=lead.email,
+        notes=lead.interest, status=ProspectStatus.ACTIVE,
+    )
+    db.add(prospect)
+    lead.status = LeadStatus.QUALIFIED
+    await db.flush()
+    await db.refresh(prospect)
+    return prospect
+
+
 # ═══════════════════════ PROSPECTS ═══════════════════════
 @router.get("/prospects", response_model=Paginated[ProspectResponse])
 async def list_prospects(
@@ -199,6 +225,36 @@ async def delete_prospect(
 ):
     prospect = await _get_prospect(db, ctx.tenant_id, prospect_id)
     await db.delete(prospect)
+
+
+@router.post("/prospects/{prospect_id}/convert", response_model=ClientResponse, status_code=status.HTTP_201_CREATED)
+async def convert_prospect(
+    prospect_id: uuid.UUID,
+    ctx: AuthContext = Depends(get_current_context),
+    db: AsyncSession = Depends(get_db),
+):
+    """Jadikan prospek → pembeli (data + budget terbawa). Prospek ditandai 'won'."""
+    prospect = await _get_prospect(db, ctx.tenant_id, prospect_id)
+    dup = (await db.execute(
+        select(Client.id).where(
+            Client.tenant_id == ctx.tenant_id, Client.prospect_id == prospect_id,
+            Client.is_deleted == False)  # noqa: E712
+    )).scalar_one_or_none()
+    if dup:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail="Prospek ini sudah dikonversi jadi pembeli")
+
+    client = Client(
+        tenant_id=ctx.tenant_id, prospect_id=prospect.id, marketing_user_id=ctx.user_id,
+        full_name=prospect.full_name, phone=prospect.phone, email=prospect.email,
+        unit_type=prospect.unit_type, contract_value=prospect.budget,
+        notes=prospect.notes, status=ClientStatus.ACTIVE,
+    )
+    db.add(client)
+    prospect.status = ProspectStatus.WON
+    await db.flush()
+    await record_audit(db, ctx.tenant_id, ctx.user_id, "CREATE", "clients", client.id,
+                       new_data={"from_prospect": str(prospect_id), "full_name": client.full_name})
+    return await _get_client(db, ctx.tenant_id, client.id)
 
 
 # ═══════════════════════ CLIENTS ═══════════════════════

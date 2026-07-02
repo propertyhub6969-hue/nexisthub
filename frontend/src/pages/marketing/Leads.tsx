@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
-import { Plus, Search, Trash2, Pencil, Loader2, MessageCircle } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import { Plus, Search, Trash2, Pencil, Loader2, MessageCircle, ArrowRightCircle } from 'lucide-react'
 import Badge from '../../components/ui/Badge'
 import Modal from '../../components/ui/Modal'
 import { marketingService } from '../../services/marketing'
@@ -28,6 +29,7 @@ const SOURCE_OPTIONS = [
 const emptyForm: LeadCreate = { full_name: '', phone: '', email: '', source: '', interested_project_id: '', status: 'new' }
 
 export default function Leads() {
+  const navigate = useNavigate()
   const [leads, setLeads] = useState<Lead[]>([])
   const [projects, setProjects] = useState<Project[]>([])
   const [loading, setLoading] = useState(true)
@@ -119,6 +121,17 @@ export default function Leads() {
     }
   }
 
+  async function handleConvert(lead: Lead) {
+    if (!confirm(`Jadikan "${lead.full_name}" sebagai Prospek? Datanya akan terbawa.`)) return
+    try {
+      await marketingService.convertLead(lead.id)
+      navigate('/marketing/prospects')
+    } catch (err: unknown) {
+      const d = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      setError(d || 'Gagal konversi lead.')
+    }
+  }
+
   return (
     <div className="space-y-4">
       {/* Toolbar */}
@@ -196,6 +209,13 @@ export default function Leads() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-end gap-3">
+                        <button
+                          onClick={() => handleConvert(lead)}
+                          className="text-slate-400 hover:text-emerald-600 transition-colors"
+                          title="Jadikan Prospek"
+                        >
+                          <ArrowRightCircle size={15} />
+                        </button>
                         <button
                           onClick={() => openEdit(lead)}
                           className="text-slate-400 hover:text-brand-600 transition-colors"
