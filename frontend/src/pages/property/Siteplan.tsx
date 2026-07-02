@@ -17,6 +17,31 @@ const fmt = (n?: number) =>
 
 type Pos = { x: number; y: number }
 
+// Perkecil gambar besar di sisi klien sebelum upload → transfer cepat & DB hemat.
+// Denah tetap tajam: lebar maksimal 2200px, kualitas JPEG 0.85. File kecil dilewati.
+async function downscaleImage(file: File): Promise<File> {
+  if (file.size < 1.5 * 1024 * 1024) return file
+  try {
+    const bitmap = await createImageBitmap(file)
+    const MAX_W = 2200
+    if (bitmap.width <= MAX_W) { bitmap.close?.(); return file }
+    const w = MAX_W
+    const h = Math.round((bitmap.height * MAX_W) / bitmap.width)
+    const canvas = document.createElement('canvas')
+    canvas.width = w
+    canvas.height = h
+    const ctx = canvas.getContext('2d')
+    if (!ctx) { bitmap.close?.(); return file }
+    ctx.drawImage(bitmap, 0, 0, w, h)
+    bitmap.close?.()
+    const blob = await new Promise<Blob | null>((res) => canvas.toBlob(res, 'image/jpeg', 0.85))
+    if (!blob || blob.size >= file.size) return file
+    return new File([blob], file.name.replace(/\.[^.]+$/, '') + '.jpg', { type: 'image/jpeg' })
+  } catch {
+    return file
+  }
+}
+
 export default function Siteplan() {
   const { projectId = '' } = useParams()
   const [project, setProject] = useState<Project | null>(null)
@@ -129,10 +154,11 @@ export default function Siteplan() {
     setUploading(true)
     setError('')
     try {
-      await propertyService.uploadSiteplan(projectId, file)
+      const toUpload = await downscaleImage(file)
+      await propertyService.uploadSiteplan(projectId, toUpload)
       if (imgUrl) URL.revokeObjectURL(imgUrl)
-      const url = await propertyService.getSiteplanUrl(projectId)
-      setImgUrl(url)
+      // Pakai file lokal untuk pratinjau — tak perlu unduh ulang dari server
+      setImgUrl(URL.createObjectURL(toUpload))
       setProject((p) => (p ? { ...p, has_siteplan: true } : p))
     } catch {
       setError('Gagal mengunggah gambar. Pastikan berupa gambar (maks 8 MB).')
