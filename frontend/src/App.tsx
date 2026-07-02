@@ -14,6 +14,7 @@ import ClientKpr from './pages/marketing/ClientKpr'
 import Notaries from './pages/legal/Notaries'
 import Projects from './pages/property/Projects'
 import ProjectUnits from './pages/property/ProjectUnits'
+import Procurement from './pages/procurement/Procurement'
 import ComingSoon from './pages/ComingSoon'
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
@@ -49,7 +50,7 @@ export default function App() {
           <Route path="/marketing/clients/:clientId/kpr" element={<ClientKpr />} />
           <Route path="/property/projects"                 element={<Projects />} />
           <Route path="/property/projects/:projectId/units" element={<ProjectUnits />} />
-          <Route path="/procurement"         element={<ComingSoon name="Procurement" />} />
+          <Route path="/procurement"         element={<Procurement />} />
           <Route path="/legal"               element={<Notaries />} />
           <Route path="/reports"             element={<ComingSoon name="Laporan" />} />
         </Route>

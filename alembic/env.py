@@ -20,7 +20,7 @@ from app.models.payment import PaymentSchedule, Payment
 from app.models.tax import Notary, TaxRecord, NotaryFee
 from app.models.document import Document
 from app.models.kpr import Bank, KprApplication
-from app.models.procurement import Vendor, PurchaseOrder, PurchaseOrderItem
+from app.models.procurement import Vendor, PurchaseOrder, PurchaseOrderItem, VendorPayment
 from app.models.legal import DocumentTemplate, LegalDocument
 from app.models.reporting import ReportConfig
 from app.models.audit import AuditLog

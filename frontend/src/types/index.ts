@@ -442,6 +442,100 @@ export interface KprCreate {
   notes?: string
 }
 
+// ── Procurement ───────────────────────────────────────────────────
+export type VendorStatus = 'active' | 'inactive' | 'blacklisted'
+export type POStatus = 'draft' | 'ordered' | 'received' | 'cancelled'
+export type VendorPayMethod = 'transfer' | 'tunai' | 'lainnya'
+
+export interface Vendor {
+  id: string
+  name: string
+  contact_name?: string
+  phone?: string
+  email?: string
+  address?: string
+  category?: string
+  npwp?: string
+  bank_name?: string
+  bank_account?: string
+  status: VendorStatus
+  notes?: string
+  created_at: string
+  updated_at: string
+}
+export interface VendorCreate {
+  name: string
+  contact_name?: string
+  phone?: string
+  email?: string
+  address?: string
+  category?: string
+  npwp?: string
+  bank_name?: string
+  bank_account?: string
+  status?: VendorStatus
+  notes?: string
+}
+
+export interface POItemIn {
+  item_name: string
+  unit?: string
+  quantity: number
+  unit_price: number
+  notes?: string
+}
+export interface POItem extends POItemIn {
+  id: string
+  total_price: number
+}
+export interface PurchaseOrder {
+  id: string
+  vendor_id?: string
+  vendor_name?: string
+  project_id?: string
+  unit_id?: string
+  po_number?: string
+  order_date?: string
+  delivery_date?: string
+  status: POStatus
+  total_amount: number
+  paid_amount: number
+  remaining: number
+  items: POItem[]
+  notes?: string
+  created_at: string
+  updated_at: string
+}
+export interface POCreate {
+  vendor_id?: string
+  project_id?: string
+  unit_id?: string
+  po_number?: string
+  order_date?: string
+  delivery_date?: string
+  status?: POStatus
+  notes?: string
+  items: POItemIn[]
+}
+
+export interface VendorPayment {
+  id: string
+  purchase_order_id: string
+  amount: number
+  payment_date?: string
+  method: VendorPayMethod
+  notes?: string
+  created_at: string
+  updated_at: string
+}
+export interface VendorPaymentCreate {
+  purchase_order_id: string
+  amount: number
+  payment_date?: string
+  method?: VendorPayMethod
+  notes?: string
+}
+
 // ── Audit ─────────────────────────────────────────────────────────
 export interface AuditEntry {
   id: string

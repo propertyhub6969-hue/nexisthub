@@ -1,9 +1,9 @@
 import uuid
 import enum
-from sqlalchemy import String, Text, ForeignKey, Enum as SAEnum, Numeric, Integer, Date
+from sqlalchemy import String, Text, ForeignKey, Enum as SAEnum, Numeric, Date
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID
-from app.models.base import BaseModel
+from app.models.base import BaseModel, SoftDeleteMixin
 
 
 class VendorStatus(str, enum.Enum):
@@ -14,14 +14,18 @@ class VendorStatus(str, enum.Enum):
 
 class POStatus(str, enum.Enum):
     DRAFT = "draft"
-    SUBMITTED = "submitted"
-    APPROVED = "approved"
-    ORDERED = "ordered"
-    RECEIVED = "received"
+    ORDERED = "ordered"       # dipesan
+    RECEIVED = "received"     # diterima di lokasi
     CANCELLED = "cancelled"
 
 
-class Vendor(BaseModel):
+class PaymentMethod(str, enum.Enum):
+    TRANSFER = "transfer"
+    TUNAI = "tunai"
+    LAINNYA = "lainnya"
+
+
+class Vendor(BaseModel, SoftDeleteMixin):
     """Supplier / kontraktor / vendor material."""
     __tablename__ = "vendors"
 
@@ -34,7 +38,7 @@ class Vendor(BaseModel):
     phone: Mapped[str] = mapped_column(String(20), nullable=True)
     email: Mapped[str] = mapped_column(String(255), nullable=True)
     address: Mapped[str] = mapped_column(Text, nullable=True)
-    category: Mapped[str] = mapped_column(String(100), nullable=True)  # Material, Jasa, dll
+    category: Mapped[str] = mapped_column(String(100), nullable=True)  # Material, Jasa/Kontraktor, dll
     npwp: Mapped[str] = mapped_column(String(30), nullable=True)
     bank_name: Mapped[str] = mapped_column(String(100), nullable=True)
     bank_account: Mapped[str] = mapped_column(String(50), nullable=True)
@@ -43,16 +47,12 @@ class Vendor(BaseModel):
     )
     notes: Mapped[str] = mapped_column(Text, nullable=True)
 
-    purchase_orders: Mapped[list["PurchaseOrder"]] = relationship(
-        "PurchaseOrder", back_populates="vendor"
-    )
-
     def __repr__(self) -> str:
         return f"<Vendor {self.name}>"
 
 
-class PurchaseOrder(BaseModel):
-    """Purchase Order ke vendor."""
+class PurchaseOrder(BaseModel, SoftDeleteMixin):
+    """Purchase Order ke vendor (alokasi ke proyek, opsional unit)."""
     __tablename__ = "purchase_orders"
 
     tenant_id: Mapped[uuid.UUID] = mapped_column(
@@ -60,10 +60,15 @@ class PurchaseOrder(BaseModel):
         nullable=False, index=True
     )
     vendor_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("vendors.id", ondelete="RESTRICT"),
-        nullable=False
+        UUID(as_uuid=True), ForeignKey("vendors.id", ondelete="SET NULL"), nullable=True, index=True
     )
-    po_number: Mapped[str] = mapped_column(String(50), nullable=False)
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("projects.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    unit_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("units.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    po_number: Mapped[str] = mapped_column(String(50), nullable=True)
     order_date: Mapped[Date] = mapped_column(Date, nullable=True)
     delivery_date: Mapped[Date] = mapped_column(Date, nullable=True)
     total_amount: Mapped[float] = mapped_column(Numeric(15, 2), default=0, nullable=False)
@@ -71,14 +76,18 @@ class PurchaseOrder(BaseModel):
         SAEnum(POStatus), default=POStatus.DRAFT, nullable=False
     )
     notes: Mapped[str] = mapped_column(Text, nullable=True)
-    approved_by: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
-    )
 
-    vendor: Mapped["Vendor"] = relationship("Vendor", back_populates="purchase_orders")
+    vendor: Mapped["Vendor"] = relationship("Vendor")
     items: Mapped[list["PurchaseOrderItem"]] = relationship(
         "PurchaseOrderItem", back_populates="purchase_order", cascade="all, delete-orphan"
     )
+    payments: Mapped[list["VendorPayment"]] = relationship(
+        "VendorPayment", back_populates="purchase_order", cascade="all, delete-orphan"
+    )
+
+    @property
+    def vendor_name(self):
+        return self.vendor.name if self.vendor else None
 
     def __repr__(self) -> str:
         return f"<PO {self.po_number} [{self.status}]>"
@@ -94,18 +103,41 @@ class PurchaseOrderItem(BaseModel):
     )
     purchase_order_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("purchase_orders.id", ondelete="CASCADE"),
-        nullable=False
+        nullable=False, index=True
     )
     item_name: Mapped[str] = mapped_column(String(200), nullable=False)
-    unit: Mapped[str] = mapped_column(String(50), nullable=True)       # pcs, m2, kg, dll
-    quantity: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
-    unit_price: Mapped[float] = mapped_column(Numeric(15, 2), nullable=False)
-    total_price: Mapped[float] = mapped_column(Numeric(15, 2), nullable=False)
+    unit: Mapped[str] = mapped_column(String(50), nullable=True)       # sak, m3, kg, batang, dll
+    quantity: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False, default=0)
+    unit_price: Mapped[float] = mapped_column(Numeric(15, 2), nullable=False, default=0)
+    total_price: Mapped[float] = mapped_column(Numeric(15, 2), nullable=False, default=0)
     notes: Mapped[str] = mapped_column(Text, nullable=True)
 
-    purchase_order: Mapped["PurchaseOrder"] = relationship(
-        "PurchaseOrder", back_populates="items"
-    )
+    purchase_order: Mapped["PurchaseOrder"] = relationship("PurchaseOrder", back_populates="items")
 
     def __repr__(self) -> str:
         return f"<POItem {self.item_name} qty={self.quantity}>"
+
+
+class VendorPayment(BaseModel, SoftDeleteMixin):
+    """Pembayaran ke vendor atas sebuah PO (uang keluar)."""
+    __tablename__ = "vendor_payments"
+
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"),
+        nullable=False, index=True
+    )
+    purchase_order_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("purchase_orders.id", ondelete="CASCADE"),
+        nullable=False, index=True
+    )
+    amount: Mapped[float] = mapped_column(Numeric(15, 2), nullable=False)
+    payment_date: Mapped[Date] = mapped_column(Date, nullable=True)
+    method: Mapped[PaymentMethod] = mapped_column(
+        SAEnum(PaymentMethod, name="vendorpaymentmethod"), default=PaymentMethod.TRANSFER, nullable=False
+    )
+    notes: Mapped[str] = mapped_column(Text, nullable=True)
+
+    purchase_order: Mapped["PurchaseOrder"] = relationship("PurchaseOrder", back_populates="payments")
+
+    def __repr__(self) -> str:
+        return f"<VendorPayment {self.amount}>"
