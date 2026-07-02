@@ -638,6 +638,35 @@ export interface LeakageRow { unit_id: string; unit_label: string; rab_total: nu
 export interface LeakageCat { category: ExpenseCategory; rab: number; realisasi: number; selisih: number }
 export interface LeakageDetail { unit_id: string; unit_label: string; rows: LeakageCat[]; rab_total: number; realisasi_total: number; selisih: number }
 
+// ── Konstruksi ────────────────────────────────────────────────────
+export type ConstructionStage = 'persiapan' | 'pondasi' | 'struktur' | 'dinding' | 'atap' | 'finishing' | 'selesai'
+export interface UnitConstructionRow {
+  unit_id: string
+  unit_label: string
+  unit_type?: string
+  stage: ConstructionStage
+  percent: number
+  start_date?: string
+  target_date?: string
+  finish_date?: string
+  notes?: string
+}
+export interface ConstructionSummary {
+  total_units: number
+  avg_percent: number
+  done_count: number
+  stage_counts: Record<string, number>
+}
+export interface ConstructionList { rows: UnitConstructionRow[]; summary: ConstructionSummary }
+export interface ConstructionUpsert {
+  stage?: ConstructionStage
+  percent?: number
+  start_date?: string
+  target_date?: string
+  finish_date?: string
+  notes?: string
+}
+
 // ── Audit ─────────────────────────────────────────────────────────
 export interface AuditEntry {
   id: string
