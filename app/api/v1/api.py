@@ -1,9 +1,10 @@
 from fastapi import APIRouter
-from app.api.v1.endpoints import auth, marketing, property, sale, payment, audit, tax, document, kpr, procurement, stock, expense, rab, construction, contractor, legal, reporting
+from app.api.v1.endpoints import auth, users, marketing, property, sale, payment, audit, tax, document, kpr, procurement, stock, expense, rab, construction, contractor, legal, reporting
 
 api_router = APIRouter()
 
 api_router.include_router(auth.router,        prefix="/auth",        tags=["Auth"])
+api_router.include_router(users.router,       prefix="/team",        tags=["Team"])
 api_router.include_router(marketing.router,   prefix="/marketing",   tags=["Marketing"])
 api_router.include_router(property.router,    prefix="/property",    tags=["Property"])
 api_router.include_router(sale.router,         prefix="/sales",       tags=["Sales"])

@@ -9,6 +9,8 @@ import {
   ShoppingCart,
   FileText,
   BarChart3,
+  Settings,
+  UsersRound,
   LogOut,
 } from 'lucide-react'
 import { clsx } from 'clsx'
@@ -57,9 +59,20 @@ const navItems = [
   },
 ]
 
+const settingsItem = {
+  label: 'Pengaturan',
+  icon: Settings,
+  children: [
+    { label: 'Tim', to: '/settings/team', icon: UsersRound },
+  ],
+}
+
 export default function Sidebar() {
-  const { logout } = useAuth()
+  const { logout, user } = useAuth()
   const navigate = useNavigate()
+
+  const canManageTeam = user?.role === 'owner' || user?.role === 'admin'
+  const items = canManageTeam ? [...navItems, settingsItem] : navItems
 
   return (
     <aside className="w-60 min-h-screen bg-sidebar flex flex-col">
@@ -70,7 +83,7 @@ export default function Sidebar() {
 
       {/* Nav */}
       <nav className="flex-1 px-3 py-4 space-y-0.5">
-        {navItems.map((item) =>
+        {items.map((item) =>
           item.children ? (
             <div key={item.label}>
               <p className="px-3 py-1.5 text-xs font-semibold text-slate-400 uppercase tracking-wider mt-3 mb-1">

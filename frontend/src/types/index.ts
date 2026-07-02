@@ -17,11 +17,39 @@ export interface Token {
   token_type: string
 }
 
+export type UserRole = 'owner' | 'admin' | 'manager' | 'staff' | 'viewer'
+
 export interface UserResponse {
   id: string
   email: string
   full_name: string
   is_active: boolean
+  role: UserRole
+}
+
+// ── Team / Roles ──────────────────────────────────────────────────
+export interface TeamMember {
+  id: string
+  email: string
+  full_name: string
+  phone?: string
+  role: UserRole
+  is_active: boolean
+}
+
+export interface TeamMemberCreate {
+  email: string
+  full_name: string
+  password: string
+  phone?: string
+  role: UserRole
+}
+
+export interface TeamMemberUpdate {
+  full_name?: string
+  phone?: string
+  role?: UserRole
+  is_active?: boolean
 }
 
 // ── Marketing ─────────────────────────────────────────────────────

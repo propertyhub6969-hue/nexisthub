@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, type ReactNode } from 'react'
+import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from 'react'
 import { authService } from '../services/auth'
 import type { LoginPayload, RegisterPayload, UserResponse } from '../types'
 
@@ -16,9 +16,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<UserResponse | null>(null)
   const isAuthenticated = authService.isAuthenticated()
 
+  // Hydrate the current user (incl. role) whenever we hold a token.
+  useEffect(() => {
+    if (isAuthenticated && !user) {
+      authService.me().then(setUser).catch(() => {})
+    }
+  }, [isAuthenticated, user])
+
   const login = useCallback(async (payload: LoginPayload) => {
     const token = await authService.login(payload)
     authService.setTokens(token)
+    const me = await authService.me()
+    setUser(me)
   }, [])
 
   const register = useCallback(async (payload: RegisterPayload) => {

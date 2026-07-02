@@ -1,6 +1,7 @@
 from pydantic import BaseModel, EmailStr, Field
 from typing import Optional
 import uuid
+from app.models.user import UserRole
 
 
 class UserRegister(BaseModel):
@@ -35,6 +36,7 @@ class UserResponse(BaseModel):
     email: str
     full_name: str
     is_active: bool
+    role: UserRole
 
     class Config:
         from_attributes = True
