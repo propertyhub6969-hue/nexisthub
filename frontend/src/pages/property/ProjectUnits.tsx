@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { Plus, Trash2, Pencil, Loader2, ArrowLeft } from 'lucide-react'
+import { Plus, Trash2, Pencil, Loader2, ArrowLeft, Map } from 'lucide-react'
 import Badge from '../../components/ui/Badge'
 import Modal from '../../components/ui/Modal'
 import { propertyService } from '../../services/property'
@@ -124,10 +124,16 @@ export default function ProjectUnits() {
           </Link>
           <h1 className="text-lg font-semibold text-slate-900">{project?.name ?? 'Unit'}</h1>
         </div>
-        <button className="btn-primary flex items-center gap-2 text-sm" onClick={openCreate}>
-          <Plus size={14} />
-          Tambah Unit
-        </button>
+        <div className="flex items-center gap-2">
+          <Link to={`/property/projects/${projectId}/siteplan`} className="btn-secondary flex items-center gap-2 text-sm">
+            <Map size={14} />
+            Siteplan
+          </Link>
+          <button className="btn-primary flex items-center gap-2 text-sm" onClick={openCreate}>
+            <Plus size={14} />
+            Tambah Unit
+          </button>
+        </div>
       </div>
 
       {/* Ringkasan status (klik untuk filter) */}

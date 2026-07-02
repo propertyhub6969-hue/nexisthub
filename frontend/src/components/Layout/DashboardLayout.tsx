@@ -19,7 +19,8 @@ const pageTitles: Record<string, string> = {
 export default function DashboardLayout() {
   const { pathname } = useLocation()
   const title = pageTitles[pathname]
-    ?? (pathname.includes('/units') ? 'Kelola Unit'
+    ?? (pathname.includes('/siteplan') ? 'Siteplan Interaktif'
+      : pathname.includes('/units') ? 'Kelola Unit'
       : pathname.includes('/payments') ? 'Pembayaran & Cicilan'
       : pathname.includes('/tax') ? 'Pajak & Notaris'
       : pathname.includes('/kpr') ? 'KPR'

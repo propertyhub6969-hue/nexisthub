@@ -159,6 +159,7 @@ export interface Project {
   province?: string
   total_units?: number
   siteplan_image?: string
+  has_siteplan?: boolean
   description?: string
   status: ProjectStatus
   created_at: string

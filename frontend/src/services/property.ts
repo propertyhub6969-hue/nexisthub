@@ -54,4 +54,34 @@ export const propertyService = {
   async deleteUnit(id: string): Promise<void> {
     await api.delete(`/property/units/${id}`)
   },
+
+  // ── Siteplan ──
+  async uploadSiteplan(projectId: string, file: File): Promise<Project> {
+    const fd = new FormData()
+    fd.append('file', file)
+    const { data } = await api.post<Project>(`/property/projects/${projectId}/siteplan`, fd, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    return data
+  },
+  async deleteSiteplan(projectId: string): Promise<Project> {
+    const { data } = await api.delete<Project>(`/property/projects/${projectId}/siteplan`)
+    return data
+  },
+  // Ambil gambar siteplan sebagai object URL (butuh auth Bearer → lewat axios, bukan <img src> langsung)
+  async getSiteplanUrl(projectId: string): Promise<string | null> {
+    try {
+      const res = await api.get(`/property/projects/${projectId}/siteplan`, { responseType: 'blob' })
+      return URL.createObjectURL(res.data as Blob)
+    } catch {
+      return null
+    }
+  },
+  async saveUnitPositions(
+    projectId: string,
+    positions: { unit_id: string; position_x: number | null; position_y: number | null }[],
+  ): Promise<Unit[]> {
+    const { data } = await api.put<Unit[]>(`/property/projects/${projectId}/unit-positions`, positions)
+    return data
+  },
 }

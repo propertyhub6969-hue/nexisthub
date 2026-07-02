@@ -2,7 +2,8 @@ import uuid
 import math
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status, UploadFile, File
+from fastapi.responses import Response
 from sqlalchemy import select, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,10 +13,12 @@ from app.models.property import Project, Unit
 from app.schemas.marketing import Paginated
 from app.schemas.property import (
     ProjectCreate, ProjectUpdate, ProjectResponse,
-    UnitCreate, UnitUpdate, UnitResponse,
+    UnitCreate, UnitUpdate, UnitResponse, UnitPosition,
 )
 
 router = APIRouter()
+
+MAX_SITEPLAN_BYTES = 8 * 1024 * 1024  # 8 MB
 
 
 def _paginate(items, total, page, size):
@@ -109,6 +112,91 @@ async def delete_project(
 ):
     project = await _get_project(db, ctx.tenant_id, project_id)
     await db.delete(project)
+
+
+# ═══════════════════════ SITEPLAN ═══════════════════════
+@router.post("/projects/{project_id}/siteplan", response_model=ProjectResponse)
+async def upload_siteplan(
+    project_id: uuid.UUID,
+    file: UploadFile = File(...),
+    ctx: AuthContext = Depends(get_current_context),
+    db: AsyncSession = Depends(get_db),
+):
+    """Upload/ganti gambar siteplan proyek (disimpan di DB)."""
+    project = await _get_project(db, ctx.tenant_id, project_id)
+    ctype = file.content_type or ""
+    if not ctype.startswith("image/"):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="File harus berupa gambar")
+    data = await file.read()
+    if len(data) > MAX_SITEPLAN_BYTES:
+        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Ukuran gambar maksimal 8 MB")
+    project.siteplan_data = data
+    project.siteplan_type = ctype
+    project.siteplan_size = len(data)
+    await db.flush()
+    await db.refresh(project)
+    return project
+
+
+@router.get("/projects/{project_id}/siteplan")
+async def get_siteplan(
+    project_id: uuid.UUID,
+    ctx: AuthContext = Depends(get_current_context),
+    db: AsyncSession = Depends(get_db),
+):
+    """Ambil gambar siteplan proyek."""
+    row = (await db.execute(
+        select(Project.siteplan_data, Project.siteplan_type).where(
+            Project.id == project_id, Project.tenant_id == ctx.tenant_id)
+    )).first()
+    if row is None or row[0] is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Siteplan belum ada")
+    data, ctype = row
+    return Response(content=data, media_type=ctype or "image/png")
+
+
+@router.delete("/projects/{project_id}/siteplan", response_model=ProjectResponse)
+async def delete_siteplan(
+    project_id: uuid.UUID,
+    ctx: AuthContext = Depends(get_current_context),
+    db: AsyncSession = Depends(get_db),
+):
+    """Hapus gambar siteplan proyek (posisi unit tetap tersimpan)."""
+    project = await _get_project(db, ctx.tenant_id, project_id)
+    project.siteplan_data = None
+    project.siteplan_type = None
+    project.siteplan_size = None
+    await db.flush()
+    await db.refresh(project)
+    return project
+
+
+@router.put("/projects/{project_id}/unit-positions", response_model=list[UnitResponse])
+async def save_unit_positions(
+    project_id: uuid.UUID,
+    positions: list[UnitPosition],
+    ctx: AuthContext = Depends(get_current_context),
+    db: AsyncSession = Depends(get_db),
+):
+    """Simpan posisi banyak unit sekaligus (koordinat siteplan, persen 0-100)."""
+    await _get_project(db, ctx.tenant_id, project_id)
+    if not positions:
+        return []
+    ids = [p.unit_id for p in positions]
+    units = (await db.execute(
+        select(Unit).where(
+            Unit.id.in_(ids), Unit.project_id == project_id, Unit.tenant_id == ctx.tenant_id)
+    )).scalars().all()
+    by_id = {u.id: u for u in units}
+    for p in positions:
+        u = by_id.get(p.unit_id)
+        if u is not None:
+            u.position_x = p.position_x
+            u.position_y = p.position_y
+    await db.flush()
+    for u in units:
+        await db.refresh(u)
+    return units
 
 
 # ═══════════════════════ UNITS ═══════════════════════

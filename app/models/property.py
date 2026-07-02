@@ -1,6 +1,6 @@
 import uuid
 import enum
-from sqlalchemy import String, Text, ForeignKey, Enum as SAEnum, Numeric, Integer
+from sqlalchemy import String, Text, ForeignKey, Enum as SAEnum, Numeric, Integer, LargeBinary
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID
 from app.models.base import BaseModel
@@ -33,15 +33,23 @@ class Project(BaseModel):
     city: Mapped[str] = mapped_column(String(100), nullable=True)
     province: Mapped[str] = mapped_column(String(100), nullable=True)
     total_units: Mapped[int] = mapped_column(Integer, nullable=True)     # target jumlah unit
-    siteplan_image: Mapped[str] = mapped_column(String(500), nullable=True)  # URL/path gambar siteplan (MinIO)
+    siteplan_image: Mapped[str] = mapped_column(String(500), nullable=True)  # LEGACY: URL/path (tak dipakai; gambar kini di siteplan_data)
     description: Mapped[str] = mapped_column(Text, nullable=True)
     status: Mapped[ProjectStatus] = mapped_column(
         SAEnum(ProjectStatus), default=ProjectStatus.SELLING, nullable=False
     )
+    # Gambar siteplan disimpan di DB (belum ada MinIO); siteplan_data deferred agar tak ikut di query list
+    siteplan_type: Mapped[str] = mapped_column(String(100), nullable=True)
+    siteplan_size: Mapped[int] = mapped_column(Integer, nullable=True)
+    siteplan_data: Mapped[bytes] = mapped_column(LargeBinary, nullable=True, deferred=True)
 
     units: Mapped[list["Unit"]] = relationship(
         "Unit", back_populates="project", cascade="all, delete-orphan"
     )
+
+    @property
+    def has_siteplan(self) -> bool:
+        return self.siteplan_size is not None
 
     def __repr__(self) -> str:
         return f"<Project {self.name} [{self.status}]>"

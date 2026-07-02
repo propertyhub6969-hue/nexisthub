@@ -36,11 +36,19 @@ class ProjectUpdate(BaseModel):
 class ProjectResponse(ProjectBase):
     id: uuid.UUID
     status: ProjectStatus
+    has_siteplan: bool = False
     created_at: datetime
     updated_at: datetime
 
     class Config:
         from_attributes = True
+
+
+# ── Siteplan ──────────────────────────────────────────────────────
+class UnitPosition(BaseModel):
+    unit_id: uuid.UUID
+    position_x: Optional[Decimal] = None
+    position_y: Optional[Decimal] = None
 
 
 # ── Unit ──────────────────────────────────────────────────────────
