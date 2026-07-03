@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { Plus, Trash2, Pencil, Loader2, Wallet, X, PackageCheck, ArrowDownToLine, ArrowUpFromLine, ClipboardList } from 'lucide-react'
 import Badge from '../../components/ui/Badge'
 import Modal from '../../components/ui/Modal'
+import MoneyInput from '../../components/ui/MoneyInput'
 import { procurementService } from '../../services/procurement'
 import { propertyService } from '../../services/property'
 import type {
@@ -593,7 +594,7 @@ export default function Procurement() {
                   <input className="input flex-[3]" placeholder="Nama material" required value={it.item_name} onChange={(e) => setItem(idx, { item_name: e.target.value })} />
                   <input className="input flex-1" placeholder="sat." value={it.unit} onChange={(e) => setItem(idx, { unit: e.target.value })} />
                   <input className="input flex-1" type="number" min={0} placeholder="qty" value={it.quantity || ''} onChange={(e) => setItem(idx, { quantity: Number(e.target.value) })} />
-                  <input className="input flex-[2]" type="number" min={0} placeholder="harga" value={it.unit_price || ''} onChange={(e) => setItem(idx, { unit_price: Number(e.target.value) })} />
+                  <MoneyInput className="input flex-[2]" placeholder="harga" value={it.unit_price || undefined} onChange={(v) => setItem(idx, { unit_price: v ?? 0 })} />
                   <span className="text-xs text-slate-500 flex-[2] text-right">{fmt(Number(it.quantity || 0) * Number(it.unit_price || 0))}</span>
                   <button type="button" onClick={() => removeItem(idx)} className="text-slate-400 hover:text-red-600"><X size={14} /></button>
                 </div>
@@ -627,7 +628,7 @@ export default function Procurement() {
             {payments.length === 0 && <p className="text-xs text-slate-400">Belum ada pembayaran.</p>}
           </div>
           <form onSubmit={addPayment} className="flex items-end gap-2 border-t border-slate-100 pt-3">
-            <div className="flex-1"><label className="label">Nominal (Rp)</label><input className="input" type="number" min={0} required value={payAmount ?? ''} onChange={(e) => setPayAmount(e.target.value ? Number(e.target.value) : undefined)} /></div>
+            <div className="flex-1"><label className="label">Nominal (Rp)</label><MoneyInput required value={payAmount} onChange={(v) => setPayAmount(v)} /></div>
             <div className="flex-1"><label className="label">Tanggal</label><input className="input" type="date" value={payDate} onChange={(e) => setPayDate(e.target.value)} /></div>
             <button type="submit" className="btn-primary text-sm h-[38px]" disabled={saving}>Bayar</button>
           </form>
@@ -641,7 +642,7 @@ export default function Procurement() {
           <div className="grid grid-cols-3 gap-3">
             <div><label className="label">Satuan</label><input className="input" placeholder="sak" value={inForm.unit} onChange={(e) => setInForm({ ...inForm, unit: e.target.value })} /></div>
             <div><label className="label">Qty *</label><input className="input" type="number" min={0} step="0.01" required value={inForm.quantity || ''} onChange={(e) => setInForm({ ...inForm, quantity: Number(e.target.value) })} /></div>
-            <div><label className="label">Harga/sat</label><input className="input" type="number" min={0} value={inForm.unit_price || ''} onChange={(e) => setInForm({ ...inForm, unit_price: Number(e.target.value) })} /></div>
+            <div><label className="label">Harga/sat</label><MoneyInput value={inForm.unit_price || undefined} onChange={(v) => setInForm({ ...inForm, unit_price: v ?? 0 })} /></div>
           </div>
           <div><label className="label">Tanggal</label><input className="input" type="date" value={inForm.movement_date} onChange={(e) => setInForm({ ...inForm, movement_date: e.target.value })} /></div>
           <div className="flex justify-end gap-2 pt-2">
@@ -686,7 +687,7 @@ export default function Procurement() {
               <select className="input" value={expForm.category} onChange={(e) => setExpForm({ ...expForm, category: e.target.value as ExpenseCategory })}>
                 {(Object.keys(expCatLabel) as ExpenseCategory[]).map((k) => <option key={k} value={k}>{expCatLabel[k]}</option>)}
               </select></div>
-            <div><label className="label">Jumlah (Rp) *</label><input className="input" type="number" min={0} required value={expForm.amount || ''} onChange={(e) => setExpForm({ ...expForm, amount: Number(e.target.value) })} /></div>
+            <div><label className="label">Jumlah (Rp) *</label><MoneyInput required value={expForm.amount || undefined} onChange={(v) => setExpForm({ ...expForm, amount: v ?? 0 })} /></div>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div><label className="label">Alokasi ke Unit</label>
@@ -718,7 +719,7 @@ export default function Procurement() {
                   <select className="input flex-[2]" value={l.category} onChange={(e) => setTplLine(i, { category: e.target.value as ExpenseCategory })}>
                     {(Object.keys(expCatLabel) as ExpenseCategory[]).map((k) => <option key={k} value={k}>{expCatLabel[k]}</option>)}
                   </select>
-                  <input className="input flex-[2]" type="number" min={0} placeholder="anggaran" value={l.amount || ''} onChange={(e) => setTplLine(i, { amount: Number(e.target.value) })} />
+                  <MoneyInput className="input flex-[2]" placeholder="anggaran" value={l.amount || undefined} onChange={(v) => setTplLine(i, { amount: v ?? 0 })} />
                   <button type="button" onClick={() => removeTplLine(i)} className="text-slate-400 hover:text-red-600"><X size={14} /></button>
                 </div>
               ))}

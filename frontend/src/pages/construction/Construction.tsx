@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { Loader2, Pencil, HardHat, CheckCircle2, Plus, Trash2, Wallet } from 'lucide-react'
 import Badge from '../../components/ui/Badge'
 import Modal from '../../components/ui/Modal'
+import MoneyInput from '../../components/ui/MoneyInput'
 import { constructionService } from '../../services/construction'
 import { propertyService } from '../../services/property'
 import { procurementService } from '../../services/procurement'
@@ -241,7 +242,7 @@ export default function Construction() {
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div><label className="label">Judul</label><input className="input" placeholder="Borongan A-01" value={cForm.title} onChange={(e) => setCForm({ ...cForm, title: e.target.value })} /></div>
-            <div><label className="label">Nilai Borongan (Rp) *</label><input className="input" type="number" min={0} required value={cForm.total_value || ''} onChange={(e) => setCForm({ ...cForm, total_value: Number(e.target.value) })} /></div>
+            <div><label className="label">Nilai Borongan (Rp) *</label><MoneyInput required value={cForm.total_value || undefined} onChange={(v) => setCForm({ ...cForm, total_value: v ?? 0 })} /></div>
           </div>
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" className="btn-secondary text-sm" onClick={() => setCModal(false)}>Batal</button>
@@ -271,7 +272,7 @@ export default function Construction() {
             </div>
             <form onSubmit={addOpname} className="border-t border-slate-100 pt-3 space-y-2">
               <div className="grid grid-cols-2 gap-2">
-                <div><label className="label">Nominal (Rp) *</label><input className="input" type="number" min={0} required value={opAmount ?? ''} onChange={(e) => setOpAmount(e.target.value ? Number(e.target.value) : undefined)} /></div>
+                <div><label className="label">Nominal (Rp) *</label><MoneyInput required value={opAmount} onChange={(v) => setOpAmount(v)} /></div>
                 <div><label className="label">Tanggal</label><input className="input" type="date" value={opDate} onChange={(e) => setOpDate(e.target.value)} /></div>
               </div>
               <div className="flex items-end gap-2">

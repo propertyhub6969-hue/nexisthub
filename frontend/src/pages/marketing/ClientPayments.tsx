@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { ArrowLeft, Plus, Trash2, Pencil, Loader2, CalendarClock, Wallet, History, Eye, Printer } from 'lucide-react'
 import { printReceipt } from '../../utils/receipt'
+import MoneyInput from '../../components/ui/MoneyInput'
 import Badge from '../../components/ui/Badge'
 import Modal from '../../components/ui/Modal'
 import { marketingService } from '../../services/marketing'
@@ -288,7 +289,7 @@ export default function ClientPayments() {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="label">Nominal (Rp) *</label>
-              <input className="input" type="number" min={0} required value={schForm.amount || ''} onChange={(e) => setSchForm({ ...schForm, amount: Number(e.target.value) })} />
+              <MoneyInput required value={schForm.amount || undefined} onChange={(v) => setSchForm({ ...schForm, amount: v ?? 0 })} />
             </div>
             <div>
               <label className="label">Jatuh Tempo</label>
@@ -307,7 +308,7 @@ export default function ClientPayments() {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="label">Nominal (Rp) *</label>
-              <input className="input" type="number" min={0} required value={payForm.amount || ''} onChange={(e) => setPayForm({ ...payForm, amount: Number(e.target.value) })} />
+              <MoneyInput required value={payForm.amount || undefined} onChange={(v) => setPayForm({ ...payForm, amount: v ?? 0 })} />
             </div>
             <div>
               <label className="label">Tanggal Bayar</label>

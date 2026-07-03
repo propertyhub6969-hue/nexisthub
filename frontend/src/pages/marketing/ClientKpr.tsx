@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { ArrowLeft, Loader2, Landmark, CheckCircle2, Banknote, Check } from 'lucide-react'
 import Modal from '../../components/ui/Modal'
+import MoneyInput from '../../components/ui/MoneyInput'
 import { marketingService } from '../../services/marketing'
 import { kprService } from '../../services/kpr'
 import type { Client, Bank, KprApplication, KprStage } from '../../types'
@@ -143,7 +144,7 @@ export default function ClientKpr() {
               </div>
             </div>
             <div className="grid grid-cols-3 gap-3">
-              <div><label className="label">Plafon (Rp)</label><input className="input" type="number" min={0} value={kpr.plafond ?? ''} onChange={(e) => set('plafond', e.target.value ? Number(e.target.value) : undefined)} /></div>
+              <div><label className="label">Plafon (Rp)</label><MoneyInput value={kpr.plafond ?? undefined} onChange={(v) => set('plafond', v)} /></div>
               <div><label className="label">Tenor (bulan)</label><input className="input" type="number" min={0} value={kpr.tenor_months ?? ''} onChange={(e) => set('tenor_months', e.target.value ? Number(e.target.value) : undefined)} /></div>
               <div><label className="label">Bunga (%)</label><input className="input" type="number" step="0.01" min={0} value={kpr.interest_rate ?? ''} onChange={(e) => set('interest_rate', e.target.value ? Number(e.target.value) : undefined)} /></div>
             </div>
@@ -216,7 +217,7 @@ export default function ClientKpr() {
 
       <Modal open={disModal} onClose={() => setDisModal(false)} title="Catat Pencairan KPR">
         <form onSubmit={submitDisburse} className="space-y-3">
-          <div><label className="label">Jumlah Pencairan (Rp) *</label><input className="input" type="number" min={0} required value={disAmount ?? ''} onChange={(e) => setDisAmount(e.target.value ? Number(e.target.value) : undefined)} /></div>
+          <div><label className="label">Jumlah Pencairan (Rp) *</label><MoneyInput required value={disAmount} onChange={(v) => setDisAmount(v)} /></div>
           <div><label className="label">Tanggal Pencairan</label><input className="input" type="date" value={disDate} onChange={(e) => setDisDate(e.target.value)} /></div>
           <p className="text-xs text-slate-400">Ini akan menandai tahap Pencairan & membuat catatan uang masuk (sumber Bank) di menu Pembayaran pembeli.</p>
           <div className="flex justify-end gap-2 pt-2">

@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { Plus, Trash2, Pencil, Loader2, ArrowLeft, Map } from 'lucide-react'
 import Badge from '../../components/ui/Badge'
+import MoneyInput from '../../components/ui/MoneyInput'
 import Modal from '../../components/ui/Modal'
 import { propertyService } from '../../services/property'
 import type { Project, Unit, UnitCreate, UnitStatus } from '../../types'
@@ -227,7 +228,7 @@ export default function ProjectUnits() {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="label">Harga (Rp)</label>
-              <input className="input" type="number" min={0} value={form.price ?? ''} onChange={(e) => setForm({ ...form, price: e.target.value ? Number(e.target.value) : undefined })} />
+              <MoneyInput value={form.price} onChange={(v) => setForm({ ...form, price: v })} />
             </div>
             <div>
               <label className="label">Status</label>

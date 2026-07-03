@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useRef } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { ArrowLeft, Plus, Trash2, Pencil, Loader2, Receipt, Scale, FileText, Upload, Eye, Contact, FileSignature } from 'lucide-react'
 import Badge from '../../components/ui/Badge'
+import MoneyInput from '../../components/ui/MoneyInput'
 import Modal from '../../components/ui/Modal'
 import { marketingService } from '../../services/marketing'
 import { taxService } from '../../services/tax'
@@ -466,7 +467,7 @@ export default function ClientTax() {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="label">Jumlah (Rp)</label>
-              <input className="input" type="number" min={0} value={taxForm.amount ?? ''} onChange={(e) => setTaxForm({ ...taxForm, amount: e.target.value ? Number(e.target.value) : undefined })} />
+              <MoneyInput value={taxForm.amount} onChange={(v) => setTaxForm({ ...taxForm, amount: v })} />
             </div>
             <div>
               <label className="label">Tanggal</label>
@@ -507,7 +508,7 @@ export default function ClientTax() {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="label">Nominal (Rp) *</label>
-              <input className="input" type="number" min={0} required value={feeForm.amount || ''} onChange={(e) => setFeeForm({ ...feeForm, amount: Number(e.target.value) })} />
+              <MoneyInput required value={feeForm.amount || undefined} onChange={(v) => setFeeForm({ ...feeForm, amount: v ?? 0 })} />
             </div>
             <div>
               <label className="label">Tanggal</label>

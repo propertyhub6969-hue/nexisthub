@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Plus, Search, Trash2, Pencil, Loader2, MessageCircle, ArrowRightCircle } from 'lucide-react'
 import Badge from '../../components/ui/Badge'
+import MoneyInput from '../../components/ui/MoneyInput'
 import Modal from '../../components/ui/Modal'
 import { marketingService } from '../../services/marketing'
 import { propertyService } from '../../services/property'
@@ -239,7 +240,7 @@ export default function Prospects() {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="label">Budget (Rp)</label>
-              <input className="input" type="number" min={0} value={form.budget ?? ''} onChange={(e) => setForm({ ...form, budget: e.target.value ? Number(e.target.value) : undefined })} />
+              <MoneyInput value={form.budget} onChange={(v) => setForm({ ...form, budget: v })} />
             </div>
             <div>
               <label className="label">Status</label>

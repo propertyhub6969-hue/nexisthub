@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { Plus, Search, Trash2, Pencil, Loader2, Wallet, Scale, Landmark, Columns3, MoreVertical } from 'lucide-react'
 import Badge from '../../components/ui/Badge'
+import MoneyInput from '../../components/ui/MoneyInput'
 import Modal from '../../components/ui/Modal'
 import SignaturePad from '../../components/ui/SignaturePad'
 import { marketingService } from '../../services/marketing'
@@ -361,7 +362,7 @@ export default function Clients() {
           <div className="grid grid-cols-3 gap-3">
             <div>
               <label className="label">Harga Jual (Rp)</label>
-              <input className="input" type="number" min={0} value={form.contract_value ?? ''} onChange={(e) => setForm({ ...form, contract_value: e.target.value ? Number(e.target.value) : undefined })} />
+              <MoneyInput value={form.contract_value} onChange={(v) => setForm({ ...form, contract_value: v })} />
             </div>
             <div>
               <label className="label">Tanggal *</label>
