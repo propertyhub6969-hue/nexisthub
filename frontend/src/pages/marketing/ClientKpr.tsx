@@ -1,11 +1,11 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { ArrowLeft, Loader2, Landmark, CheckCircle2, Banknote, Check } from 'lucide-react'
+import { ArrowLeft, Loader2, Landmark, CheckCircle2, Banknote, Check, Plus, Trash2 } from 'lucide-react'
 import Modal from '../../components/ui/Modal'
 import MoneyInput from '../../components/ui/MoneyInput'
 import { marketingService } from '../../services/marketing'
 import { kprService } from '../../services/kpr'
-import type { Client, Bank, KprApplication, KprStage } from '../../types'
+import type { Client, Bank, KprApplication, KprStage, Disbursement } from '../../types'
 
 const fmt = (n?: number) => n == null ? '—' : new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(Number(n))
 
@@ -30,6 +30,8 @@ export default function ClientKpr() {
   const [disModal, setDisModal] = useState(false)
   const [disAmount, setDisAmount] = useState<number | undefined>(undefined)
   const [disDate, setDisDate] = useState('')
+  const [disNotes, setDisNotes] = useState('')
+  const [disbursements, setDisbursements] = useState<Disbursement[]>([])
 
   const load = useCallback(async () => {
     setLoading(true); setError('')
@@ -37,10 +39,15 @@ export default function ClientKpr() {
       const [cl, bk, apps] = await Promise.all([
         marketingService.getClient(clientId), kprService.listBanks(), kprService.listApplications(clientId),
       ])
-      setClient(cl); setBanks(bk); setKpr(apps[0] ?? null)
+      setClient(cl); setBanks(bk)
+      const app = apps[0] ?? null
+      setKpr(app)
+      setDisbursements(app ? await kprService.listDisbursements(app.id) : [])
     } catch { setError('Gagal memuat data KPR.') } finally { setLoading(false) }
   }, [clientId])
   useEffect(() => { load() }, [load])
+
+  const reloadDisbursements = async (kprId: string) => setDisbursements(await kprService.listDisbursements(kprId))
 
   async function createApp() {
     setSaving(true)
@@ -77,14 +84,25 @@ export default function ClientKpr() {
     return () => clearTimeout(t)
   }, [savedTick])
 
+  function openDisburse() { setDisAmount(undefined); setDisDate(''); setDisNotes(''); setDisModal(true) }
   async function submitDisburse(e: React.FormEvent) {
     e.preventDefault()
     if (!kpr || !disAmount) return
     setSaving(true)
     try {
-      const k = await kprService.disburse(kpr.id, disAmount, disDate || undefined)
+      const k = await kprService.disburse(kpr.id, disAmount, disDate || undefined, disNotes || undefined)
       setKpr(k); setDisModal(false)
+      await reloadDisbursements(kpr.id)
     } catch { setError('Gagal mencatat pencairan.') } finally { setSaving(false) }
+  }
+  async function delDisbursement(paymentId: string) {
+    if (!kpr || !confirm('Hapus pencairan ini?')) return
+    try {
+      await kprService.deleteDisbursement(paymentId)
+      const apps = await kprService.listApplications(clientId)
+      setKpr(apps[0] ?? null)
+      await reloadDisbursements(kpr.id)
+    } catch { setError('Gagal menghapus pencairan.') }
   }
 
   if (loading) return <div className="py-16 text-center text-slate-400"><Loader2 size={20} className="inline animate-spin" /></div>
@@ -200,26 +218,62 @@ export default function ClientKpr() {
             </div>
           </div>
 
-          {/* Pencairan */}
-          <div className="card p-5 flex items-center justify-between">
-            <div>
-              <p className="text-sm font-semibold text-slate-900 flex items-center gap-2"><Banknote size={16} /> Pencairan KPR</p>
-              {kpr.pencairan_amount != null
-                ? <p className="text-sm text-emerald-600 mt-1">Cair {fmt(kpr.pencairan_amount)} pada {kpr.pencairan_date ? new Date(kpr.pencairan_date).toLocaleDateString('id-ID') : '—'} — otomatis tercatat sebagai uang masuk (Bank)</p>
-                : <p className="text-sm text-slate-500 mt-1">Belum cair. Catat pencairan → otomatis jadi uang masuk di menu Pembayaran.</p>}
+          {/* Pencairan Bertahap */}
+          <div className="card overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100">
+              <p className="text-sm font-semibold text-slate-900 flex items-center gap-2"><Banknote size={16} /> Pencairan Bertahap</p>
+              <button className="btn-primary text-xs flex items-center gap-1" onClick={openDisburse}><Plus size={13} /> Tambah Pencairan</button>
             </div>
-            <button className="btn-primary text-sm" onClick={() => { setDisAmount(kpr.pencairan_amount ?? kpr.plafond); setDisDate(kpr.pencairan_date ?? ''); setDisModal(true) }}>
-              {kpr.pencairan_amount != null ? 'Ubah Pencairan' : 'Catat Pencairan'}
-            </button>
+            {/* Ringkasan plafon / cair / retensi */}
+            <div className="grid grid-cols-3 divide-x divide-slate-100 border-b border-slate-100">
+              <div className="p-4 text-center">
+                <p className="text-xs text-slate-500">Plafon KPR</p>
+                <p className="text-sm font-semibold text-slate-900">{fmt(kpr.plafond)}</p>
+              </div>
+              <div className="p-4 text-center">
+                <p className="text-xs text-slate-500">Sudah Cair</p>
+                <p className="text-sm font-semibold text-emerald-600">{fmt(kpr.total_disbursed)}</p>
+              </div>
+              <div className="p-4 text-center">
+                <p className="text-xs text-slate-500">Retensi (belum cair)</p>
+                <p className="text-sm font-semibold text-amber-600">{fmt(kpr.retention)}</p>
+              </div>
+            </div>
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 border-b border-slate-200">
+                <tr>{['Tanggal', 'Jumlah', 'Keterangan', ''].map((h, i) => (
+                  <th key={i} className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">{h}</th>))}</tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {disbursements.length === 0 ? (
+                  <tr><td colSpan={4} className="px-4 py-6 text-center text-slate-400 text-sm">Belum ada pencairan. Klik "Tambah Pencairan" untuk mencatat tahap pertama.</td></tr>
+                ) : disbursements.map((d) => (
+                  <tr key={d.id} className="hover:bg-slate-50">
+                    <td className="px-4 py-2.5 text-slate-500 text-xs">{d.payment_date ? new Date(d.payment_date).toLocaleDateString('id-ID') : '—'}</td>
+                    <td className="px-4 py-2.5 font-medium text-emerald-600">{fmt(d.amount)}</td>
+                    <td className="px-4 py-2.5 text-slate-500">{d.notes ?? '—'}</td>
+                    <td className="px-4 py-2.5 text-right">
+                      <button onClick={() => delDisbursement(d.id)} className="text-slate-400 hover:text-red-600" title="Hapus pencairan"><Trash2 size={14} /></button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <p className="px-5 py-2.5 text-xs text-slate-400 border-t border-slate-100">
+              Tiap pencairan otomatis tercatat sebagai uang masuk (sumber Bank) di menu Pembayaran. Retensi = Plafon − Sudah Cair.
+            </p>
           </div>
         </>
       )}
 
-      <Modal open={disModal} onClose={() => setDisModal(false)} title="Catat Pencairan KPR">
+      <Modal open={disModal} onClose={() => setDisModal(false)} title="Tambah Pencairan KPR">
         <form onSubmit={submitDisburse} className="space-y-3">
-          <div><label className="label">Jumlah Pencairan (Rp) *</label><MoneyInput required value={disAmount} onChange={(v) => setDisAmount(v)} /></div>
-          <div><label className="label">Tanggal Pencairan</label><input className="input" type="date" value={disDate} onChange={(e) => setDisDate(e.target.value)} /></div>
-          <p className="text-xs text-slate-400">Ini akan menandai tahap Pencairan & membuat catatan uang masuk (sumber Bank) di menu Pembayaran pembeli.</p>
+          <div className="grid grid-cols-2 gap-3">
+            <div><label className="label">Jumlah Pencairan (Rp) *</label><MoneyInput required value={disAmount} onChange={(v) => setDisAmount(v)} /></div>
+            <div><label className="label">Tanggal Pencairan</label><input className="input" type="date" value={disDate} onChange={(e) => setDisDate(e.target.value)} /></div>
+          </div>
+          <div><label className="label">Keterangan</label><input className="input" placeholder="mis. Pencairan tahap 1 / retensi" value={disNotes} onChange={(e) => setDisNotes(e.target.value)} /></div>
+          <p className="text-xs text-slate-400">Menandai tahap Pencairan & membuat 1 uang masuk (sumber Bank) di menu Pembayaran. Bisa dicatat beberapa kali (bertahap).</p>
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" className="btn-secondary text-sm" onClick={() => setDisModal(false)}>Batal</button>
             <button type="submit" className="btn-primary text-sm flex items-center gap-2" disabled={saving}>{saving && <Loader2 size={14} className="animate-spin" />}Simpan</button>

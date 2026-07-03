@@ -292,6 +292,7 @@ export interface Payment {
   id: string
   client_id: string
   schedule_id?: string
+  kpr_id?: string
   amount: number
   payment_date?: string
   method: PaymentMethod
@@ -303,6 +304,15 @@ export interface Payment {
   notes?: string
   created_at: string
   updated_at: string
+}
+
+export interface Disbursement {
+  id: string
+  amount: number
+  payment_date?: string
+  notes?: string
+  has_file?: boolean
+  created_at: string
 }
 
 export interface PaymentCreate {
@@ -327,6 +337,12 @@ export interface PaymentSummary {
   schedule_paid: number
   schedule_pending: number
   overdue_count: number
+  from_buyer: number
+  from_bank: number
+  kpr_plafond: number
+  buyer_remaining: number
+  retention_remaining: number
+  has_kpr: boolean
 }
 
 // ── Dashboard ─────────────────────────────────────────────────────
@@ -491,6 +507,8 @@ export interface KprApplication {
   pencairan_date?: string
   pencairan_amount?: number
   pencairan_payment_id?: string
+  total_disbursed?: number
+  retention?: number
   notes?: string
   created_at: string
   updated_at: string

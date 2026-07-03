@@ -12,7 +12,8 @@ from app.core.database import get_db
 from app.api.deps import get_current_context, AuthContext
 from app.core.audit import record_audit
 from app.models.marketing import Client
-from app.models.payment import PaymentSchedule, Payment, ScheduleStatus
+from app.models.payment import PaymentSchedule, Payment, ScheduleStatus, PaymentSource
+from app.models.kpr import KprApplication
 from app.schemas.payment import (
     ScheduleCreate, ScheduleUpdate, ScheduleResponse,
     PaymentCreate, PaymentUpdate, PaymentResponse, PaymentSummary,
@@ -56,12 +57,32 @@ async def payment_summary(
 ):
     client = await _get_client(db, ctx.tenant_id, client_id)
     price = Decimal(client.contract_value or 0)
-    total_paid = Decimal(await db.scalar(
+
+    _notdel = Payment.is_deleted == False  # noqa: E712
+    from_buyer = Decimal(await db.scalar(
         select(func.coalesce(func.sum(Payment.amount), 0)).where(
-            Payment.client_id == client_id, Payment.is_deleted == False)  # noqa: E712
+            Payment.client_id == client_id, Payment.source == PaymentSource.PEMBELI, _notdel)
     ))
+    from_bank = Decimal(await db.scalar(
+        select(func.coalesce(func.sum(Payment.amount), 0)).where(
+            Payment.client_id == client_id, Payment.source == PaymentSource.BANK, _notdel)
+    ))
+    total_paid = from_buyer + from_bank
     remaining = price - total_paid
     progress = float(total_paid / price * 100) if price > 0 else 0.0
+
+    # Plafon KPR (komitmen) = KPR terbaru pembeli ini. Kalau cash → 0.
+    kpr_plafond = Decimal(await db.scalar(
+        select(func.coalesce(KprApplication.plafond, 0)).where(
+            KprApplication.client_id == client_id, KprApplication.tenant_id == ctx.tenant_id,
+            KprApplication.is_deleted == False)  # noqa: E712
+        .order_by(KprApplication.created_at.desc()).limit(1)
+    ) or 0)
+    has_kpr = kpr_plafond > 0
+    # Sisa kewajiban PEMBELI: harga − uang dari pembeli − komitmen KPR (bank menanggung sisanya)
+    buyer_remaining = price - from_buyer - kpr_plafond
+    # RETENSI: plafon − yang sudah cair dari bank
+    retention_remaining = (kpr_plafond - from_bank) if has_kpr else Decimal(0)
 
     _sch = [PaymentSchedule.client_id == client_id, PaymentSchedule.is_deleted == False]  # noqa: E712
     sch_total = await db.scalar(select(func.count()).select_from(PaymentSchedule).where(*_sch))
@@ -76,6 +97,8 @@ async def payment_summary(
         progress_percent=round(progress, 1),
         schedule_count=sch_total or 0, schedule_paid=sch_paid or 0,
         schedule_pending=(sch_total or 0) - (sch_paid or 0), overdue_count=overdue or 0,
+        from_buyer=from_buyer, from_bank=from_bank, kpr_plafond=kpr_plafond,
+        buyer_remaining=buyer_remaining, retention_remaining=retention_remaining, has_kpr=has_kpr,
     )
 
 
@@ -207,6 +230,8 @@ async def update_payment(
     db: AsyncSession = Depends(get_db),
 ):
     pay = await _get_payment(db, ctx.tenant_id, payment_id)
+    if pay.kpr_id is not None:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Pencairan KPR dikelola di modul KPR, tidak bisa diubah di sini")
     old_schedule = pay.schedule_id
     for f, v in payload.model_dump(exclude_unset=True).items():
         setattr(pay, f, v)
@@ -274,6 +299,8 @@ async def delete_payment(
     db: AsyncSession = Depends(get_db),
 ):
     pay = await _get_payment(db, ctx.tenant_id, payment_id)
+    if pay.kpr_id is not None:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Pencairan KPR dihapus dari modul KPR, bukan di sini")
     sched = pay.schedule_id
     pay.is_deleted = True
     pay.deleted_at = datetime.utcnow()

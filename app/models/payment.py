@@ -85,6 +85,10 @@ class Payment(BaseModel, SoftDeleteMixin):
         UUID(as_uuid=True), ForeignKey("payment_schedules.id", ondelete="SET NULL"),
         nullable=True, index=True
     )
+    kpr_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("kpr_applications.id", ondelete="SET NULL"),
+        nullable=True, index=True   # diisi utk pencairan KPR (dikelola di modul KPR, read-only di Pembayaran)
+    )
     amount: Mapped[float] = mapped_column(Numeric(15, 2), nullable=False)
     payment_date: Mapped[Date] = mapped_column(Date, nullable=True)
     method: Mapped[PaymentMethod] = mapped_column(

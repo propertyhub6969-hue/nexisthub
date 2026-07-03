@@ -1,8 +1,9 @@
 import uuid
 from datetime import datetime, date
+from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,7 +16,7 @@ from app.models.marketing import Client, ClientStatus
 from app.models.payment import Payment, PaymentSource, PaymentMethod, PaymentPurpose
 from app.schemas.kpr import (
     BankCreate, BankUpdate, BankResponse,
-    KprCreate, KprUpdate, KprResponse, DisburseRequest,
+    KprCreate, KprUpdate, KprResponse, DisburseRequest, DisbursementResponse,
 )
 
 router = APIRouter()
@@ -60,6 +61,21 @@ async def delete_bank(bank_id: uuid.UUID, ctx: AuthContext = Depends(get_current
 
 
 # ═══════════════════════ KPR APPLICATIONS ═══════════════════════
+async def _disbursed_total(db, tenant_id, kpr_id) -> Decimal:
+    """Total pencairan yang sudah cair (jumlah semua uang masuk Bank bertautan KPR ini)."""
+    return Decimal(await db.scalar(
+        select(func.coalesce(func.sum(Payment.amount), 0)).where(
+            Payment.kpr_id == kpr_id, Payment.tenant_id == tenant_id, NOTDEL(Payment))
+    ))
+
+
+async def _attach_totals(db, tenant_id, k: KprApplication) -> KprApplication:
+    total = await _disbursed_total(db, tenant_id, k.id)
+    k.total_disbursed = total
+    k.retention = (Decimal(k.plafond) if k.plafond is not None else Decimal(0)) - total
+    return k
+
+
 async def _load_kpr(db, tenant_id, kpr_id) -> KprApplication:
     k = (await db.execute(
         select(KprApplication).options(selectinload(KprApplication.bank))
@@ -67,7 +83,7 @@ async def _load_kpr(db, tenant_id, kpr_id) -> KprApplication:
     )).scalar_one_or_none()
     if k is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Pengajuan KPR tidak ditemukan")
-    return k
+    return await _attach_totals(db, tenant_id, k)
 
 
 async def _sync_client_on_kpr_stage(db: AsyncSession, tenant_id, client_id, stage: KprStage) -> None:
@@ -91,7 +107,10 @@ async def list_kpr(client_id: uuid.UUID = Query(...), ctx: AuthContext = Depends
         .where(KprApplication.client_id == client_id, KprApplication.tenant_id == ctx.tenant_id, NOTDEL(KprApplication))
         .order_by(KprApplication.created_at.desc())
     )
-    return r.scalars().all()
+    items = r.scalars().all()
+    for k in items:
+        await _attach_totals(db, ctx.tenant_id, k)
+    return items
 
 
 @router.post("/applications", response_model=KprResponse, status_code=status.HTTP_201_CREATED)
@@ -130,35 +149,60 @@ async def delete_kpr(kpr_id: uuid.UUID, ctx: AuthContext = Depends(get_current_c
     await record_audit(db, ctx.tenant_id, ctx.user_id, "DELETE", "kpr_applications", kpr_id)
 
 
+@router.get("/applications/{kpr_id}/disbursements", response_model=list[DisbursementResponse])
+async def list_disbursements(kpr_id: uuid.UUID, ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db)):
+    """Daftar pencairan (tahap) untuk satu KPR."""
+    await _load_kpr(db, ctx.tenant_id, kpr_id)
+    r = await db.execute(
+        select(Payment).where(Payment.kpr_id == kpr_id, Payment.tenant_id == ctx.tenant_id, NOTDEL(Payment))
+        .order_by(Payment.payment_date, Payment.created_at)
+    )
+    return r.scalars().all()
+
+
 @router.post("/applications/{kpr_id}/disburse", response_model=KprResponse)
 async def disburse_kpr(kpr_id: uuid.UUID, payload: DisburseRequest, ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db)):
-    """Catat pencairan KPR → set tahap Pencairan & buat uang masuk (sumber Bank) otomatis."""
+    """Tambah SATU pencairan (bertahap) → buat uang masuk sumber Bank + set tahap Pencairan.
+    Total cair terakumulasi; retensi = plafon − total cair."""
     k = await _load_kpr(db, ctx.tenant_id, kpr_id)
     pay_date = payload.pay_date or date.today()
 
-    if k.pencairan_payment_id:
-        # sudah pernah cair → update pembayaran yang ada
-        pay = (await db.execute(select(Payment).where(Payment.id == k.pencairan_payment_id, NOTDEL(Payment)))).scalar_one_or_none()
-        if pay:
-            pay.amount = payload.amount
-            pay.payment_date = pay_date
-    else:
-        pay = Payment(
-            tenant_id=ctx.tenant_id, client_id=k.client_id, amount=payload.amount,
-            payment_date=pay_date, method=PaymentMethod.TRANSFER, source=PaymentSource.BANK,
-            purpose=PaymentPurpose.REALISASI_KPR,
-            notes="Pencairan KPR",
-        )
-        db.add(pay)
-        await db.flush()
-        k.pencairan_payment_id = pay.id
+    pay = Payment(
+        tenant_id=ctx.tenant_id, client_id=k.client_id, kpr_id=k.id, amount=payload.amount,
+        payment_date=pay_date, method=PaymentMethod.TRANSFER, source=PaymentSource.BANK,
+        purpose=PaymentPurpose.REALISASI_KPR,
+        notes=payload.notes or "Pencairan KPR",
+    )
+    db.add(pay)
+    await db.flush()
 
-    k.stage = KprStage.PENCAIRAN
-    k.pencairan_amount = payload.amount
+    k.pencairan_payment_id = k.pencairan_payment_id or pay.id
     k.pencairan_date = pay_date
+    k.pencairan_amount = await _disbursed_total(db, ctx.tenant_id, k.id)  # legacy: total cair
+    k.stage = KprStage.PENCAIRAN
     await db.flush()
     await _sync_client_on_kpr_stage(db, ctx.tenant_id, k.client_id, k.stage)
     await db.flush()
     await record_audit(db, ctx.tenant_id, ctx.user_id, "DISBURSE", "kpr_applications", kpr_id,
                        new_data={"amount": str(payload.amount), "date": str(pay_date)})
     return await _load_kpr(db, ctx.tenant_id, kpr_id)
+
+
+@router.delete("/disbursements/{payment_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_disbursement(payment_id: uuid.UUID, ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db)):
+    """Hapus satu pencairan (uang masuk Bank bertautan KPR). Retensi otomatis dihitung ulang."""
+    pay = (await db.execute(
+        select(Payment).where(Payment.id == payment_id, Payment.tenant_id == ctx.tenant_id,
+                              Payment.kpr_id.isnot(None), NOTDEL(Payment))
+    )).scalar_one_or_none()
+    if pay is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Pencairan tidak ditemukan")
+    kpr_id = pay.kpr_id
+    pay.is_deleted = True
+    pay.deleted_at = datetime.utcnow()
+    await db.flush()
+    # sinkron kolom legacy pencairan_amount
+    k = (await db.execute(select(KprApplication).where(KprApplication.id == kpr_id))).scalar_one_or_none()
+    if k is not None:
+        k.pencairan_amount = await _disbursed_total(db, ctx.tenant_id, kpr_id)
+    await record_audit(db, ctx.tenant_id, ctx.user_id, "DELETE", "payments", payment_id, old_data={"kpr_disbursement": str(pay.amount)})

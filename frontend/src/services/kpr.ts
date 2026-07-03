@@ -1,5 +1,5 @@
 import api from './api'
-import type { Bank, BankCreate, KprApplication, KprCreate } from '../types'
+import type { Bank, BankCreate, KprApplication, KprCreate, Disbursement } from '../types'
 
 export const kprService = {
   // ── Bank (master) ──
@@ -35,8 +35,15 @@ export const kprService = {
   async deleteApplication(id: string): Promise<void> {
     await api.delete(`/kpr/applications/${id}`)
   },
-  async disburse(id: string, amount: number, pay_date?: string): Promise<KprApplication> {
-    const { data } = await api.post<KprApplication>(`/kpr/applications/${id}/disburse`, { amount, pay_date })
+  async disburse(id: string, amount: number, pay_date?: string, notes?: string): Promise<KprApplication> {
+    const { data } = await api.post<KprApplication>(`/kpr/applications/${id}/disburse`, { amount, pay_date, notes })
     return data
+  },
+  async listDisbursements(id: string): Promise<Disbursement[]> {
+    const { data } = await api.get<Disbursement[]>(`/kpr/applications/${id}/disbursements`)
+    return data
+  },
+  async deleteDisbursement(paymentId: string): Promise<void> {
+    await api.delete(`/kpr/disbursements/${paymentId}`)
   },
 }

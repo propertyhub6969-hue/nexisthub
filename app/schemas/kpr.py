@@ -73,6 +73,9 @@ class KprResponse(KprBase):
     pencairan_date: Optional[date] = None
     pencairan_amount: Optional[Decimal] = None
     pencairan_payment_id: Optional[uuid.UUID] = None
+    # Pencairan bertahap: total yang sudah cair & retensi (plafon − total cair) — dihitung saat fetch
+    total_disbursed: Decimal = Decimal(0)
+    retention: Decimal = Decimal(0)
     created_at: datetime
     updated_at: datetime
 
@@ -81,5 +84,19 @@ class KprResponse(KprBase):
 
 
 class DisburseRequest(BaseModel):
-    amount: Decimal = Field(..., ge=0)
+    amount: Decimal = Field(..., gt=0)
     pay_date: Optional[date] = None
+    notes: Optional[str] = None
+
+
+# ── Pencairan (satu tahap) ────────────────────────────────────────
+class DisbursementResponse(BaseModel):
+    id: uuid.UUID
+    amount: Decimal
+    payment_date: Optional[date] = None
+    notes: Optional[str] = None
+    has_file: bool = False
+    created_at: datetime
+
+    class Config:
+        from_attributes = True

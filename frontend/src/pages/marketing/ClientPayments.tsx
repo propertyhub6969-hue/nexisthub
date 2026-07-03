@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { ArrowLeft, Plus, Trash2, Pencil, Loader2, CalendarClock, Wallet, History, Eye, Printer } from 'lucide-react'
+import { ArrowLeft, Plus, Trash2, Pencil, Loader2, CalendarClock, Wallet, History, Eye, Printer, Landmark } from 'lucide-react'
 import { printReceipt } from '../../utils/receipt'
 import MoneyInput from '../../components/ui/MoneyInput'
 import Badge from '../../components/ui/Badge'
@@ -164,18 +164,35 @@ export default function ClientPayments() {
       {error && <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-2">{error}</div>}
 
       {summary && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <div className="card p-4"><p className="text-xs text-slate-500">Harga</p><p className="text-lg font-semibold text-slate-900">{fmt(summary.price)}</p></div>
-          <div className="card p-4"><p className="text-xs text-slate-500">Terbayar</p><p className="text-lg font-semibold text-emerald-600">{fmt(summary.total_paid)}</p></div>
-          <div className="card p-4"><p className="text-xs text-slate-500">Sisa</p><p className="text-lg font-semibold text-amber-600">{fmt(summary.remaining)}</p></div>
-          <div className="card p-4">
-            <p className="text-xs text-slate-500">Progres {summary.progress_percent}%</p>
-            <div className="mt-2 h-2 rounded-full bg-slate-100 overflow-hidden">
-              <div className="h-full bg-brand-500" style={{ width: `${Math.min(summary.progress_percent, 100)}%` }} />
+        <>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="card p-4"><p className="text-xs text-slate-500">Harga Jual</p><p className="text-lg font-semibold text-slate-900">{fmt(summary.price)}</p></div>
+            <div className="card p-4"><p className="text-xs text-slate-500">Kas Diterima</p><p className="text-lg font-semibold text-emerald-600">{fmt(summary.total_paid)}</p>
+              {summary.has_kpr && <p className="text-[11px] text-slate-400 mt-0.5">Pembeli {fmt(summary.from_buyer)} · Bank {fmt(summary.from_bank)}</p>}
             </div>
-            {summary.overdue_count > 0 && <p className="text-xs text-red-600 mt-1">{summary.overdue_count} termin terlambat</p>}
+            <div className="card p-4">
+              <p className="text-xs text-slate-500">Sisa Kewajiban Pembeli</p>
+              <p className="text-lg font-semibold text-amber-600">{fmt(summary.buyer_remaining)}</p>
+              {summary.has_kpr && Number(summary.buyer_remaining) <= 0 && <p className="text-[11px] text-emerald-600 mt-0.5">Lunas (ditanggung KPR)</p>}
+            </div>
+            <div className="card p-4">
+              <p className="text-xs text-slate-500">Progres {summary.progress_percent}%</p>
+              <div className="mt-2 h-2 rounded-full bg-slate-100 overflow-hidden">
+                <div className="h-full bg-brand-500" style={{ width: `${Math.min(summary.progress_percent, 100)}%` }} />
+              </div>
+              {summary.overdue_count > 0 && <p className="text-xs text-red-600 mt-1">{summary.overdue_count} termin terlambat</p>}
+            </div>
           </div>
-        </div>
+          {summary.has_kpr && (
+            <div className="card p-4 flex items-center justify-between bg-amber-50/50 border-amber-200">
+              <div>
+                <p className="text-sm font-semibold text-amber-700">Retensi — menunggu pencairan bank</p>
+                <p className="text-xs text-slate-500 mt-0.5">Plafon KPR {fmt(summary.kpr_plafond)} − sudah cair {fmt(summary.from_bank)}. Ini piutang ke bank, bukan tunggakan pembeli.</p>
+              </div>
+              <p className="text-xl font-bold text-amber-700">{fmt(summary.retention_remaining)}</p>
+            </div>
+          )}
+        </>
       )}
 
       <div className="card overflow-hidden">
@@ -246,8 +263,16 @@ export default function ClientPayments() {
                   <td className="px-4 py-2.5">
                     <div className="flex items-center justify-end gap-3">
                       <button onClick={() => handlePrint(p)} className="text-slate-400 hover:text-brand-600" title="Cetak Kuitansi"><Printer size={14} /></button>
-                      <button onClick={() => openPayEdit(p)} className="text-slate-400 hover:text-brand-600" title="Edit"><Pencil size={14} /></button>
-                      <button onClick={() => delPayment(p.id)} className="text-slate-400 hover:text-red-600" title="Hapus"><Trash2 size={14} /></button>
+                      {p.kpr_id ? (
+                        <Link to={`/marketing/clients/${clientId}/kpr`} className="inline-flex items-center gap-1 text-[11px] text-amber-600 hover:underline" title="Pencairan dikelola di modul KPR">
+                          <Landmark size={12} /> dari KPR
+                        </Link>
+                      ) : (
+                        <>
+                          <button onClick={() => openPayEdit(p)} className="text-slate-400 hover:text-brand-600" title="Edit"><Pencil size={14} /></button>
+                          <button onClick={() => delPayment(p.id)} className="text-slate-400 hover:text-red-600" title="Hapus"><Trash2 size={14} /></button>
+                        </>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -334,7 +359,8 @@ export default function ClientPayments() {
               <label className="label">Jenis Pembayaran</label>
               <select className="input" value={payForm.purpose ?? ''} onChange={(e) => setPayForm({ ...payForm, purpose: (e.target.value || undefined) as PaymentPurpose | undefined })}>
                 <option value="">Pilih jenis...</option>
-                {(Object.keys(purposeLabel) as PaymentPurpose[]).map((k) => <option key={k} value={k}>{purposeLabel[k]}</option>)}
+                {/* Realisasi KPR sengaja tak ada di sini — dicatat via modul KPR (Pencairan Bertahap) */}
+                {(Object.keys(purposeLabel) as PaymentPurpose[]).filter((k) => k !== 'realisasi_kpr').map((k) => <option key={k} value={k}>{purposeLabel[k]}</option>)}
               </select>
             </div>
             <div>

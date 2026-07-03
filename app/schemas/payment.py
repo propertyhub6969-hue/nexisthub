@@ -73,6 +73,7 @@ class PaymentResponse(PaymentBase):
     id: uuid.UUID
     client_id: uuid.UUID
     schedule_id: Optional[uuid.UUID] = None
+    kpr_id: Optional[uuid.UUID] = None
     has_file: bool = False
     file_name: Optional[str] = None
     created_at: datetime
@@ -86,10 +87,17 @@ class PaymentResponse(PaymentBase):
 class PaymentSummary(BaseModel):
     client_id: uuid.UUID
     price: Decimal
-    total_paid: Decimal
-    remaining: Decimal
+    total_paid: Decimal          # kas diterima = dari pembeli + dari bank
+    remaining: Decimal           # legacy: price − total_paid
     progress_percent: float
     schedule_count: int
     schedule_paid: int
     schedule_pending: int
     overdue_count: int
+    # Pisah 2 sudut pandang (pencairan bertahap + retensi):
+    from_buyer: Decimal = Decimal(0)          # uang diterima dari pembeli (DP/cicilan)
+    from_bank: Decimal = Decimal(0)           # pencairan KPR yang sudah cair
+    kpr_plafond: Decimal = Decimal(0)         # komitmen plafon KPR (0 bila cash)
+    buyer_remaining: Decimal = Decimal(0)     # sisa KEWAJIBAN PEMBELI = price − dari pembeli − plafon KPR
+    retention_remaining: Decimal = Decimal(0)  # RETENSI menunggu pencairan bank = plafon − sudah cair
+    has_kpr: bool = False
