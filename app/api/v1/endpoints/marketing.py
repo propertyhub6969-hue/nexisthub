@@ -16,6 +16,7 @@ from app.models.property import Unit, UnitStatus
 from app.models.payment import Payment
 from app.models.kpr import KprApplication
 from app.core.audit import record_audit
+from app.core.unit_status import unit_status_for_client as _unit_status_for_client, set_unit_status as _set_unit_status
 from app.schemas.marketing import (
     Paginated,
     LeadCreate, LeadUpdate, LeadResponse,
@@ -353,23 +354,6 @@ async def _assert_unit_free(db, tenant_id, unit_id, exclude_id=None):
         q = q.where(Client.id != exclude_id)
     if (await db.execute(q)).scalar_one_or_none():
         raise HTTPException(status.HTTP_409_CONFLICT, detail="Unit/kavling sudah dipakai pembeli lain")
-
-
-def _unit_status_for_client(client: Client):
-    """Status unit yang seharusnya berdasarkan status pembeli."""
-    if client.status == ClientStatus.INACTIVE:
-        return UnitStatus.AVAILABLE
-    if client.status == ClientStatus.COMPLETED:
-        return UnitStatus.SOLD
-    return UnitStatus.BOOKED  # active → dipesan
-
-
-async def _set_unit_status(db, tenant_id, unit_id, new_status):
-    if not unit_id:
-        return
-    u = (await db.execute(select(Unit).where(Unit.id == unit_id, Unit.tenant_id == tenant_id))).scalar_one_or_none()
-    if u:
-        u.status = new_status
 
 
 async def _get_client(db: AsyncSession, tenant_id: uuid.UUID, client_id: uuid.UUID) -> Client:

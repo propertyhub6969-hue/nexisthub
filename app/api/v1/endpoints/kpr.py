@@ -8,9 +8,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.audit import record_audit
+from app.core.unit_status import unit_status_for_client, set_unit_status
 from app.api.deps import get_current_context, AuthContext
 from app.models.kpr import Bank, KprApplication, KprStage
-from app.models.marketing import Client
+from app.models.marketing import Client, ClientStatus
 from app.models.payment import Payment, PaymentSource, PaymentMethod, PaymentPurpose
 from app.schemas.kpr import (
     BankCreate, BankUpdate, BankResponse,
@@ -69,6 +70,20 @@ async def _load_kpr(db, tenant_id, kpr_id) -> KprApplication:
     return k
 
 
+async def _sync_client_on_kpr_stage(db: AsyncSession, tenant_id, client_id, stage: KprStage) -> None:
+    """Saat KPR mencapai Akad Kredit/Pencairan, tandai Pembeli 'Selesai' → unit otomatis ikut jadi Akad/Terjual
+    (pakai helper yang sama dgn sinkronisasi status Pembeli, agar tak saling menimpa)."""
+    if stage not in (KprStage.AKAD_KREDIT, KprStage.PENCAIRAN):
+        return
+    client = (await db.execute(
+        select(Client).where(Client.id == client_id, Client.tenant_id == tenant_id, Client.is_deleted == False)  # noqa: E712
+    )).scalar_one_or_none()
+    if client is None or client.status != ClientStatus.ACTIVE:
+        return  # jangan timpa status 'Nonaktif' (batal) atau yang sudah 'Selesai'
+    client.status = ClientStatus.COMPLETED
+    await set_unit_status(db, tenant_id, client.unit_id, unit_status_for_client(client))
+
+
 @router.get("/applications", response_model=list[KprResponse])
 async def list_kpr(client_id: uuid.UUID = Query(...), ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db)):
     r = await db.execute(
@@ -101,6 +116,8 @@ async def update_kpr(kpr_id: uuid.UUID, payload: KprUpdate, ctx: AuthContext = D
     data = payload.model_dump(exclude_unset=True)
     for f, v in data.items():
         setattr(k, f, v)
+    await db.flush()
+    await _sync_client_on_kpr_stage(db, ctx.tenant_id, k.client_id, k.stage)
     await db.flush()
     await record_audit(db, ctx.tenant_id, ctx.user_id, "UPDATE", "kpr_applications", kpr_id, new_data=data)
     return await _load_kpr(db, ctx.tenant_id, kpr_id)
@@ -139,6 +156,8 @@ async def disburse_kpr(kpr_id: uuid.UUID, payload: DisburseRequest, ctx: AuthCon
     k.stage = KprStage.PENCAIRAN
     k.pencairan_amount = payload.amount
     k.pencairan_date = pay_date
+    await db.flush()
+    await _sync_client_on_kpr_stage(db, ctx.tenant_id, k.client_id, k.stage)
     await db.flush()
     await record_audit(db, ctx.tenant_id, ctx.user_id, "DISBURSE", "kpr_applications", kpr_id,
                        new_data={"amount": str(payload.amount), "date": str(pay_date)})
