@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { Link } from 'react-router-dom'
-import { Plus, Search, Trash2, Pencil, Loader2, Wallet, Scale, Landmark, Columns3 } from 'lucide-react'
+import { Plus, Search, Trash2, Pencil, Loader2, Wallet, Scale, Landmark, Columns3, MoreVertical } from 'lucide-react'
 import Badge from '../../components/ui/Badge'
 import Modal from '../../components/ui/Modal'
 import SignaturePad from '../../components/ui/SignaturePad'
@@ -82,6 +82,7 @@ export default function Clients() {
   const colMenuRef = useRef<HTMLDivElement>(null)
   const [projectFilter, setProjectFilter] = useState('')
   const [unitFilter, setUnitFilter] = useState('')
+  const [actionMenuId, setActionMenuId] = useState<string | null>(null)
 
   const projectName = (id?: string) => projects.find((p) => p.id === id)?.name
   const unitLabel = (u?: Unit) => u ? [u.block, u.unit_number].filter(Boolean).join('-') : undefined
@@ -94,6 +95,7 @@ export default function Clients() {
   useEffect(() => {
     function onDocClick(e: MouseEvent) {
       if (colMenuRef.current && !colMenuRef.current.contains(e.target as Node)) setColMenuOpen(false)
+      if (!(e.target as HTMLElement).closest('[data-action-menu-root]')) setActionMenuId(null)
     }
     document.addEventListener('mousedown', onDocClick)
     return () => document.removeEventListener('mousedown', onDocClick)
@@ -208,12 +210,33 @@ export default function Clients() {
       }
       case 'aksi':
         return (
-          <div className="flex items-center justify-end gap-3">
-            <Link to={`/marketing/clients/${c.id}/payments`} className="text-slate-400 hover:text-brand-600 transition-colors" title="Pembayaran & Cicilan"><Wallet size={15} /></Link>
-            <Link to={`/marketing/clients/${c.id}/tax`} className="text-slate-400 hover:text-brand-600 transition-colors" title="Pajak & Notaris"><Scale size={15} /></Link>
-            <Link to={`/marketing/clients/${c.id}/kpr`} className="text-slate-400 hover:text-brand-600 transition-colors" title="KPR"><Landmark size={15} /></Link>
-            <button onClick={() => openEdit(c)} className="text-slate-400 hover:text-brand-600 transition-colors" title="Edit"><Pencil size={15} /></button>
-            <button onClick={() => handleDelete(c.id)} className="text-slate-400 hover:text-red-600 transition-colors" title="Hapus"><Trash2 size={15} /></button>
+          <div className="relative flex justify-end" data-action-menu-root>
+            <button
+              onClick={() => setActionMenuId((id) => (id === c.id ? null : c.id))}
+              className="text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-md p-1.5 transition-colors"
+              title="Aksi"
+            >
+              <MoreVertical size={16} />
+            </button>
+            {actionMenuId === c.id && (
+              <div className="absolute right-0 top-full mt-1 w-56 card py-1 z-20 text-left">
+                <Link to={`/marketing/clients/${c.id}/payments`} onClick={() => setActionMenuId(null)} className="flex items-center gap-2.5 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50">
+                  <Wallet size={15} className="text-slate-400" /> Pembayaran & Cicilan
+                </Link>
+                <Link to={`/marketing/clients/${c.id}/tax`} onClick={() => setActionMenuId(null)} className="flex items-center gap-2.5 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50">
+                  <Scale size={15} className="text-slate-400" /> Pajak & Notaris
+                </Link>
+                <Link to={`/marketing/clients/${c.id}/kpr`} onClick={() => setActionMenuId(null)} className="flex items-center gap-2.5 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50">
+                  <Landmark size={15} className="text-slate-400" /> KPR
+                </Link>
+                <button onClick={() => { setActionMenuId(null); openEdit(c) }} className="flex items-center gap-2.5 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 w-full text-left">
+                  <Pencil size={15} className="text-slate-400" /> Edit
+                </button>
+                <button onClick={() => { setActionMenuId(null); handleDelete(c.id) }} className="flex items-center gap-2.5 px-3 py-2 text-sm text-red-600 hover:bg-red-50 w-full text-left">
+                  <Trash2 size={15} /> Hapus
+                </button>
+              </div>
+            )}
           </div>
         )
       default:
