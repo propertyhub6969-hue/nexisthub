@@ -93,6 +93,7 @@ export interface Prospect {
   full_name: string
   phone?: string
   email?: string
+  interested_project_id?: string
   unit_type?: string
   budget?: number
   notes?: string
@@ -105,6 +106,7 @@ export interface ProspectCreate {
   full_name: string
   phone?: string
   email?: string
+  interested_project_id?: string
   unit_type?: string
   budget?: number
   notes?: string

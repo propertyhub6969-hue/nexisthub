@@ -4,8 +4,9 @@ import { Plus, Search, Trash2, Pencil, Loader2, MessageCircle, ArrowRightCircle 
 import Badge from '../../components/ui/Badge'
 import Modal from '../../components/ui/Modal'
 import { marketingService } from '../../services/marketing'
+import { propertyService } from '../../services/property'
 import { waLink } from '../../utils/phone'
-import type { Prospect, ProspectCreate, ProspectStatus } from '../../types'
+import type { Prospect, ProspectCreate, ProspectStatus, Project } from '../../types'
 
 const statusConfig: Record<ProspectStatus, { label: string; variant: 'blue' | 'yellow' | 'green' | 'red' }> = {
   active:      { label: 'Aktif',     variant: 'blue' },
@@ -17,11 +18,12 @@ const statusConfig: Record<ProspectStatus, { label: string; variant: 'blue' | 'y
 const fmt = (n?: number) =>
   n == null ? '—' : new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(n)
 
-const emptyForm: ProspectCreate = { full_name: '', phone: '', email: '', unit_type: '', budget: undefined, status: 'active' }
+const emptyForm: ProspectCreate = { full_name: '', phone: '', email: '', interested_project_id: '', unit_type: '', budget: undefined, status: 'active' }
 
 export default function Prospects() {
   const navigate = useNavigate()
   const [prospects, setProspects] = useState<Prospect[]>([])
+  const [projects, setProjects] = useState<Project[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [search, setSearch] = useState('')
@@ -29,6 +31,12 @@ export default function Prospects() {
   const [form, setForm] = useState<ProspectCreate>(emptyForm)
   const [saving, setSaving] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
+
+  const projectName = (id?: string) => projects.find((p) => p.id === id)?.name
+
+  useEffect(() => {
+    propertyService.listProjects({ size: 500 }).then((r) => setProjects(r.items)).catch(() => {})
+  }, [])
 
   const load = useCallback(async (term: string) => {
     setLoading(true)
@@ -66,6 +74,7 @@ export default function Prospects() {
       full_name: p.full_name,
       phone: p.phone ?? '',
       email: p.email ?? '',
+      interested_project_id: p.interested_project_id ?? '',
       unit_type: p.unit_type ?? '',
       budget: p.budget,
       status: p.status,
@@ -86,7 +95,7 @@ export default function Prospects() {
       const payload: ProspectCreate = { ...form }
       if (!payload.budget) delete payload.budget
       const rec = payload as unknown as Record<string, unknown>
-      ;['phone', 'email', 'unit_type'].forEach((k) => { if (rec[k] === '') delete rec[k] })
+      ;['phone', 'email', 'interested_project_id', 'unit_type'].forEach((k) => { if (rec[k] === '') delete rec[k] })
       if (editingId) {
         await marketingService.updateProspect(editingId, payload)
       } else {
@@ -146,7 +155,7 @@ export default function Prospects() {
         <table className="w-full text-sm">
           <thead className="bg-slate-50 border-b border-slate-200">
             <tr>
-              {['Nama', 'No. HP', 'Tipe Unit', 'Budget', 'Status', 'Tanggal', ''].map((h, i) => (
+              {['Nama', 'No. HP', 'Properti Diminati', 'Tipe Unit', 'Budget', 'Status', 'Tanggal', ''].map((h, i) => (
                 <th key={i} className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">
                   {h}
                 </th>
@@ -155,9 +164,9 @@ export default function Prospects() {
           </thead>
           <tbody className="divide-y divide-slate-100">
             {loading ? (
-              <tr><td colSpan={7} className="px-4 py-10 text-center text-slate-400"><Loader2 size={18} className="inline animate-spin" /></td></tr>
+              <tr><td colSpan={8} className="px-4 py-10 text-center text-slate-400"><Loader2 size={18} className="inline animate-spin" /></td></tr>
             ) : prospects.length === 0 ? (
-              <tr><td colSpan={7} className="px-4 py-8 text-center text-slate-400 text-sm">Belum ada prospek.</td></tr>
+              <tr><td colSpan={8} className="px-4 py-8 text-center text-slate-400 text-sm">Belum ada prospek.</td></tr>
             ) : (
               prospects.map((p) => {
                 const s = statusConfig[p.status]
@@ -172,6 +181,7 @@ export default function Prospects() {
                         </a>
                       ) : <span className="text-slate-400">—</span>}
                     </td>
+                    <td className="px-4 py-3 text-slate-500">{projectName(p.interested_project_id) ?? '—'}</td>
                     <td className="px-4 py-3 text-slate-500">{p.unit_type ?? '—'}</td>
                     <td className="px-4 py-3 text-slate-600">{fmt(p.budget)}</td>
                     <td className="px-4 py-3">{s && <Badge label={s.label} variant={s.variant} />}</td>
@@ -215,21 +225,30 @@ export default function Prospects() {
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
+              <label className="label">Properti Diminati</label>
+              <select className="input" value={form.interested_project_id} onChange={(e) => setForm({ ...form, interested_project_id: e.target.value })}>
+                <option value="">Pilih proyek...</option>
+                {projects.map((pr) => <option key={pr.id} value={pr.id}>{pr.name}</option>)}
+              </select>
+            </div>
+            <div>
               <label className="label">Tipe Unit</label>
               <input className="input" placeholder="Tipe 36/72..." value={form.unit_type} onChange={(e) => setForm({ ...form, unit_type: e.target.value })} />
             </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="label">Budget (Rp)</label>
               <input className="input" type="number" min={0} value={form.budget ?? ''} onChange={(e) => setForm({ ...form, budget: e.target.value ? Number(e.target.value) : undefined })} />
             </div>
-          </div>
-          <div>
-            <label className="label">Status</label>
-            <select className="input" value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value as ProspectStatus })}>
-              {(Object.keys(statusConfig) as ProspectStatus[]).map((k) => (
-                <option key={k} value={k}>{statusConfig[k].label}</option>
-              ))}
-            </select>
+            <div>
+              <label className="label">Status</label>
+              <select className="input" value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value as ProspectStatus })}>
+                {(Object.keys(statusConfig) as ProspectStatus[]).map((k) => (
+                  <option key={k} value={k}>{statusConfig[k].label}</option>
+                ))}
+              </select>
+            </div>
           </div>
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" className="btn-secondary text-sm" onClick={closeModal}>Batal</button>

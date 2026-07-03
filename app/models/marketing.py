@@ -85,6 +85,10 @@ class Prospect(BaseModel):
     full_name: Mapped[str] = mapped_column(String(200), nullable=False)
     phone: Mapped[str] = mapped_column(String(20), nullable=True)
     email: Mapped[str] = mapped_column(String(255), nullable=True)
+    interested_project_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("projects.id", ondelete="SET NULL"),
+        nullable=True, index=True
+    )  # Properti/proyek yang diminati — terbawa dari Lead saat konversi
     unit_type: Mapped[str] = mapped_column(String(100), nullable=True)   # Tipe unit (36/72, 45/90, dll)
     budget: Mapped[float] = mapped_column(Numeric(15, 2), nullable=True)
     status: Mapped[ProspectStatus] = mapped_column(

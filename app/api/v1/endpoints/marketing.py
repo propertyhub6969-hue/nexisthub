@@ -137,6 +137,7 @@ async def convert_lead(
     prospect = Prospect(
         tenant_id=ctx.tenant_id, lead_id=lead.id,
         full_name=lead.full_name, phone=lead.phone, email=lead.email,
+        interested_project_id=lead.interested_project_id,
         notes=lead.interest, status=ProspectStatus.ACTIVE,
     )
     db.add(prospect)
@@ -248,6 +249,7 @@ async def convert_prospect(
     client = Client(
         tenant_id=ctx.tenant_id, prospect_id=prospect.id, marketing_user_id=ctx.user_id,
         full_name=prospect.full_name, phone=prospect.phone, email=prospect.email,
+        project_id=prospect.interested_project_id,
         unit_type=prospect.unit_type, contract_value=prospect.budget,
         notes=prospect.notes, status=ClientStatus.ACTIVE,
     )

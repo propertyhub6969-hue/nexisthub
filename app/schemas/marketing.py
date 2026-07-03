@@ -65,6 +65,7 @@ class ProspectBase(BaseModel):
     full_name: str = Field(..., min_length=2, max_length=200)
     phone: Optional[str] = Field(None, max_length=20)
     email: Optional[EmailStr] = None
+    interested_project_id: Optional[uuid.UUID] = None
     unit_type: Optional[str] = Field(None, max_length=100)
     budget: Optional[Decimal] = None
     notes: Optional[str] = None
@@ -80,6 +81,7 @@ class ProspectUpdate(BaseModel):
     full_name: Optional[str] = Field(None, min_length=2, max_length=200)
     phone: Optional[str] = Field(None, max_length=20)
     email: Optional[EmailStr] = None
+    interested_project_id: Optional[uuid.UUID] = None
     unit_type: Optional[str] = Field(None, max_length=100)
     budget: Optional[Decimal] = None
     notes: Optional[str] = None
