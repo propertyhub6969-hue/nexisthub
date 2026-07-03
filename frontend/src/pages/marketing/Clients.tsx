@@ -7,7 +7,7 @@ import SignaturePad from '../../components/ui/SignaturePad'
 import { marketingService } from '../../services/marketing'
 import { propertyService } from '../../services/property'
 import { authService } from '../../services/auth'
-import type { Client, ClientCreate, ClientStatus, Project, Unit, UserResponse } from '../../types'
+import type { Client, ClientCreate, ClientStatus, ClientPaymentType, KprStage, Project, Unit, UserResponse } from '../../types'
 
 const statusConfig: Record<ClientStatus, { label: string; variant: 'green' | 'blue' | 'gray' }> = {
   active:    { label: 'Aktif',    variant: 'green' },
@@ -15,12 +15,25 @@ const statusConfig: Record<ClientStatus, { label: string; variant: 'green' | 'bl
   inactive:  { label: 'Nonaktif', variant: 'gray' },
 }
 
+const paymentTypeConfig: Record<ClientPaymentType, { label: string; variant: 'blue' | 'gray' }> = {
+  cash: { label: 'Cash', variant: 'gray' },
+  kpr:  { label: 'KPR',  variant: 'blue' },
+}
+
+const kprStageLabel: Record<KprStage, string> = {
+  collect_berkas: 'Collect Berkas',
+  berkas_masuk_bank: 'Berkas di Bank',
+  sp3k: 'SP3K',
+  akad_kredit: 'Akad Kredit',
+  pencairan: 'Pencairan',
+}
+
 const fmt = (n?: number) =>
   n == null ? '—' : new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(Number(n))
 
 const emptyForm: ClientCreate = {
   full_name: '', phone: '', nik: '', address: '', project_id: '', unit_id: '',
-  contract_value: undefined, contract_date: '', promo: '', signature: '', status: 'active',
+  contract_value: undefined, contract_date: '', payment_type: undefined, promo: '', signature: '', status: 'active',
 }
 
 export default function Clients() {
@@ -72,6 +85,7 @@ export default function Clients() {
       full_name: c.full_name, phone: c.phone ?? '', nik: c.nik ?? '', address: c.address ?? '',
       project_id: c.project_id ?? '', unit_id: c.unit_id ?? '',
       contract_value: c.contract_value, contract_date: c.contract_date ?? '',
+      payment_type: c.payment_type,
       promo: c.promo ?? '', signature: c.signature ?? '', status: c.status,
     })
     setModalOpen(true)
@@ -90,7 +104,7 @@ export default function Clients() {
       const payload: ClientCreate = { ...form }
       if (!payload.contract_value) delete payload.contract_value
       const rec = payload as unknown as Record<string, unknown>
-      ;['phone', 'nik', 'address', 'project_id', 'unit_id', 'contract_date', 'promo', 'signature'].forEach((k) => {
+      ;['phone', 'nik', 'address', 'project_id', 'unit_id', 'contract_date', 'payment_type', 'promo', 'signature'].forEach((k) => {
         if (rec[k] === '') delete rec[k]
       })
       if (editingId) await marketingService.updateClient(editingId, payload)
@@ -124,31 +138,37 @@ export default function Clients() {
 
       {error && <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-2">{error}</div>}
 
-      <div className="card overflow-hidden">
+      <div className="card overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-slate-50 border-b border-slate-200">
             <tr>
-              {['Nama Pembeli', 'No. HP', 'Proyek', 'No. Unit', 'Nilai Kontrak', 'Tanggal', 'Status', ''].map((h, i) => (
-                <th key={i} className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">{h}</th>
+              {['Tanggal', 'Nama Pembeli', 'No. HP', 'Proyek', 'No. Unit', 'Harga Jual', 'Sisa Piutang', 'Cara Beli', 'Status Berkas KPR', 'Status', ''].map((h, i) => (
+                <th key={i} className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">{h}</th>
               ))}
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {loading ? (
-              <tr><td colSpan={8} className="px-4 py-10 text-center text-slate-400"><Loader2 size={18} className="inline animate-spin" /></td></tr>
+              <tr><td colSpan={11} className="px-4 py-10 text-center text-slate-400"><Loader2 size={18} className="inline animate-spin" /></td></tr>
             ) : clients.length === 0 ? (
-              <tr><td colSpan={8} className="px-4 py-8 text-center text-slate-400 text-sm">Belum ada pembeli.</td></tr>
+              <tr><td colSpan={11} className="px-4 py-8 text-center text-slate-400 text-sm">Belum ada pembeli.</td></tr>
             ) : (
               clients.map((c) => {
                 const s = statusConfig[c.status]
+                const pt = c.payment_type ? paymentTypeConfig[c.payment_type] : null
                 return (
                   <tr key={c.id} className="hover:bg-slate-50 transition-colors">
+                    <td className="px-4 py-3 text-slate-500 text-xs whitespace-nowrap">{c.contract_date ? new Date(c.contract_date).toLocaleDateString('id-ID') : '—'}</td>
                     <td className="px-4 py-3 font-medium text-slate-900">{c.full_name}</td>
                     <td className="px-4 py-3 text-slate-600">{c.phone ?? '—'}</td>
                     <td className="px-4 py-3 text-slate-500">{projectName(c.project_id) ?? '—'}</td>
                     <td className="px-4 py-3 text-slate-500">{unitNumberById(c.unit_id) ?? c.unit_number ?? '—'}</td>
-                    <td className="px-4 py-3 text-slate-600">{fmt(c.contract_value)}</td>
-                    <td className="px-4 py-3 text-slate-500 text-xs">{c.contract_date ? new Date(c.contract_date).toLocaleDateString('id-ID') : '—'}</td>
+                    <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{fmt(c.contract_value)}</td>
+                    <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{c.contract_value == null ? '—' : fmt(c.remaining)}</td>
+                    <td className="px-4 py-3">{pt ? <Badge label={pt.label} variant={pt.variant} /> : <span className="text-slate-400">—</span>}</td>
+                    <td className="px-4 py-3">
+                      {c.kpr_stage ? <Badge label={kprStageLabel[c.kpr_stage]} variant="blue" /> : <span className="text-slate-400">—</span>}
+                    </td>
                     <td className="px-4 py-3">{s && <Badge label={s.label} variant={s.variant} />}</td>
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-end gap-3">
@@ -207,14 +227,22 @@ export default function Clients() {
               </select>
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-3 gap-3">
             <div>
-              <label className="label">Nilai Kontrak (Rp)</label>
+              <label className="label">Harga Jual (Rp)</label>
               <input className="input" type="number" min={0} value={form.contract_value ?? ''} onChange={(e) => setForm({ ...form, contract_value: e.target.value ? Number(e.target.value) : undefined })} />
             </div>
             <div>
               <label className="label">Tanggal *</label>
               <input className="input" type="date" required value={form.contract_date} onChange={(e) => setForm({ ...form, contract_date: e.target.value })} />
+            </div>
+            <div>
+              <label className="label">Cara Beli</label>
+              <select className="input" value={form.payment_type ?? ''} onChange={(e) => setForm({ ...form, payment_type: (e.target.value || undefined) as ClientPaymentType | undefined })}>
+                <option value="">Pilih...</option>
+                <option value="cash">Cash</option>
+                <option value="kpr">KPR</option>
+              </select>
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">

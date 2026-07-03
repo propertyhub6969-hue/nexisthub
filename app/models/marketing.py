@@ -26,6 +26,11 @@ class ClientStatus(str, enum.Enum):
     INACTIVE = "inactive"
 
 
+class ClientPaymentType(str, enum.Enum):
+    CASH = "cash"   # Cara Beli: Cash
+    KPR = "kpr"      # Cara Beli: KPR
+
+
 class Lead(BaseModel):
     """Calon pembeli yang baru pertama kali kontak."""
     __tablename__ = "leads"
@@ -119,8 +124,11 @@ class Client(BaseModel, SoftDeleteMixin):
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True, index=True
     )
-    contract_value: Mapped[float] = mapped_column(Numeric(15, 2), nullable=True)
+    contract_value: Mapped[float] = mapped_column(Numeric(15, 2), nullable=True)  # Harga Jual
     contract_date: Mapped[Date] = mapped_column(Date, nullable=True)
+    payment_type: Mapped[ClientPaymentType] = mapped_column(
+        SAEnum(ClientPaymentType), nullable=True
+    )  # Cara Beli — nullable agar data lama (belum diisi) tak dipaksa nebak
     promo: Mapped[str] = mapped_column(String(200), nullable=True)       # Promo (teks bebas)
     signature: Mapped[str] = mapped_column(Text, nullable=True)          # Tanda tangan digital (data URL base64)
     status: Mapped[ClientStatus] = mapped_column(

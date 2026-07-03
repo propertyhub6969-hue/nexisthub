@@ -57,6 +57,7 @@ export interface TeamMemberUpdate {
 export type LeadStatus = 'new' | 'contacted' | 'qualified' | 'unqualified'
 export type ProspectStatus = 'active' | 'negotiation' | 'won' | 'lost'
 export type ClientStatus = 'active' | 'completed' | 'inactive'
+export type ClientPaymentType = 'cash' | 'kpr'
 
 export interface Lead {
   id: string
@@ -123,10 +124,13 @@ export interface Client {
   marketing_name?: string
   contract_value?: number
   contract_date?: string
+  payment_type?: ClientPaymentType
   promo?: string
   signature?: string
   notes?: string
   status: ClientStatus
+  remaining?: number
+  kpr_stage?: KprStage | null
   created_at: string
   updated_at: string
 }
@@ -141,6 +145,7 @@ export interface ClientCreate {
   unit_id?: string
   contract_value?: number
   contract_date?: string
+  payment_type?: ClientPaymentType
   promo?: string
   signature?: string
   notes?: string

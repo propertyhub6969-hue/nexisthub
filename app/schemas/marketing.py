@@ -4,7 +4,7 @@ from datetime import datetime, date
 from decimal import Decimal
 import uuid
 
-from app.models.marketing import LeadStatus, ProspectStatus, ClientStatus
+from app.models.marketing import LeadStatus, ProspectStatus, ClientStatus, ClientPaymentType
 
 
 # ── Generic pagination ────────────────────────────────────────────
@@ -110,6 +110,7 @@ class ClientBase(BaseModel):
     unit_id: Optional[uuid.UUID] = None
     contract_value: Optional[Decimal] = None
     contract_date: Optional[date] = None
+    payment_type: Optional[ClientPaymentType] = None
     promo: Optional[str] = Field(None, max_length=200)
     signature: Optional[str] = None
     notes: Optional[str] = None
@@ -132,6 +133,7 @@ class ClientUpdate(BaseModel):
     unit_id: Optional[uuid.UUID] = None
     contract_value: Optional[Decimal] = None
     contract_date: Optional[date] = None
+    payment_type: Optional[ClientPaymentType] = None
     promo: Optional[str] = Field(None, max_length=200)
     signature: Optional[str] = None
     notes: Optional[str] = None
@@ -144,6 +146,9 @@ class ClientResponse(ClientBase):
     marketing_user_id: Optional[uuid.UUID] = None
     marketing_name: Optional[str] = None
     status: ClientStatus
+    # Dihitung saat fetch (bukan kolom DB): sisa piutang & tahap KPR berjalan
+    remaining: Optional[Decimal] = None
+    kpr_stage: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 

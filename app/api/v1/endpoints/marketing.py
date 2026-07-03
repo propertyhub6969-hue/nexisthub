@@ -12,6 +12,8 @@ from app.core.database import get_db
 from app.api.deps import get_current_context, AuthContext
 from app.models.marketing import Lead, Prospect, Client, LeadStatus, ProspectStatus, ClientStatus
 from app.models.property import Unit, UnitStatus
+from app.models.payment import Payment
+from app.models.kpr import KprApplication
 from app.core.audit import record_audit
 from app.schemas.marketing import (
     Paginated,
@@ -258,6 +260,34 @@ async def convert_prospect(
 
 
 # ═══════════════════════ CLIENTS ═══════════════════════
+async def _attach_client_extras(db: AsyncSession, clients: list[Client]) -> None:
+    """Set atribut transien (tak disimpan) remaining & kpr_stage per klien — 2 query bulk, bukan N+1."""
+    if not clients:
+        return
+    ids = [c.id for c in clients]
+
+    paid_rows = (await db.execute(
+        select(Payment.client_id, func.coalesce(func.sum(Payment.amount), 0))
+        .where(Payment.client_id.in_(ids), Payment.is_deleted == False)  # noqa: E712
+        .group_by(Payment.client_id)
+    )).all()
+    paid_by_client = {row[0]: row[1] for row in paid_rows}
+
+    kpr_rows = (await db.execute(
+        select(KprApplication.client_id, KprApplication.stage, KprApplication.created_at)
+        .where(KprApplication.client_id.in_(ids), KprApplication.is_deleted == False)  # noqa: E712
+        .order_by(KprApplication.created_at.desc())
+    )).all()
+    stage_by_client = {}
+    for client_id, stage, _created_at in kpr_rows:
+        stage_by_client.setdefault(client_id, stage)  # baris pertama per klien = paling baru (sudah diurutkan desc)
+
+    for c in clients:
+        price = c.contract_value or 0
+        c.remaining = (price - paid_by_client.get(c.id, 0)) if c.contract_value is not None else None
+        c.kpr_stage = stage_by_client.get(c.id)
+
+
 @router.get("/clients", response_model=Paginated[ClientResponse])
 async def list_clients(
     ctx: AuthContext = Depends(get_current_context),
@@ -284,7 +314,9 @@ async def list_clients(
         .order_by(Client.created_at.desc())
         .offset((page - 1) * size).limit(size)
     )
-    return _paginate(result.scalars().all(), total or 0, page, size)
+    items = result.scalars().all()
+    await _attach_client_extras(db, items)
+    return _paginate(items, total or 0, page, size)
 
 
 @router.post("/clients", response_model=ClientResponse, status_code=status.HTTP_201_CREATED)
@@ -343,6 +375,7 @@ async def _get_client(db: AsyncSession, tenant_id: uuid.UUID, client_id: uuid.UU
     client = result.scalar_one_or_none()
     if client is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Client tidak ditemukan")
+    await _attach_client_extras(db, [client])
     return client
 
 
