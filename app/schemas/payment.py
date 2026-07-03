@@ -4,7 +4,7 @@ from datetime import datetime, date
 from decimal import Decimal
 import uuid
 
-from app.models.payment import ScheduleStatus, PaymentMethod, PaymentSource
+from app.models.payment import ScheduleStatus, PaymentMethod, PaymentSource, PaymentPurpose
 
 
 # ── Payment Schedule (Termin) ─────────────────────────────────────
@@ -48,6 +48,7 @@ class PaymentBase(BaseModel):
     payment_date: Optional[date] = None
     method: PaymentMethod = PaymentMethod.TRANSFER
     source: PaymentSource = PaymentSource.PEMBELI
+    purpose: Optional[PaymentPurpose] = None
     receipt_number: Optional[str] = Field(None, max_length=50)
     notes: Optional[str] = None
 
@@ -62,6 +63,7 @@ class PaymentUpdate(BaseModel):
     payment_date: Optional[date] = None
     method: Optional[PaymentMethod] = None
     source: Optional[PaymentSource] = None
+    purpose: Optional[PaymentPurpose] = None
     receipt_number: Optional[str] = Field(None, max_length=50)
     notes: Optional[str] = None
     schedule_id: Optional[uuid.UUID] = None

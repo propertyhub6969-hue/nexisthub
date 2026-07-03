@@ -262,6 +262,7 @@ export interface SaleCreate {
 export type ScheduleStatus = 'pending' | 'paid'
 export type PaymentMethod = 'transfer' | 'tunai' | 'lainnya'
 export type PaymentSource = 'pembeli' | 'bank'
+export type PaymentPurpose = 'dp' | 'booking_fee' | 'cicilan_termin' | 'realisasi_kpr' | 'pelunasan_termin'
 
 export interface PaymentSchedule {
   id: string
@@ -295,6 +296,7 @@ export interface Payment {
   payment_date?: string
   method: PaymentMethod
   source: PaymentSource
+  purpose?: PaymentPurpose
   receipt_number?: string
   has_file?: boolean
   file_name?: string
@@ -310,6 +312,7 @@ export interface PaymentCreate {
   payment_date?: string
   method?: PaymentMethod
   source?: PaymentSource
+  purpose?: PaymentPurpose
   receipt_number?: string
   notes?: string
 }

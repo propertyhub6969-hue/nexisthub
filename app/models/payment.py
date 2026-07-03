@@ -23,6 +23,14 @@ class PaymentSource(str, enum.Enum):
     BANK = "bank"         # Pencairan KPR dari bank
 
 
+class PaymentPurpose(str, enum.Enum):
+    DP = "dp"                             # Uang Muka / DP
+    BOOKING_FEE = "booking_fee"           # Booking Fee
+    CICILAN_TERMIN = "cicilan_termin"     # Cicilan / Angsuran Termin
+    REALISASI_KPR = "realisasi_kpr"       # Pencairan/Realisasi KPR dari bank
+    PELUNASAN_TERMIN = "pelunasan_termin"  # Pelunasan (termin akhir)
+
+
 class PaymentSchedule(BaseModel, SoftDeleteMixin):
     """Satu baris jadwal angsuran (termin) di bawah sebuah penjualan: DP / Angsuran / Pelunasan."""
     __tablename__ = "payment_schedules"
@@ -85,6 +93,9 @@ class Payment(BaseModel, SoftDeleteMixin):
     source: Mapped[PaymentSource] = mapped_column(
         SAEnum(PaymentSource), default=PaymentSource.PEMBELI, nullable=False
     )
+    purpose: Mapped[PaymentPurpose] = mapped_column(
+        SAEnum(PaymentPurpose), nullable=True
+    )  # Jenis pembayaran: DP/Booking Fee/Cicilan/Realisasi KPR/Pelunasan
     receipt_number: Mapped[str] = mapped_column(String(50), nullable=True)  # No. kwitansi — auto-generate saat create
     notes: Mapped[str] = mapped_column(Text, nullable=True)
     # Bukti transfer, disimpan di DB; file_data deferred agar tak ikut di query list

@@ -11,7 +11,7 @@ from app.core.audit import record_audit
 from app.api.deps import get_current_context, AuthContext
 from app.models.kpr import Bank, KprApplication, KprStage
 from app.models.marketing import Client
-from app.models.payment import Payment, PaymentSource, PaymentMethod
+from app.models.payment import Payment, PaymentSource, PaymentMethod, PaymentPurpose
 from app.schemas.kpr import (
     BankCreate, BankUpdate, BankResponse,
     KprCreate, KprUpdate, KprResponse, DisburseRequest,
@@ -129,6 +129,7 @@ async def disburse_kpr(kpr_id: uuid.UUID, payload: DisburseRequest, ctx: AuthCon
         pay = Payment(
             tenant_id=ctx.tenant_id, client_id=k.client_id, amount=payload.amount,
             payment_date=pay_date, method=PaymentMethod.TRANSFER, source=PaymentSource.BANK,
+            purpose=PaymentPurpose.REALISASI_KPR,
             notes="Pencairan KPR",
         )
         db.add(pay)

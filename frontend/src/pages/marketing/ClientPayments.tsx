@@ -9,7 +9,7 @@ import { paymentService } from '../../services/payment'
 import { auditService } from '../../services/audit'
 import type {
   Client, Unit, PaymentSchedule, PaymentScheduleCreate, Payment, PaymentCreate,
-  PaymentSummary, PaymentMethod, PaymentSource, AuditEntry,
+  PaymentSummary, PaymentMethod, PaymentSource, PaymentPurpose, AuditEntry,
 } from '../../types'
 
 const actionLabel: Record<string, { label: string; variant: 'green' | 'blue' | 'red' }> = {
@@ -27,9 +27,16 @@ const sourceConfig: Record<PaymentSource, { label: string; variant: 'blue' | 'gr
   bank:    { label: 'Bank (KPR)', variant: 'green' },
 }
 const methodLabel: Record<PaymentMethod, string> = { transfer: 'Transfer', tunai: 'Tunai', lainnya: 'Lainnya' }
+const purposeLabel: Record<PaymentPurpose, string> = {
+  dp: 'DP',
+  booking_fee: 'Booking Fee',
+  cicilan_termin: 'Cicilan Termin',
+  realisasi_kpr: 'Realisasi KPR',
+  pelunasan_termin: 'Pelunasan Termin',
+}
 
 const emptySchedule = (clientId: string): PaymentScheduleCreate => ({ client_id: clientId, label: '', sequence: 0, amount: 0, due_date: '' })
-const emptyPayment = (clientId: string): PaymentCreate => ({ client_id: clientId, schedule_id: '', amount: 0, payment_date: '', method: 'transfer', source: 'pembeli', receipt_number: '' })
+const emptyPayment = (clientId: string): PaymentCreate => ({ client_id: clientId, schedule_id: '', amount: 0, payment_date: '', method: 'transfer', source: 'pembeli', purpose: undefined, receipt_number: '' })
 
 export default function ClientPayments() {
   const { clientId = '' } = useParams()
@@ -102,7 +109,7 @@ export default function ClientPayments() {
   function openPayCreate() { setPayEditId(null); setPayForm(emptyPayment(clientId)); setTransferFile(null); setPayModal(true) }
   function openPayEdit(p: Payment) {
     setPayEditId(p.id)
-    setPayForm({ client_id: clientId, schedule_id: p.schedule_id ?? '', amount: p.amount, payment_date: p.payment_date ?? '', method: p.method, source: p.source, receipt_number: p.receipt_number ?? '' })
+    setPayForm({ client_id: clientId, schedule_id: p.schedule_id ?? '', amount: p.amount, payment_date: p.payment_date ?? '', method: p.method, source: p.source, purpose: p.purpose, receipt_number: p.receipt_number ?? '' })
     setTransferFile(null)
     setPayModal(true)
   }
@@ -111,7 +118,7 @@ export default function ClientPayments() {
     try {
       const p = { ...payForm }
       const rec = p as unknown as Record<string, unknown>
-      ;['schedule_id', 'payment_date', 'receipt_number'].forEach((k) => { if (rec[k] === '') delete rec[k] })
+      ;['schedule_id', 'payment_date', 'purpose', 'receipt_number'].forEach((k) => { if (rec[k] === '') delete rec[k] })
       const result = payEditId ? await paymentService.updatePayment(payEditId, p) : await paymentService.createPayment(p)
       if (transferFile) await paymentService.uploadPaymentFile(result.id, transferFile)
       setPayModal(false); setTransferFile(null); await reload()
@@ -196,18 +203,19 @@ export default function ClientPayments() {
         </div>
         <table className="w-full text-sm">
           <thead className="bg-slate-50 border-b border-slate-200">
-            <tr>{['Tanggal', 'Nominal', 'Sumber', 'Metode', 'Untuk Termin', 'No. Kwitansi', 'Bukti', ''].map((h, i) => (
+            <tr>{['Tanggal', 'Nominal', 'Jenis', 'Sumber', 'Metode', 'Untuk Termin', 'No. Kwitansi', 'Bukti', ''].map((h, i) => (
               <th key={i} className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">{h}</th>))}</tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {payments.length === 0 ? (
-              <tr><td colSpan={8} className="px-4 py-6 text-center text-slate-400 text-sm">Belum ada pembayaran tercatat.</td></tr>
+              <tr><td colSpan={9} className="px-4 py-6 text-center text-slate-400 text-sm">Belum ada pembayaran tercatat.</td></tr>
             ) : payments.map((p) => {
               const src = sourceConfig[p.source]
               return (
                 <tr key={p.id} className="hover:bg-slate-50">
                   <td className="px-4 py-2.5 text-slate-500 text-xs">{fmtDate(p.payment_date)}</td>
                   <td className="px-4 py-2.5 font-medium text-emerald-600">{fmt(p.amount)}</td>
+                  <td className="px-4 py-2.5">{p.purpose ? <Badge label={purposeLabel[p.purpose]} variant="blue" /> : <span className="text-slate-400 text-xs">—</span>}</td>
                   <td className="px-4 py-2.5">{src && <Badge label={src.label} variant={src.variant} />}</td>
                   <td className="px-4 py-2.5 text-slate-500">{methodLabel[p.method]}</td>
                   <td className="px-4 py-2.5 text-slate-500">{scheduleLabel(p.schedule_id) ?? '—'}</td>
@@ -306,18 +314,25 @@ export default function ClientPayments() {
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
+              <label className="label">Jenis Pembayaran</label>
+              <select className="input" value={payForm.purpose ?? ''} onChange={(e) => setPayForm({ ...payForm, purpose: (e.target.value || undefined) as PaymentPurpose | undefined })}>
+                <option value="">Pilih jenis...</option>
+                {(Object.keys(purposeLabel) as PaymentPurpose[]).map((k) => <option key={k} value={k}>{purposeLabel[k]}</option>)}
+              </select>
+            </div>
+            <div>
               <label className="label">Untuk Termin</label>
               <select className="input" value={payForm.schedule_id} onChange={(e) => setPayForm({ ...payForm, schedule_id: e.target.value })}>
                 <option value="">— (tanpa termin)</option>
                 {schedules.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
               </select>
             </div>
-            <div>
-              <label className="label">No. Kwitansi</label>
-              <p className="text-sm text-slate-500 py-2">
-                {payForm.receipt_number ? payForm.receipt_number : 'Dibuat otomatis setelah disimpan'}
-              </p>
-            </div>
+          </div>
+          <div>
+            <label className="label">No. Kwitansi</label>
+            <p className="text-sm text-slate-500 py-2">
+              {payForm.receipt_number ? payForm.receipt_number : 'Dibuat otomatis setelah disimpan'}
+            </p>
           </div>
           {payForm.method === 'transfer' && (
             <div>
