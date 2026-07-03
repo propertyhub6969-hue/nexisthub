@@ -45,6 +45,8 @@ export default function Leads() {
   const [form, setForm] = useState<LeadCreate>(emptyForm)
   const [saving, setSaving] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
+  const [projectFilter, setProjectFilter] = useState('')
+  const [temperatureFilter, setTemperatureFilter] = useState('')
 
   const projectName = (id?: string) => projects.find((p) => p.id === id)?.name
 
@@ -145,18 +147,35 @@ export default function Leads() {
     }
   }
 
+  const filteredLeads = leads.filter((l) =>
+    (!projectFilter || l.interested_project_id === projectFilter) &&
+    (!temperatureFilter || l.temperature === temperatureFilter)
+  )
+
   return (
     <div className="space-y-4">
       {/* Toolbar */}
-      <div className="flex items-center justify-between gap-3">
-        <div className="relative flex-1 max-w-xs">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input
-            className="input pl-8"
-            placeholder="Cari nama atau nomor HP..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              className="input pl-8 w-56"
+              placeholder="Cari nama atau nomor HP..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+          <select className="input w-44" value={projectFilter} onChange={(e) => setProjectFilter(e.target.value)}>
+            <option value="">Semua Properti</option>
+            {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+          <select className="input w-40" value={temperatureFilter} onChange={(e) => setTemperatureFilter(e.target.value)}>
+            <option value="">Semua Kategori</option>
+            {(Object.keys(temperatureConfig) as LeadTemperature[]).map((k) => (
+              <option key={k} value={k}>{temperatureConfig[k].label}</option>
+            ))}
+          </select>
         </div>
         <button className="btn-primary flex items-center gap-2 text-sm" onClick={openCreate}>
           <Plus size={14} />
@@ -185,14 +204,14 @@ export default function Leads() {
                   <Loader2 size={18} className="inline animate-spin" />
                 </td>
               </tr>
-            ) : leads.length === 0 ? (
+            ) : filteredLeads.length === 0 ? (
               <tr>
                 <td colSpan={9} className="px-4 py-8 text-center text-slate-400 text-sm">
-                  Belum ada lead. Klik "Tambah Lead" untuk mulai.
+                  {leads.length === 0 ? 'Belum ada lead. Klik "Tambah Lead" untuk mulai.' : 'Tidak ada lead sesuai filter.'}
                 </td>
               </tr>
             ) : (
-              leads.map((lead) => {
+              filteredLeads.map((lead) => {
                 const s = statusConfig[lead.status]
                 return (
                   <tr key={lead.id} className="hover:bg-slate-50 transition-colors">
