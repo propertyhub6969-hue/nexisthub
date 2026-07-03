@@ -68,6 +68,8 @@ class TaxResponse(TaxBase):
     id: uuid.UUID
     client_id: uuid.UUID
     notary_name: Optional[str] = None
+    has_file: bool = False
+    file_name: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 

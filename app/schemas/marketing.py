@@ -117,6 +117,8 @@ class ClientBase(BaseModel):
     payment_type: Optional[ClientPaymentType] = None
     promo: Optional[str] = Field(None, max_length=200)
     signature: Optional[str] = None
+    ppjb_number: Optional[str] = Field(None, max_length=100)
+    ajb_number: Optional[str] = Field(None, max_length=100)
     notes: Optional[str] = None
 
 
@@ -140,6 +142,8 @@ class ClientUpdate(BaseModel):
     payment_type: Optional[ClientPaymentType] = None
     promo: Optional[str] = Field(None, max_length=200)
     signature: Optional[str] = None
+    ppjb_number: Optional[str] = Field(None, max_length=100)
+    ajb_number: Optional[str] = Field(None, max_length=100)
     notes: Optional[str] = None
     status: Optional[ClientStatus] = None
 
@@ -150,6 +154,8 @@ class ClientResponse(ClientBase):
     marketing_user_id: Optional[uuid.UUID] = None
     marketing_name: Optional[str] = None
     status: ClientStatus
+    has_ppjb_file: bool = False
+    has_ajb_file: bool = False
     # Dihitung saat fetch (bukan kolom DB): sisa piutang & tahap KPR berjalan
     remaining: Optional[Decimal] = None
     kpr_stage: Optional[str] = None

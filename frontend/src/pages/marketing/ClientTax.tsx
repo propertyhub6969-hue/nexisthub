@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { ArrowLeft, Plus, Trash2, Pencil, Loader2, Receipt, Scale, FileText, Upload, Eye } from 'lucide-react'
+import { ArrowLeft, Plus, Trash2, Pencil, Loader2, Receipt, Scale, FileText, Upload, Eye, Contact, FileSignature } from 'lucide-react'
 import Badge from '../../components/ui/Badge'
 import Modal from '../../components/ui/Modal'
 import { marketingService } from '../../services/marketing'
@@ -11,7 +11,12 @@ import type {
   DocumentItem, DocumentCreate, DocStatus,
 } from '../../types'
 
-const DOC_PRESETS = ['KTP', 'KK', 'NPWP', 'PPJB', 'AJB', 'Sertifikat SHM', 'Sertifikat HGB', 'IMB / PBG', 'Bukti Bayar']
+// Berkas Pembeli (identitas) vs Dokumen & Legalitas (unit) — dua kelompok terpisah dari daftar dokumen yang sama
+const IDENTITY_PRESETS = ['KTP', 'KK', 'NPWP']
+const LEGAL_PRESETS = ['Sertifikat SHM', 'Sertifikat HGB', 'SLF', 'IMB / PBG', 'PBB']
+const IDENTITY_SET = new Set(IDENTITY_PRESETS.map((s) => s.toLowerCase()))
+const isIdentityDoc = (docType: string) => IDENTITY_SET.has(docType.trim().toLowerCase())
+
 const docStatusCfg: Record<DocStatus, { label: string; variant: 'gray' | 'yellow' | 'green' }> = {
   belum:  { label: 'Belum Ada', variant: 'gray' },
   proses: { label: 'Proses',    variant: 'yellow' },
@@ -45,6 +50,7 @@ export default function ClientTax() {
   const [error, setError] = useState('')
 
   const [docModal, setDocModal] = useState(false)
+  const [docSection, setDocSection] = useState<'identity' | 'legal'>('legal')
   const [docForm, setDocForm] = useState<DocumentCreate>(emptyDoc(clientId))
   const [docEditId, setDocEditId] = useState<string | null>(null)
   const [uploadingId, setUploadingId] = useState<string | null>(null)
@@ -54,10 +60,21 @@ export default function ClientTax() {
   const [taxModal, setTaxModal] = useState(false)
   const [taxForm, setTaxForm] = useState<TaxCreate>(emptyTax(clientId))
   const [taxEditId, setTaxEditId] = useState<string | null>(null)
+  const [uploadingTaxId, setUploadingTaxId] = useState<string | null>(null)
+  const taxFileInput = useRef<HTMLInputElement | null>(null)
+  const pendingTaxUpload = useRef<string | null>(null)
+
   const [feeModal, setFeeModal] = useState(false)
   const [feeForm, setFeeForm] = useState<NotaryFeeCreate>(emptyFee(clientId))
   const [feeEditId, setFeeEditId] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+
+  const [ppjbNumber, setPpjbNumber] = useState('')
+  const [ajbNumber, setAjbNumber] = useState('')
+  const [savingDeed, setSavingDeed] = useState(false)
+  const [uploadingDeed, setUploadingDeed] = useState<'ppjb' | 'ajb' | null>(null)
+  const ppjbFileInput = useRef<HTMLInputElement | null>(null)
+  const ajbFileInput = useRef<HTMLInputElement | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true); setError('')
@@ -67,6 +84,7 @@ export default function ClientTax() {
         taxService.listTax(clientId), taxService.listFees(clientId), documentService.list(clientId),
       ])
       setClient(cl); setNotaries(no); setTaxes(tx); setFees(fe); setDocs(dc)
+      setPpjbNumber(cl.ppjb_number ?? ''); setAjbNumber(cl.ajb_number ?? '')
     } catch { setError('Gagal memuat data legalitas.') } finally { setLoading(false) }
   }, [clientId])
   useEffect(() => { load() }, [load])
@@ -78,8 +96,11 @@ export default function ClientTax() {
   const reloadDocs = async () => setDocs(await documentService.list(clientId))
 
   // document handlers
-  function openDocCreate() { setDocEditId(null); setDocForm(emptyDoc(clientId)); setDocModal(true) }
+  function openDocCreate(section: 'identity' | 'legal') {
+    setDocSection(section); setDocEditId(null); setDocForm(emptyDoc(clientId)); setDocModal(true)
+  }
   function openDocEdit(d: DocumentItem) {
+    setDocSection(isIdentityDoc(d.doc_type) ? 'identity' : 'legal')
     setDocEditId(d.id)
     setDocForm({ client_id: clientId, doc_type: d.doc_type, name: d.name ?? '', status: d.status, doc_date: d.doc_date ?? '' })
     setDocModal(true)
@@ -131,6 +152,15 @@ export default function ClientTax() {
     if (!confirm('Hapus (arsipkan) data pajak ini?')) return
     try { await taxService.deleteTax(id); await reload() } catch { setError('Gagal menghapus.') }
   }
+  function triggerTaxUpload(id: string) { pendingTaxUpload.current = id; taxFileInput.current?.click() }
+  async function onTaxFilePicked(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]; const id = pendingTaxUpload.current
+    e.target.value = ''
+    if (!file || !id) return
+    setUploadingTaxId(id)
+    try { await taxService.uploadTaxFile(id, file); await reload() }
+    catch { setError('Gagal upload bukti pajak (maks 10 MB).') } finally { setUploadingTaxId(null) }
+  }
 
   // fee handlers
   function openFeeCreate() { setFeeEditId(null); setFeeForm(emptyFee(clientId)); setFeeModal(true) }
@@ -154,9 +184,73 @@ export default function ClientTax() {
     try { await taxService.deleteFee(id); await reload() } catch { setError('Gagal menghapus.') }
   }
 
+  // PPJB & AJB handlers
+  async function saveDeedNumbers() {
+    setSavingDeed(true); setError('')
+    try {
+      const updated = await marketingService.updateClient(clientId, { ppjb_number: ppjbNumber || undefined, ajb_number: ajbNumber || undefined })
+      setClient(updated)
+    } catch { setError('Gagal menyimpan No. PPJB/AJB.') } finally { setSavingDeed(false) }
+  }
+  async function onDeedFilePicked(kind: 'ppjb' | 'ajb', e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    setUploadingDeed(kind)
+    try {
+      const updated = kind === 'ppjb' ? await marketingService.uploadPpjbFile(clientId, file) : await marketingService.uploadAjbFile(clientId, file)
+      setClient(updated)
+    } catch { setError(`Gagal upload file ${kind.toUpperCase()} (maks 10 MB).`) } finally { setUploadingDeed(null) }
+  }
+
+  const identityDocs = docs.filter((d) => isIdentityDoc(d.doc_type))
+  const legalDocs = docs.filter((d) => !isIdentityDoc(d.doc_type))
   const totalFee = fees.reduce((a, f) => a + Number(f.amount || 0), 0)
 
   if (loading) return <div className="py-16 text-center text-slate-400"><Loader2 size={20} className="inline animate-spin" /></div>
+
+  function docTable(list: DocumentItem[], emptyMsg: string) {
+    return (
+      <table className="w-full text-sm">
+        <thead className="bg-slate-50 border-b border-slate-200">
+          <tr>{['Jenis', 'Keterangan', 'Status', 'File', ''].map((h, i) => (
+            <th key={i} className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">{h}</th>))}</tr>
+        </thead>
+        <tbody className="divide-y divide-slate-100">
+          {list.length === 0 ? (
+            <tr><td colSpan={5} className="px-4 py-6 text-center text-slate-400 text-sm">{emptyMsg}</td></tr>
+          ) : list.map((d) => {
+            const st = docStatusCfg[d.status]
+            return (
+              <tr key={d.id} className="hover:bg-slate-50">
+                <td className="px-4 py-2.5 font-medium text-slate-900">{d.doc_type}</td>
+                <td className="px-4 py-2.5 text-slate-500">{d.name ?? '—'}</td>
+                <td className="px-4 py-2.5">{st && <Badge label={st.label} variant={st.variant} />}</td>
+                <td className="px-4 py-2.5">
+                  <div className="flex items-center gap-2">
+                    {d.has_file && (
+                      <button onClick={() => documentService.openFile(d.id)} className="inline-flex items-center gap-1 text-brand-600 hover:underline text-xs" title={d.file_name}>
+                        <Eye size={13} /> Lihat
+                      </button>
+                    )}
+                    <button onClick={() => triggerUpload(d.id)} className="inline-flex items-center gap-1 text-slate-500 hover:text-brand-600 text-xs">
+                      {uploadingId === d.id ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />} {d.has_file ? 'Ganti' : 'Upload'}
+                    </button>
+                  </div>
+                </td>
+                <td className="px-4 py-2.5">
+                  <div className="flex items-center justify-end gap-3">
+                    <button onClick={() => openDocEdit(d)} className="text-slate-400 hover:text-brand-600" title="Edit"><Pencil size={14} /></button>
+                    <button onClick={() => delDoc(d.id)} className="text-slate-400 hover:text-red-600" title="Hapus"><Trash2 size={14} /></button>
+                  </div>
+                </td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    )
+  }
 
   return (
     <div className="space-y-5">
@@ -168,53 +262,66 @@ export default function ClientTax() {
 
       {error && <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-2">{error}</div>}
 
-      {/* hidden file input untuk upload */}
+      {/* hidden file inputs untuk upload */}
       <input ref={fileInput} type="file" className="hidden" onChange={onFilePicked} />
+      <input ref={taxFileInput} type="file" className="hidden" onChange={onTaxFilePicked} />
+      <input ref={ppjbFileInput} type="file" className="hidden" onChange={(e) => onDeedFilePicked('ppjb', e)} />
+      <input ref={ajbFileInput} type="file" className="hidden" onChange={(e) => onDeedFilePicked('ajb', e)} />
 
-      {/* Dokumen */}
+      {/* Berkas Pembeli (identitas) */}
+      <div className="card overflow-hidden">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
+          <h2 className="text-sm font-semibold text-slate-900 flex items-center gap-2"><Contact size={15} /> Berkas Pembeli</h2>
+          <button className="btn-primary text-xs flex items-center gap-1" onClick={() => openDocCreate('identity')}><Plus size={13} /> Tambah Berkas</button>
+        </div>
+        {docTable(identityDocs, 'Belum ada berkas identitas. Tambahkan KTP, KK, NPWP.')}
+      </div>
+
+      {/* Dokumen & Legalitas (unit) */}
       <div className="card overflow-hidden">
         <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
           <h2 className="text-sm font-semibold text-slate-900 flex items-center gap-2"><FileText size={15} /> Dokumen & Legalitas</h2>
-          <button className="btn-primary text-xs flex items-center gap-1" onClick={openDocCreate}><Plus size={13} /> Tambah Dokumen</button>
+          <button className="btn-primary text-xs flex items-center gap-1" onClick={() => openDocCreate('legal')}><Plus size={13} /> Tambah Dokumen</button>
         </div>
-        <table className="w-full text-sm">
-          <thead className="bg-slate-50 border-b border-slate-200">
-            <tr>{['Jenis', 'Keterangan', 'Status', 'File', ''].map((h, i) => (
-              <th key={i} className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">{h}</th>))}</tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {docs.length === 0 ? (
-              <tr><td colSpan={5} className="px-4 py-6 text-center text-slate-400 text-sm">Belum ada dokumen. Tambahkan checklist berkas (KTP, PPJB, AJB, Sertifikat, dll).</td></tr>
-            ) : docs.map((d) => {
-              const st = docStatusCfg[d.status]
-              return (
-                <tr key={d.id} className="hover:bg-slate-50">
-                  <td className="px-4 py-2.5 font-medium text-slate-900">{d.doc_type}</td>
-                  <td className="px-4 py-2.5 text-slate-500">{d.name ?? '—'}</td>
-                  <td className="px-4 py-2.5">{st && <Badge label={st.label} variant={st.variant} />}</td>
-                  <td className="px-4 py-2.5">
-                    <div className="flex items-center gap-2">
-                      {d.has_file && (
-                        <button onClick={() => documentService.openFile(d.id)} className="inline-flex items-center gap-1 text-brand-600 hover:underline text-xs" title={d.file_name}>
-                          <Eye size={13} /> Lihat
-                        </button>
-                      )}
-                      <button onClick={() => triggerUpload(d.id)} className="inline-flex items-center gap-1 text-slate-500 hover:text-brand-600 text-xs">
-                        {uploadingId === d.id ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />} {d.has_file ? 'Ganti' : 'Upload'}
-                      </button>
-                    </div>
-                  </td>
-                  <td className="px-4 py-2.5">
-                    <div className="flex items-center justify-end gap-3">
-                      <button onClick={() => openDocEdit(d)} className="text-slate-400 hover:text-brand-600" title="Edit"><Pencil size={14} /></button>
-                      <button onClick={() => delDoc(d.id)} className="text-slate-400 hover:text-red-600" title="Hapus"><Trash2 size={14} /></button>
-                    </div>
-                  </td>
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
+        {docTable(legalDocs, 'Belum ada dokumen. Tambahkan checklist legalitas unit (SHM, SLF, IMB/PBG, PBB, dll).')}
+      </div>
+
+      {/* PPJB & AJB */}
+      <div className="card overflow-hidden">
+        <div className="px-4 py-3 border-b border-slate-100">
+          <h2 className="text-sm font-semibold text-slate-900 flex items-center gap-2"><FileSignature size={15} /> PPJB & AJB</h2>
+        </div>
+        <div className="p-4 grid grid-cols-2 gap-4">
+          <div>
+            <label className="label">No. PPJB</label>
+            <input className="input" placeholder="Nomor Perjanjian Pengikatan Jual Beli" value={ppjbNumber} onChange={(e) => setPpjbNumber(e.target.value)} />
+            <div className="flex items-center gap-3 mt-2 text-xs">
+              {client?.has_ppjb_file && (
+                <button onClick={() => marketingService.openPpjbFile(clientId)} className="inline-flex items-center gap-1 text-brand-600 hover:underline"><Eye size={13} /> Lihat File</button>
+              )}
+              <button onClick={() => ppjbFileInput.current?.click()} className="inline-flex items-center gap-1 text-slate-500 hover:text-brand-600">
+                {uploadingDeed === 'ppjb' ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />} {client?.has_ppjb_file ? 'Ganti File' : 'Upload File'}
+              </button>
+            </div>
+          </div>
+          <div>
+            <label className="label">No. AJB</label>
+            <input className="input" placeholder="Nomor Akta Jual Beli" value={ajbNumber} onChange={(e) => setAjbNumber(e.target.value)} />
+            <div className="flex items-center gap-3 mt-2 text-xs">
+              {client?.has_ajb_file && (
+                <button onClick={() => marketingService.openAjbFile(clientId)} className="inline-flex items-center gap-1 text-brand-600 hover:underline"><Eye size={13} /> Lihat File</button>
+              )}
+              <button onClick={() => ajbFileInput.current?.click()} className="inline-flex items-center gap-1 text-slate-500 hover:text-brand-600">
+                {uploadingDeed === 'ajb' ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />} {client?.has_ajb_file ? 'Ganti File' : 'Upload File'}
+              </button>
+            </div>
+          </div>
+          <div className="col-span-2 flex justify-end">
+            <button onClick={saveDeedNumbers} disabled={savingDeed} className="btn-primary text-xs flex items-center gap-2">
+              {savingDeed && <Loader2 size={13} className="animate-spin" />} Simpan No. PPJB/AJB
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* Pajak */}
@@ -225,12 +332,12 @@ export default function ClientTax() {
         </div>
         <table className="w-full text-sm">
           <thead className="bg-slate-50 border-b border-slate-200">
-            <tr>{['Jenis', 'Jumlah', 'ID Billing', 'NTPN', 'Status', 'Notaris', ''].map((h, i) => (
+            <tr>{['Jenis', 'Jumlah', 'ID Billing', 'NTPN', 'Status', 'Notaris', 'Bukti', ''].map((h, i) => (
               <th key={i} className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">{h}</th>))}</tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {taxes.length === 0 ? (
-              <tr><td colSpan={7} className="px-4 py-6 text-center text-slate-400 text-sm">Belum ada data pajak (PPh / BPHTB / PPN).</td></tr>
+              <tr><td colSpan={8} className="px-4 py-6 text-center text-slate-400 text-sm">Belum ada data pajak (PPh / BPHTB / PPN).</td></tr>
             ) : taxes.map((x) => {
               const st = taxStatusCfg[x.status]
               return (
@@ -241,6 +348,18 @@ export default function ClientTax() {
                   <td className="px-4 py-2.5 text-slate-500 text-xs">{x.ntpn ?? '—'}</td>
                   <td className="px-4 py-2.5">{st && <Badge label={st.label} variant={st.variant} />}</td>
                   <td className="px-4 py-2.5 text-slate-500">{x.notary_name ?? '—'}</td>
+                  <td className="px-4 py-2.5">
+                    <div className="flex items-center gap-2">
+                      {x.has_file && (
+                        <button onClick={() => taxService.openTaxFile(x.id)} className="inline-flex items-center gap-1 text-brand-600 hover:underline text-xs" title={x.file_name}>
+                          <Eye size={13} /> Lihat
+                        </button>
+                      )}
+                      <button onClick={() => triggerTaxUpload(x.id)} className="inline-flex items-center gap-1 text-slate-500 hover:text-brand-600 text-xs">
+                        {uploadingTaxId === x.id ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />} {x.has_file ? 'Ganti' : 'Upload'}
+                      </button>
+                    </div>
+                  </td>
                   <td className="px-4 py-2.5">
                     <div className="flex items-center justify-end gap-3">
                       <button onClick={() => openTaxEdit(x)} className="text-slate-400 hover:text-brand-600" title="Edit"><Pencil size={14} /></button>
@@ -288,12 +407,12 @@ export default function ClientTax() {
       </div>
 
       {/* Modal Dokumen */}
-      <Modal open={docModal} onClose={() => setDocModal(false)} title={docEditId ? 'Edit Dokumen' : 'Tambah Dokumen'}>
+      <Modal open={docModal} onClose={() => setDocModal(false)} title={docEditId ? 'Edit Dokumen' : docSection === 'identity' ? 'Tambah Berkas Pembeli' : 'Tambah Dokumen'}>
         <form onSubmit={submitDoc} className="space-y-3">
           <div>
             <label className="label">Jenis Dokumen *</label>
-            <input className="input" required list="doc-presets" placeholder="KTP / PPJB / AJB / Sertifikat ..." value={docForm.doc_type} onChange={(e) => setDocForm({ ...docForm, doc_type: e.target.value })} />
-            <datalist id="doc-presets">{DOC_PRESETS.map((d) => <option key={d} value={d} />)}</datalist>
+            <input className="input" required list="doc-presets" placeholder={docSection === 'identity' ? 'KTP / KK / NPWP ...' : 'SHM / SLF / IMB / PBB ...'} value={docForm.doc_type} onChange={(e) => setDocForm({ ...docForm, doc_type: e.target.value })} />
+            <datalist id="doc-presets">{(docSection === 'identity' ? IDENTITY_PRESETS : LEGAL_PRESETS).map((d) => <option key={d} value={d} />)}</datalist>
           </div>
           <div>
             <label className="label">Keterangan</label>

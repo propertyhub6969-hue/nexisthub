@@ -132,6 +132,10 @@ export interface Client {
   payment_type?: ClientPaymentType
   promo?: string
   signature?: string
+  ppjb_number?: string
+  ajb_number?: string
+  has_ppjb_file?: boolean
+  has_ajb_file?: boolean
   notes?: string
   status: ClientStatus
   remaining?: number
@@ -153,6 +157,8 @@ export interface ClientCreate {
   payment_type?: ClientPaymentType
   promo?: string
   signature?: string
+  ppjb_number?: string
+  ajb_number?: string
   notes?: string
   status?: ClientStatus
 }
@@ -367,6 +373,8 @@ export interface TaxRecord {
   status: TaxStatus
   notary_id?: string
   notary_name?: string
+  has_file?: boolean
+  file_name?: string
   notes?: string
   created_at: string
   updated_at: string

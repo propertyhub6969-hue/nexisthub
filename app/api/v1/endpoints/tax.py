@@ -1,7 +1,8 @@
 import uuid
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status, UploadFile, File
+from fastapi.responses import Response
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,6 +20,7 @@ from app.schemas.tax import (
 router = APIRouter()
 
 NOTDEL = lambda m: m.is_deleted == False  # noqa: E731, E712
+MAX_FILE_BYTES = 10 * 1024 * 1024  # 10 MB
 
 
 async def _soft_delete(db, obj):
@@ -108,6 +110,47 @@ async def delete_tax(tax_id: uuid.UUID, ctx: AuthContext = Depends(get_current_c
     await _soft_delete(db, t)
     await record_audit(db, ctx.tenant_id, ctx.user_id, "DELETE", "tax_records", tax_id,
                        old_data={"tax_type": t.tax_type.value, "ntpn": t.ntpn})
+
+
+@router.post("/tax-records/{tax_id}/file", response_model=TaxResponse)
+async def upload_tax_file(
+    tax_id: uuid.UUID,
+    file: UploadFile = File(...),
+    ctx: AuthContext = Depends(get_current_context),
+    db: AsyncSession = Depends(get_db),
+):
+    """Upload bukti pajak (SSP/bukti bayar/bukti validasi) untuk satu baris pajak."""
+    t = await _load_tax(db, ctx.tenant_id, tax_id)
+    data = await file.read()
+    if len(data) > MAX_FILE_BYTES:
+        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Ukuran file maksimal 10 MB")
+    t.file_data = data
+    t.file_name = file.filename
+    t.file_type = file.content_type or "application/octet-stream"
+    t.file_size = len(data)
+    await db.flush()
+    await record_audit(db, ctx.tenant_id, ctx.user_id, "UPLOAD", "tax_records", tax_id,
+                       new_data={"file_name": file.filename, "size": len(data)})
+    return await _load_tax(db, ctx.tenant_id, tax_id)
+
+
+@router.get("/tax-records/{tax_id}/file")
+async def download_tax_file(
+    tax_id: uuid.UUID,
+    ctx: AuthContext = Depends(get_current_context),
+    db: AsyncSession = Depends(get_db),
+):
+    row = (await db.execute(
+        select(TaxRecord.file_data, TaxRecord.file_type, TaxRecord.file_name).where(
+            TaxRecord.id == tax_id, TaxRecord.tenant_id == ctx.tenant_id, NOTDEL(TaxRecord))
+    )).first()
+    if row is None or row[0] is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="File tidak ditemukan")
+    data, ctype, fname = row
+    return Response(
+        content=data, media_type=ctype or "application/octet-stream",
+        headers={"Content-Disposition": f'inline; filename="{fname or "file"}"'},
+    )
 
 
 # ═══════════════════════ NOTARY FEES ═══════════════════════

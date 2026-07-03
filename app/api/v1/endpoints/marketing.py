@@ -3,7 +3,8 @@ import math
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status, UploadFile, File
+from fastapi.responses import Response
 from sqlalchemy import select, func, or_
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,6 +24,8 @@ from app.schemas.marketing import (
 )
 
 router = APIRouter()
+
+MAX_FILE_BYTES = 10 * 1024 * 1024  # 10 MB
 
 
 def _paginate(items, total, page, size):
@@ -412,6 +415,70 @@ async def update_client(
         await _set_unit_status(db, ctx.tenant_id, client.unit_id, _unit_status_for_client(client))
     await record_audit(db, ctx.tenant_id, ctx.user_id, "UPDATE", "clients", client_id, new_data=data)
     return await _get_client(db, ctx.tenant_id, client_id)
+
+
+async def _upload_client_file(db, ctx, client_id, file, field_prefix: str, resource_label: str) -> Client:
+    client = await _get_client(db, ctx.tenant_id, client_id)
+    data = await file.read()
+    if len(data) > MAX_FILE_BYTES:
+        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Ukuran file maksimal 10 MB")
+    setattr(client, f"{field_prefix}_file_data", data)
+    setattr(client, f"{field_prefix}_file_name", file.filename)
+    setattr(client, f"{field_prefix}_file_type", file.content_type or "application/octet-stream")
+    setattr(client, f"{field_prefix}_file_size", len(data))
+    await db.flush()
+    await record_audit(db, ctx.tenant_id, ctx.user_id, "UPLOAD", "clients", client_id,
+                       new_data={f"{resource_label}_file_name": file.filename, "size": len(data)})
+    return await _get_client(db, ctx.tenant_id, client_id)
+
+
+async def _download_client_file(db, tenant_id, client_id, field_prefix: str):
+    data_col = getattr(Client, f"{field_prefix}_file_data")
+    type_col = getattr(Client, f"{field_prefix}_file_type")
+    name_col = getattr(Client, f"{field_prefix}_file_name")
+    row = (await db.execute(
+        select(data_col, type_col, name_col).where(
+            Client.id == client_id, Client.tenant_id == tenant_id, Client.is_deleted == False)  # noqa: E712
+    )).first()
+    if row is None or row[0] is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="File tidak ditemukan")
+    data, ctype, fname = row
+    return Response(
+        content=data, media_type=ctype or "application/octet-stream",
+        headers={"Content-Disposition": f'inline; filename="{fname or "file"}"'},
+    )
+
+
+@router.post("/clients/{client_id}/ppjb-file", response_model=ClientResponse)
+async def upload_ppjb_file(
+    client_id: uuid.UUID, file: UploadFile = File(...),
+    ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db),
+):
+    """Upload file PPJB (Perjanjian Pengikatan Jual Beli) satu pembeli."""
+    return await _upload_client_file(db, ctx, client_id, file, "ppjb", "ppjb")
+
+
+@router.get("/clients/{client_id}/ppjb-file")
+async def download_ppjb_file(
+    client_id: uuid.UUID, ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db),
+):
+    return await _download_client_file(db, ctx.tenant_id, client_id, "ppjb")
+
+
+@router.post("/clients/{client_id}/ajb-file", response_model=ClientResponse)
+async def upload_ajb_file(
+    client_id: uuid.UUID, file: UploadFile = File(...),
+    ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db),
+):
+    """Upload file AJB (Akta Jual Beli) satu pembeli."""
+    return await _upload_client_file(db, ctx, client_id, file, "ajb", "ajb")
+
+
+@router.get("/clients/{client_id}/ajb-file")
+async def download_ajb_file(
+    client_id: uuid.UUID, ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db),
+):
+    return await _download_client_file(db, ctx.tenant_id, client_id, "ajb")
 
 
 @router.delete("/clients/{client_id}", status_code=status.HTTP_204_NO_CONTENT)

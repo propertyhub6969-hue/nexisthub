@@ -76,4 +76,34 @@ export const marketingService = {
   async deleteClient(id: string): Promise<void> {
     await api.delete(`/marketing/clients/${id}`)
   },
+
+  // ── PPJB & AJB (file per pembeli) ──
+  async uploadPpjbFile(id: string, file: File): Promise<Client> {
+    const fd = new FormData()
+    fd.append('file', file)
+    const { data } = await api.post<Client>(`/marketing/clients/${id}/ppjb-file`, fd, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    return data
+  },
+  async openPpjbFile(id: string): Promise<void> {
+    const res = await api.get(`/marketing/clients/${id}/ppjb-file`, { responseType: 'blob' })
+    const url = URL.createObjectURL(res.data as Blob)
+    window.open(url, '_blank')
+    setTimeout(() => URL.revokeObjectURL(url), 60000)
+  },
+  async uploadAjbFile(id: string, file: File): Promise<Client> {
+    const fd = new FormData()
+    fd.append('file', file)
+    const { data } = await api.post<Client>(`/marketing/clients/${id}/ajb-file`, fd, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    return data
+  },
+  async openAjbFile(id: string): Promise<void> {
+    const res = await api.get(`/marketing/clients/${id}/ajb-file`, { responseType: 'blob' })
+    const url = URL.createObjectURL(res.data as Blob)
+    window.open(url, '_blank')
+    setTimeout(() => URL.revokeObjectURL(url), 60000)
+  },
 }

@@ -1,6 +1,6 @@
 import uuid
 import enum
-from sqlalchemy import String, Text, ForeignKey, Enum as SAEnum, Numeric, Date, Boolean
+from sqlalchemy import String, Text, ForeignKey, Enum as SAEnum, Numeric, Date, Boolean, Integer, LargeBinary
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID
 from app.models.base import BaseModel, SoftDeleteMixin
@@ -63,8 +63,17 @@ class TaxRecord(BaseModel, SoftDeleteMixin):
         SAEnum(TaxStatus), default=TaxStatus.BELUM, nullable=False
     )
     notes: Mapped[str] = mapped_column(Text, nullable=True)
+    # Bukti pembayaran/validasi pajak (SSP dll), disimpan di DB; file_data deferred agar tak ikut di query list
+    file_name: Mapped[str] = mapped_column(String(255), nullable=True)
+    file_type: Mapped[str] = mapped_column(String(100), nullable=True)
+    file_size: Mapped[int] = mapped_column(Integer, nullable=True)
+    file_data: Mapped[bytes] = mapped_column(LargeBinary, nullable=True, deferred=True)
 
     notary: Mapped["Notary"] = relationship("Notary")
+
+    @property
+    def has_file(self) -> bool:
+        return self.file_name is not None
 
     @property
     def notary_name(self):

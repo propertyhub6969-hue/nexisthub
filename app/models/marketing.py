@@ -1,6 +1,6 @@
 import uuid
 import enum
-from sqlalchemy import String, Text, ForeignKey, Enum as SAEnum, Numeric, Integer, Date
+from sqlalchemy import String, Text, ForeignKey, Enum as SAEnum, Numeric, Integer, Date, LargeBinary
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID
 from app.models.base import BaseModel, SoftDeleteMixin
@@ -148,8 +148,27 @@ class Client(BaseModel, SoftDeleteMixin):
         SAEnum(ClientStatus), default=ClientStatus.ACTIVE, nullable=False
     )
     notes: Mapped[str] = mapped_column(Text, nullable=True)
+    # PPJB & AJB — 1 dokumen per transaksi (bukan daftar berulang spt pajak); nomor + file disimpan di DB
+    ppjb_number: Mapped[str] = mapped_column(String(100), nullable=True)
+    ppjb_file_name: Mapped[str] = mapped_column(String(255), nullable=True)
+    ppjb_file_type: Mapped[str] = mapped_column(String(100), nullable=True)
+    ppjb_file_size: Mapped[int] = mapped_column(Integer, nullable=True)
+    ppjb_file_data: Mapped[bytes] = mapped_column(LargeBinary, nullable=True, deferred=True)
+    ajb_number: Mapped[str] = mapped_column(String(100), nullable=True)
+    ajb_file_name: Mapped[str] = mapped_column(String(255), nullable=True)
+    ajb_file_type: Mapped[str] = mapped_column(String(100), nullable=True)
+    ajb_file_size: Mapped[int] = mapped_column(Integer, nullable=True)
+    ajb_file_data: Mapped[bytes] = mapped_column(LargeBinary, nullable=True, deferred=True)
 
     marketing_user: Mapped["User"] = relationship("User", foreign_keys=[marketing_user_id])
+
+    @property
+    def has_ppjb_file(self) -> bool:
+        return self.ppjb_file_name is not None
+
+    @property
+    def has_ajb_file(self) -> bool:
+        return self.ajb_file_name is not None
 
     @property
     def marketing_name(self):
