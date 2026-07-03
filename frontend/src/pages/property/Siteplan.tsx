@@ -92,6 +92,10 @@ export default function Siteplan() {
   const draggingRef = useRef<string | null>(null)
   const movedRef = useRef(false)
   const fileRef = useRef<HTMLInputElement>(null)
+  const scrollWrapRef = useRef<HTMLDivElement>(null)
+  const panRef = useRef<{ x: number; y: number; scrollLeft: number; scrollTop: number } | null>(null)
+  const panMovedRef = useRef(false)
+  const [isPanning, setIsPanning] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -159,12 +163,42 @@ export default function Siteplan() {
 
   // ── Klik peta: taruh unit yang dipilih dari tray ──
   function onMapClick(e: React.MouseEvent) {
+    if (panMovedRef.current) { panMovedRef.current = false; return } // itu geser peta, bukan klik taruh unit
     if (mode !== 'edit' || !selectedUnplaced) return
     const np = pctFromEvent(e.clientX, e.clientY)
     const id = selectedUnplaced
     setPos((prev) => ({ ...prev, [id]: np }))
     setSelectedUnplaced(null)
     setDirty(true)
+  }
+
+  // ── Klik-tahan-geser (pan) saat peta diperbesar melebihi kartu ──
+  function onBackgroundMouseDown(e: React.MouseEvent) {
+    if (zoom <= 100) return                                   // pas kartu, tak perlu geser
+    if ((e.target as HTMLElement).closest('button')) return   // jangan ganggu klik/seret marker
+    const wrap = scrollWrapRef.current
+    if (!wrap) return
+    panRef.current = { x: e.clientX, y: e.clientY, scrollLeft: wrap.scrollLeft, scrollTop: wrap.scrollTop }
+    panMovedRef.current = false
+    setIsPanning(true)
+    window.addEventListener('mousemove', onPanMove)
+    window.addEventListener('mouseup', onPanEnd)
+  }
+  function onPanMove(e: MouseEvent) {
+    const wrap = scrollWrapRef.current
+    const start = panRef.current
+    if (!wrap || !start) return
+    const dx = e.clientX - start.x
+    const dy = e.clientY - start.y
+    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) panMovedRef.current = true
+    wrap.scrollLeft = start.scrollLeft - dx
+    wrap.scrollTop = start.scrollTop - dy
+  }
+  function onPanEnd() {
+    panRef.current = null
+    setIsPanning(false)
+    window.removeEventListener('mousemove', onPanMove)
+    window.removeEventListener('mouseup', onPanEnd)
   }
 
   function onMarkerClick(e: React.MouseEvent, u: Unit) {
@@ -334,7 +368,12 @@ export default function Siteplan() {
               <p className="text-xs mt-1">Unggah gambar denah proyek, lalu atur posisi tiap unit di atasnya.</p>
             </div>
           ) : (
-            <div className="overflow-auto" style={{ maxHeight: '75vh' }}>
+            <div
+              ref={scrollWrapRef}
+              onMouseDown={onBackgroundMouseDown}
+              className="overflow-auto"
+              style={{ maxHeight: '75vh', cursor: zoom > 100 ? (isPanning ? 'grabbing' : 'grab') : undefined }}
+            >
               <div
                 ref={mapRef}
                 onClick={onMapClick}
