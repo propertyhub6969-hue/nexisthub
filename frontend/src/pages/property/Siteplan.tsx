@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { ArrowLeft, Loader2, Upload, ImageOff, Trash2, Save, MapPin, Eye, Pencil, LayoutGrid } from 'lucide-react'
+import { ArrowLeft, Loader2, Upload, ImageOff, Trash2, Save, MapPin, Eye, Pencil, LayoutGrid, ZoomIn, ZoomOut, RotateCcw } from 'lucide-react'
 import Badge from '../../components/ui/Badge'
 import { propertyService } from '../../services/property'
 import type { Project, Unit, UnitStatus } from '../../types'
@@ -83,6 +83,10 @@ export default function Siteplan() {
   const [dirty, setDirty] = useState(false)
   const [saving, setSaving] = useState(false)
   const [uploading, setUploading] = useState(false)
+  const [zoom, setZoom] = useState(100) // % lebar peta; 100 = pas dengan lebar kartu
+
+  const zoomIn = () => setZoom((z) => Math.min(300, z + 25))
+  const zoomOut = () => setZoom((z) => Math.max(50, z - 25))
 
   const mapRef = useRef<HTMLDivElement>(null)
   const draggingRef = useRef<string | null>(null)
@@ -306,7 +310,23 @@ export default function Siteplan() {
 
       <div className="flex gap-4 items-start">
         {/* Map */}
-        <div className="flex-1 card p-3">
+        <div className="flex-1 card p-3 relative">
+          {imgUrl && (
+            <div className="absolute top-5 right-5 z-10 flex items-center gap-0.5 bg-white/95 backdrop-blur rounded-lg border border-slate-200 shadow-sm p-1">
+              <button onClick={zoomOut} disabled={zoom <= 50} className="p-1.5 rounded-md hover:bg-slate-100 disabled:opacity-30 text-slate-600 transition-colors" title="Perkecil">
+                <ZoomOut size={15} />
+              </button>
+              <span className="text-xs font-medium text-slate-500 w-10 text-center select-none">{zoom}%</span>
+              <button onClick={zoomIn} disabled={zoom >= 300} className="p-1.5 rounded-md hover:bg-slate-100 disabled:opacity-30 text-slate-600 transition-colors" title="Perbesar">
+                <ZoomIn size={15} />
+              </button>
+              {zoom !== 100 && (
+                <button onClick={() => setZoom(100)} className="p-1.5 rounded-md hover:bg-slate-100 text-slate-600 transition-colors" title="Reset Zoom">
+                  <RotateCcw size={13} />
+                </button>
+              )}
+            </div>
+          )}
           {!imgUrl ? (
             <div className="py-24 text-center text-slate-400">
               <ImageOff size={32} className="mx-auto mb-2" />
@@ -314,28 +334,31 @@ export default function Siteplan() {
               <p className="text-xs mt-1">Unggah gambar denah proyek, lalu atur posisi tiap unit di atasnya.</p>
             </div>
           ) : (
-            <div
-              ref={mapRef}
-              onClick={onMapClick}
-              className={`relative w-full select-none ${mode === 'edit' && selectedUnplaced ? 'cursor-crosshair' : ''}`}
-            >
-              <img src={imgUrl} alt="Siteplan" className="w-full h-auto rounded-lg pointer-events-none" />
-              {placed.map((u) => {
-                const p = pos[u.id]
-                const sc = statusConfig[u.status]
-                return (
-                  <button
-                    key={u.id}
-                    onMouseDown={(e) => startDrag(e, u.id)}
-                    onClick={(e) => onMarkerClick(e, u)}
-                    style={{ left: `${p.x}%`, top: `${p.y}%` }}
-                    className={`absolute -translate-x-1/2 -translate-y-1/2 ${sc.dot} text-white font-semibold rounded-md border border-white shadow ring-1 ring-black/10 ${dense ? 'text-[8px] px-1 py-0 leading-tight' : 'text-[10px] px-1.5 py-0.5'} ${mode === 'edit' ? 'cursor-move' : 'cursor-pointer hover:scale-110'} transition-transform`}
-                    title={`${u.block ? u.block + '-' : ''}${u.unit_number} · ${sc.label}`}
-                  >
-                    {dense ? u.unit_number : `${u.block ? `${u.block}-` : ''}${u.unit_number}`}
-                  </button>
-                )
-              })}
+            <div className="overflow-auto" style={{ maxHeight: '75vh' }}>
+              <div
+                ref={mapRef}
+                onClick={onMapClick}
+                style={{ width: `${zoom}%` }}
+                className={`relative select-none ${mode === 'edit' && selectedUnplaced ? 'cursor-crosshair' : ''}`}
+              >
+                <img src={imgUrl} alt="Siteplan" className="w-full h-auto rounded-lg pointer-events-none" />
+                {placed.map((u) => {
+                  const p = pos[u.id]
+                  const sc = statusConfig[u.status]
+                  return (
+                    <button
+                      key={u.id}
+                      onMouseDown={(e) => startDrag(e, u.id)}
+                      onClick={(e) => onMarkerClick(e, u)}
+                      style={{ left: `${p.x}%`, top: `${p.y}%` }}
+                      className={`absolute -translate-x-1/2 -translate-y-1/2 ${sc.dot} text-white font-semibold rounded-md border border-white shadow ring-1 ring-black/10 ${dense ? 'text-[8px] px-1 py-0 leading-tight' : 'text-[10px] px-1.5 py-0.5'} ${mode === 'edit' ? 'cursor-move' : 'cursor-pointer hover:scale-110'} transition-transform`}
+                      title={`${u.block ? u.block + '-' : ''}${u.unit_number} · ${sc.label}`}
+                    >
+                      {dense ? u.unit_number : `${u.block ? `${u.block}-` : ''}${u.unit_number}`}
+                    </button>
+                  )
+                })}
+              </div>
             </div>
           )}
         </div>
