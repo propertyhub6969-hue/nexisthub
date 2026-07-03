@@ -8,6 +8,7 @@ import {
   HardHat,
   ShoppingCart,
   FileText,
+  ClipboardCheck,
   BarChart3,
   Settings,
   UsersRound,
@@ -51,6 +52,11 @@ const navItems = [
     label: 'Legal',
     icon: FileText,
     to: '/legal',
+  },
+  {
+    label: 'Pemberkasan',
+    icon: ClipboardCheck,
+    to: '/pemberkasan',
   },
   {
     label: 'Reports',

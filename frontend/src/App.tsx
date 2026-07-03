@@ -12,6 +12,7 @@ import ClientPayments from './pages/marketing/ClientPayments'
 import ClientTax from './pages/marketing/ClientTax'
 import ClientKpr from './pages/marketing/ClientKpr'
 import Notaries from './pages/legal/Notaries'
+import Pemberkasan from './pages/legal/Pemberkasan'
 import Projects from './pages/property/Projects'
 import ProjectUnits from './pages/property/ProjectUnits'
 import Siteplan from './pages/property/Siteplan'
@@ -57,6 +58,7 @@ export default function App() {
           <Route path="/construction"        element={<Construction />} />
           <Route path="/procurement"         element={<Procurement />} />
           <Route path="/legal"               element={<Notaries />} />
+          <Route path="/pemberkasan"         element={<Pemberkasan />} />
           <Route path="/settings/team"       element={<Team />} />
           <Route path="/reports"             element={<ComingSoon name="Laporan" />} />
         </Route>

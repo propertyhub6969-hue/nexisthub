@@ -436,6 +436,19 @@ export interface DocumentCreate {
 // ── KPR ───────────────────────────────────────────────────────────
 export type KprStage = 'collect_berkas' | 'berkas_masuk_bank' | 'sp3k' | 'akad_kredit' | 'pencairan'
 
+// ── Pemberkasan (ringkasan lintas pembeli, read-only) ──────────────
+export interface FilingSummaryItem {
+  client_id: string
+  full_name: string
+  project_name?: string
+  unit_label?: string
+  doc_total: number
+  doc_terbit: number
+  tax_total: number
+  tax_settled: number
+  kpr_stage?: KprStage
+}
+
 export interface Bank {
   id: string
   name: string
