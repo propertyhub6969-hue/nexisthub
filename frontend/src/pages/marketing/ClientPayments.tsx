@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { ArrowLeft, Plus, Trash2, Pencil, Loader2, CalendarClock, Wallet, History } from 'lucide-react'
+import { ArrowLeft, Plus, Trash2, Pencil, Loader2, CalendarClock, Wallet, History, Eye } from 'lucide-react'
 import Badge from '../../components/ui/Badge'
 import Modal from '../../components/ui/Modal'
 import { marketingService } from '../../services/marketing'
@@ -48,6 +48,7 @@ export default function ClientPayments() {
   const [payModal, setPayModal] = useState(false)
   const [payForm, setPayForm] = useState<PaymentCreate>(emptyPayment(clientId))
   const [payEditId, setPayEditId] = useState<string | null>(null)
+  const [transferFile, setTransferFile] = useState<File | null>(null)
   const [saving, setSaving] = useState(false)
 
   const load = useCallback(async () => {
@@ -98,10 +99,11 @@ export default function ClientPayments() {
     try { await paymentService.deleteSchedule(id); await reload() } catch { setError('Gagal menghapus termin.') }
   }
 
-  function openPayCreate() { setPayEditId(null); setPayForm(emptyPayment(clientId)); setPayModal(true) }
+  function openPayCreate() { setPayEditId(null); setPayForm(emptyPayment(clientId)); setTransferFile(null); setPayModal(true) }
   function openPayEdit(p: Payment) {
     setPayEditId(p.id)
     setPayForm({ client_id: clientId, schedule_id: p.schedule_id ?? '', amount: p.amount, payment_date: p.payment_date ?? '', method: p.method, source: p.source, receipt_number: p.receipt_number ?? '' })
+    setTransferFile(null)
     setPayModal(true)
   }
   async function submitPayment(e: React.FormEvent) {
@@ -110,9 +112,9 @@ export default function ClientPayments() {
       const p = { ...payForm }
       const rec = p as unknown as Record<string, unknown>
       ;['schedule_id', 'payment_date', 'receipt_number'].forEach((k) => { if (rec[k] === '') delete rec[k] })
-      if (payEditId) await paymentService.updatePayment(payEditId, p)
-      else await paymentService.createPayment(p)
-      setPayModal(false); await reload()
+      const result = payEditId ? await paymentService.updatePayment(payEditId, p) : await paymentService.createPayment(p)
+      if (transferFile) await paymentService.uploadPaymentFile(result.id, transferFile)
+      setPayModal(false); setTransferFile(null); await reload()
     } catch { setError('Gagal menyimpan pembayaran.') } finally { setSaving(false) }
   }
   async function delPayment(id: string) {
@@ -194,12 +196,12 @@ export default function ClientPayments() {
         </div>
         <table className="w-full text-sm">
           <thead className="bg-slate-50 border-b border-slate-200">
-            <tr>{['Tanggal', 'Nominal', 'Sumber', 'Metode', 'Untuk Termin', 'No. Kwitansi', ''].map((h, i) => (
+            <tr>{['Tanggal', 'Nominal', 'Sumber', 'Metode', 'Untuk Termin', 'No. Kwitansi', 'Bukti', ''].map((h, i) => (
               <th key={i} className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">{h}</th>))}</tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {payments.length === 0 ? (
-              <tr><td colSpan={7} className="px-4 py-6 text-center text-slate-400 text-sm">Belum ada pembayaran tercatat.</td></tr>
+              <tr><td colSpan={8} className="px-4 py-6 text-center text-slate-400 text-sm">Belum ada pembayaran tercatat.</td></tr>
             ) : payments.map((p) => {
               const src = sourceConfig[p.source]
               return (
@@ -210,6 +212,13 @@ export default function ClientPayments() {
                   <td className="px-4 py-2.5 text-slate-500">{methodLabel[p.method]}</td>
                   <td className="px-4 py-2.5 text-slate-500">{scheduleLabel(p.schedule_id) ?? '—'}</td>
                   <td className="px-4 py-2.5 text-slate-500">{p.receipt_number ?? '—'}</td>
+                  <td className="px-4 py-2.5">
+                    {p.has_file ? (
+                      <button onClick={() => paymentService.openPaymentFile(p.id)} className="inline-flex items-center gap-1 text-brand-600 hover:underline text-xs" title={p.file_name}>
+                        <Eye size={13} /> Lihat
+                      </button>
+                    ) : <span className="text-slate-400 text-xs">—</span>}
+                  </td>
                   <td className="px-4 py-2.5">
                     <div className="flex items-center justify-end gap-3">
                       <button onClick={() => openPayEdit(p)} className="text-slate-400 hover:text-brand-600" title="Edit"><Pencil size={14} /></button>
@@ -305,9 +314,25 @@ export default function ClientPayments() {
             </div>
             <div>
               <label className="label">No. Kwitansi</label>
-              <input className="input" value={payForm.receipt_number} onChange={(e) => setPayForm({ ...payForm, receipt_number: e.target.value })} />
+              <p className="text-sm text-slate-500 py-2">
+                {payForm.receipt_number ? payForm.receipt_number : 'Dibuat otomatis setelah disimpan'}
+              </p>
             </div>
           </div>
+          {payForm.method === 'transfer' && (
+            <div>
+              <label className="label">Bukti Transfer</label>
+              <input className="input" type="file" accept="image/*,application/pdf" onChange={(e) => setTransferFile(e.target.files?.[0] ?? null)} />
+              {payEditId && payments.find((p) => p.id === payEditId)?.has_file && !transferFile && (
+                <div className="mt-1.5 flex items-center gap-2 text-xs">
+                  <button type="button" onClick={() => paymentService.openPaymentFile(payEditId)} className="inline-flex items-center gap-1 text-brand-600 hover:underline">
+                    <Eye size={12} /> Lihat file saat ini
+                  </button>
+                  <span className="text-slate-400">— pilih file baru untuk mengganti</span>
+                </div>
+              )}
+            </div>
+          )}
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" className="btn-secondary text-sm" onClick={() => setPayModal(false)}>Batal</button>
             <button type="submit" className="btn-primary text-sm flex items-center gap-2" disabled={saving}>{saving && <Loader2 size={14} className="animate-spin" />}Simpan</button>

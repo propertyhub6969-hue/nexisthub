@@ -43,4 +43,18 @@ export const paymentService = {
   async deletePayment(id: string): Promise<void> {
     await api.delete(`/payments/records/${id}`)
   },
+  async uploadPaymentFile(id: string, file: File): Promise<Payment> {
+    const fd = new FormData()
+    fd.append('file', file)
+    const { data } = await api.post<Payment>(`/payments/records/${id}/file`, fd, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    return data
+  },
+  async openPaymentFile(id: string): Promise<void> {
+    const res = await api.get(`/payments/records/${id}/file`, { responseType: 'blob' })
+    const url = URL.createObjectURL(res.data as Blob)
+    window.open(url, '_blank')
+    setTimeout(() => URL.revokeObjectURL(url), 60000)
+  },
 }

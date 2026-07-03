@@ -1,7 +1,7 @@
 import uuid
 import enum
 from datetime import date
-from sqlalchemy import String, Text, ForeignKey, Enum as SAEnum, Numeric, Integer, Date
+from sqlalchemy import String, Text, ForeignKey, Enum as SAEnum, Numeric, Integer, Date, LargeBinary
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID
 from app.models.base import BaseModel, SoftDeleteMixin
@@ -85,8 +85,17 @@ class Payment(BaseModel, SoftDeleteMixin):
     source: Mapped[PaymentSource] = mapped_column(
         SAEnum(PaymentSource), default=PaymentSource.PEMBELI, nullable=False
     )
-    receipt_number: Mapped[str] = mapped_column(String(50), nullable=True)  # No. kwitansi
+    receipt_number: Mapped[str] = mapped_column(String(50), nullable=True)  # No. kwitansi — auto-generate saat create
     notes: Mapped[str] = mapped_column(Text, nullable=True)
+    # Bukti transfer, disimpan di DB; file_data deferred agar tak ikut di query list
+    file_name: Mapped[str] = mapped_column(String(255), nullable=True)
+    file_type: Mapped[str] = mapped_column(String(100), nullable=True)
+    file_size: Mapped[int] = mapped_column(Integer, nullable=True)
+    file_data: Mapped[bytes] = mapped_column(LargeBinary, nullable=True, deferred=True)
+
+    @property
+    def has_file(self) -> bool:
+        return self.file_name is not None
 
     def __repr__(self) -> str:
         return f"<Payment {self.amount} [{self.source}]>"

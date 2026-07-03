@@ -296,6 +296,8 @@ export interface Payment {
   method: PaymentMethod
   source: PaymentSource
   receipt_number?: string
+  has_file?: boolean
+  file_name?: string
   notes?: string
   created_at: string
   updated_at: string

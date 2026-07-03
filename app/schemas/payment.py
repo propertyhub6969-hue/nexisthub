@@ -71,6 +71,8 @@ class PaymentResponse(PaymentBase):
     id: uuid.UUID
     client_id: uuid.UUID
     schedule_id: Optional[uuid.UUID] = None
+    has_file: bool = False
+    file_name: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 

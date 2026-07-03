@@ -2,7 +2,8 @@ import uuid
 from datetime import date, datetime
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status, UploadFile, File
+from fastapi.responses import Response
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -17,6 +18,8 @@ from app.schemas.payment import (
 )
 
 router = APIRouter()
+
+MAX_FILE_BYTES = 10 * 1024 * 1024  # 10 MB
 
 
 async def _get_client(db, tenant_id, client_id) -> Client:
@@ -159,6 +162,13 @@ async def list_payments(
     return result.scalars().all()
 
 
+async def _generate_receipt_number(db, tenant_id) -> str:
+    """Nomor kwitansi otomatis KW-000001, dst. Hitung SEMUA payment (termasuk terhapus)
+    agar nomor tak pernah dipakai ulang meski ada yang dihapus."""
+    count = await db.scalar(select(func.count()).select_from(Payment).where(Payment.tenant_id == tenant_id))
+    return f"KW-{(count or 0) + 1:06d}"
+
+
 @router.post("/records", response_model=PaymentResponse, status_code=status.HTTP_201_CREATED)
 async def create_payment(
     payload: PaymentCreate,
@@ -166,11 +176,14 @@ async def create_payment(
     db: AsyncSession = Depends(get_db),
 ):
     await _get_client(db, ctx.tenant_id, payload.client_id)
-    pay = Payment(tenant_id=ctx.tenant_id, **payload.model_dump())
+    data = payload.model_dump()
+    if not data.get("receipt_number"):
+        data["receipt_number"] = await _generate_receipt_number(db, ctx.tenant_id)
+    pay = Payment(tenant_id=ctx.tenant_id, **data)
     db.add(pay)
     await db.flush()
     await _recompute_schedule(db, ctx.tenant_id, pay.schedule_id)
-    await record_audit(db, ctx.tenant_id, ctx.user_id, "CREATE", "payments", pay.id, new_data=payload)
+    await record_audit(db, ctx.tenant_id, ctx.user_id, "CREATE", "payments", pay.id, new_data=data)
     await db.refresh(pay)
     return pay
 
@@ -202,6 +215,48 @@ async def update_payment(
         await _recompute_schedule(db, ctx.tenant_id, pay.schedule_id)
     await db.refresh(pay)
     return pay
+
+
+@router.post("/records/{payment_id}/file", response_model=PaymentResponse)
+async def upload_payment_file(
+    payment_id: uuid.UUID,
+    file: UploadFile = File(...),
+    ctx: AuthContext = Depends(get_current_context),
+    db: AsyncSession = Depends(get_db),
+):
+    """Upload bukti transfer untuk satu pembayaran."""
+    pay = await _get_payment(db, ctx.tenant_id, payment_id)
+    data = await file.read()
+    if len(data) > MAX_FILE_BYTES:
+        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Ukuran file maksimal 10 MB")
+    pay.file_data = data
+    pay.file_name = file.filename
+    pay.file_type = file.content_type or "application/octet-stream"
+    pay.file_size = len(data)
+    await db.flush()
+    await record_audit(db, ctx.tenant_id, ctx.user_id, "UPLOAD", "payments", payment_id,
+                       new_data={"file_name": file.filename, "size": len(data)})
+    await db.refresh(pay)
+    return pay
+
+
+@router.get("/records/{payment_id}/file")
+async def download_payment_file(
+    payment_id: uuid.UUID,
+    ctx: AuthContext = Depends(get_current_context),
+    db: AsyncSession = Depends(get_db),
+):
+    row = (await db.execute(
+        select(Payment.file_data, Payment.file_type, Payment.file_name).where(
+            Payment.id == payment_id, Payment.tenant_id == ctx.tenant_id, Payment.is_deleted == False)  # noqa: E712
+    )).first()
+    if row is None or row[0] is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="File tidak ditemukan")
+    data, ctype, fname = row
+    return Response(
+        content=data, media_type=ctype or "application/octet-stream",
+        headers={"Content-Disposition": f'inline; filename="{fname or "file"}"'},
+    )
 
 
 @router.delete("/records/{payment_id}", status_code=status.HTTP_204_NO_CONTENT)
