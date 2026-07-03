@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { ArrowLeft, Plus, Trash2, Pencil, Loader2, CalendarClock, Wallet, History, Eye } from 'lucide-react'
+import { ArrowLeft, Plus, Trash2, Pencil, Loader2, CalendarClock, Wallet, History, Eye, Printer } from 'lucide-react'
+import { printReceipt } from '../../utils/receipt'
 import Badge from '../../components/ui/Badge'
 import Modal from '../../components/ui/Modal'
 import { marketingService } from '../../services/marketing'
@@ -130,6 +131,20 @@ export default function ClientPayments() {
   }
 
   const scheduleLabel = (id?: string) => schedules.find((s) => s.id === id)?.label
+  const unitCode = unit ? [unit.block, unit.unit_number].filter(Boolean).join('-') : ''
+
+  async function handlePrint(p: Payment) {
+    await printReceipt({
+      receiptNo: p.receipt_number,
+      name: client?.full_name ?? '',
+      unit: unitCode,
+      amount: Number(p.amount),
+      date: p.payment_date,
+      method: methodLabel[p.method],
+      purpose: p.purpose ? purposeLabel[p.purpose] : undefined,
+      source: sourceConfig[p.source]?.label,
+    })
+  }
 
   if (loading) return <div className="py-16 text-center text-slate-400"><Loader2 size={20} className="inline animate-spin" /></div>
 
@@ -229,6 +244,7 @@ export default function ClientPayments() {
                   </td>
                   <td className="px-4 py-2.5">
                     <div className="flex items-center justify-end gap-3">
+                      <button onClick={() => handlePrint(p)} className="text-slate-400 hover:text-brand-600" title="Cetak Kuitansi"><Printer size={14} /></button>
                       <button onClick={() => openPayEdit(p)} className="text-slate-400 hover:text-brand-600" title="Edit"><Pencil size={14} /></button>
                       <button onClick={() => delPayment(p.id)} className="text-slate-400 hover:text-red-600" title="Hapus"><Trash2 size={14} /></button>
                     </div>
