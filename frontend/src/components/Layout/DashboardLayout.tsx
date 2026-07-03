@@ -11,7 +11,7 @@ const pageTitles: Record<string, string> = {
   '/construction': 'Konstruksi',
   '/sales': 'Penjualan',
   '/procurement': 'Procurement',
-  '/legal': 'Legal',
+  '/legal': 'Master Data',
   '/pemberkasan': 'Pemberkasan',
   '/settings/team': 'Tim & Peran',
   '/reports': 'Reports',

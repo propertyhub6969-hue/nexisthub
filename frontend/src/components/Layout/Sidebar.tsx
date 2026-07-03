@@ -49,7 +49,7 @@ const navItems = [
     to: '/procurement',
   },
   {
-    label: 'Legal',
+    label: 'Master Data',
     icon: FileText,
     to: '/legal',
   },
