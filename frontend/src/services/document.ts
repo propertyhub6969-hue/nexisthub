@@ -6,6 +6,10 @@ export const documentService = {
     const { data } = await api.get<DocumentItem[]>('/legal/documents', { params: { client_id: clientId } })
     return data
   },
+  async listByUnit(unitId: string): Promise<DocumentItem[]> {
+    const { data } = await api.get<DocumentItem[]>('/legal/documents', { params: { unit_id: unitId } })
+    return data
+  },
   async create(payload: DocumentCreate): Promise<DocumentItem> {
     const { data } = await api.post<DocumentItem>('/legal/documents', payload)
     return data

@@ -13,7 +13,8 @@ class DocStatus(str, enum.Enum):
 
 
 class Document(BaseModel, SoftDeleteMixin):
-    """Dokumen/berkas legalitas per pembeli (checklist + file tersimpan di DB)."""
+    """Dokumen/berkas: melekat ke PEMBELI (berkas identitas KTP/KK/NPWP) ATAU ke UNIT
+    (legalitas SHM/SLF/IMB-PBG/PBB — ada tanpa perlu pembeli). File tersimpan di DB."""
     __tablename__ = "documents"
 
     tenant_id: Mapped[uuid.UUID] = mapped_column(
@@ -22,9 +23,13 @@ class Document(BaseModel, SoftDeleteMixin):
     )
     client_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("clients.id", ondelete="CASCADE"),
-        nullable=False, index=True
+        nullable=True, index=True   # opsional — diisi utk berkas pembeli
     )
-    doc_type: Mapped[str] = mapped_column(String(100), nullable=False)   # KTP, KK, NPWP, PPJB, AJB, Sertifikat, IMB, dll
+    unit_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("units.id", ondelete="CASCADE"),
+        nullable=True, index=True   # opsional — diisi utk dokumen legalitas unit
+    )
+    doc_type: Mapped[str] = mapped_column(String(100), nullable=False)   # KTP, KK, NPWP, SHM, SLF, IMB/PBG, PBB, dll
     name: Mapped[str] = mapped_column(String(200), nullable=True)        # keterangan tambahan
     status: Mapped[DocStatus] = mapped_column(
         SAEnum(DocStatus), default=DocStatus.BELUM, nullable=False

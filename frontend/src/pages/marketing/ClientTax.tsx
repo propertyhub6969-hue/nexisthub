@@ -11,11 +11,9 @@ import type {
   DocumentItem, DocumentCreate, DocStatus,
 } from '../../types'
 
-// Berkas Pembeli (identitas) vs Dokumen & Legalitas (unit) — dua kelompok terpisah dari daftar dokumen yang sama
+// Berkas Pembeli = dokumen identitas melekat ke pembeli (client_id).
+// Dokumen legalitas unit dikelola terpisah di menu Properti → Dokumen Legalitas (unit_id).
 const IDENTITY_PRESETS = ['KTP', 'KK', 'NPWP']
-const LEGAL_PRESETS = ['Sertifikat SHM', 'Sertifikat HGB', 'SLF', 'IMB / PBG', 'PBB']
-const IDENTITY_SET = new Set(IDENTITY_PRESETS.map((s) => s.toLowerCase()))
-const isIdentityDoc = (docType: string) => IDENTITY_SET.has(docType.trim().toLowerCase())
 
 const docStatusCfg: Record<DocStatus, { label: string; variant: 'gray' | 'yellow' | 'green' }> = {
   belum:  { label: 'Belum Ada', variant: 'gray' },
@@ -45,12 +43,12 @@ export default function ClientTax() {
   const [notaries, setNotaries] = useState<Notary[]>([])
   const [taxes, setTaxes] = useState<TaxRecord[]>([])
   const [fees, setFees] = useState<NotaryFee[]>([])
-  const [docs, setDocs] = useState<DocumentItem[]>([])
+  const [docs, setDocs] = useState<DocumentItem[]>([])          // berkas pembeli (identitas)
+  const [unitDocs, setUnitDocs] = useState<DocumentItem[]>([])  // dokumen legalitas unit (read-only di sini)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
   const [docModal, setDocModal] = useState(false)
-  const [docSection, setDocSection] = useState<'identity' | 'legal'>('legal')
   const [docForm, setDocForm] = useState<DocumentCreate>(emptyDoc(clientId))
   const [docEditId, setDocEditId] = useState<string | null>(null)
   const [uploadingId, setUploadingId] = useState<string | null>(null)
@@ -85,6 +83,8 @@ export default function ClientTax() {
       ])
       setClient(cl); setNotaries(no); setTaxes(tx); setFees(fe); setDocs(dc)
       setPpjbNumber(cl.ppjb_number ?? ''); setAjbNumber(cl.ajb_number ?? '')
+      // Dokumen legalitas otomatis diambil dari unit pembeli (dikelola di menu Dokumen Legalitas)
+      setUnitDocs(cl.unit_id ? await documentService.listByUnit(cl.unit_id) : [])
     } catch { setError('Gagal memuat data legalitas.') } finally { setLoading(false) }
   }, [clientId])
   useEffect(() => { load() }, [load])
@@ -95,12 +95,11 @@ export default function ClientTax() {
   }
   const reloadDocs = async () => setDocs(await documentService.list(clientId))
 
-  // document handlers
-  function openDocCreate(section: 'identity' | 'legal') {
-    setDocSection(section); setDocEditId(null); setDocForm(emptyDoc(clientId)); setDocModal(true)
+  // document handlers — di halaman ini hanya BERKAS PEMBELI (identitas); dok legalitas unit read-only
+  function openDocCreate() {
+    setDocEditId(null); setDocForm(emptyDoc(clientId)); setDocModal(true)
   }
   function openDocEdit(d: DocumentItem) {
-    setDocSection(isIdentityDoc(d.doc_type) ? 'identity' : 'legal')
     setDocEditId(d.id)
     setDocForm({ client_id: clientId, doc_type: d.doc_type, name: d.name ?? '', status: d.status, doc_date: d.doc_date ?? '' })
     setDocModal(true)
@@ -203,22 +202,20 @@ export default function ClientTax() {
     } catch { setError(`Gagal upload file ${kind.toUpperCase()} (maks 10 MB).`) } finally { setUploadingDeed(null) }
   }
 
-  const identityDocs = docs.filter((d) => isIdentityDoc(d.doc_type))
-  const legalDocs = docs.filter((d) => !isIdentityDoc(d.doc_type))
   const totalFee = fees.reduce((a, f) => a + Number(f.amount || 0), 0)
 
   if (loading) return <div className="py-16 text-center text-slate-400"><Loader2 size={20} className="inline animate-spin" /></div>
 
-  function docTable(list: DocumentItem[], emptyMsg: string) {
+  function docTable(list: DocumentItem[], emptyMsg: string, readOnly = false) {
     return (
       <table className="w-full text-sm">
         <thead className="bg-slate-50 border-b border-slate-200">
-          <tr>{['Jenis', 'Keterangan', 'Status', 'File', ''].map((h, i) => (
+          <tr>{['Jenis', 'Keterangan', 'Status', 'File', ...(readOnly ? [] : [''])].map((h, i) => (
             <th key={i} className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">{h}</th>))}</tr>
         </thead>
         <tbody className="divide-y divide-slate-100">
           {list.length === 0 ? (
-            <tr><td colSpan={5} className="px-4 py-6 text-center text-slate-400 text-sm">{emptyMsg}</td></tr>
+            <tr><td colSpan={readOnly ? 4 : 5} className="px-4 py-6 text-center text-slate-400 text-sm">{emptyMsg}</td></tr>
           ) : list.map((d) => {
             const st = docStatusCfg[d.status]
             return (
@@ -228,22 +225,26 @@ export default function ClientTax() {
                 <td className="px-4 py-2.5">{st && <Badge label={st.label} variant={st.variant} />}</td>
                 <td className="px-4 py-2.5">
                   <div className="flex items-center gap-2">
-                    {d.has_file && (
+                    {d.has_file ? (
                       <button onClick={() => documentService.openFile(d.id)} className="inline-flex items-center gap-1 text-brand-600 hover:underline text-xs" title={d.file_name}>
                         <Eye size={13} /> Lihat
                       </button>
+                    ) : readOnly ? <span className="text-slate-400 text-xs">—</span> : null}
+                    {!readOnly && (
+                      <button onClick={() => triggerUpload(d.id)} className="inline-flex items-center gap-1 text-slate-500 hover:text-brand-600 text-xs">
+                        {uploadingId === d.id ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />} {d.has_file ? 'Ganti' : 'Upload'}
+                      </button>
                     )}
-                    <button onClick={() => triggerUpload(d.id)} className="inline-flex items-center gap-1 text-slate-500 hover:text-brand-600 text-xs">
-                      {uploadingId === d.id ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />} {d.has_file ? 'Ganti' : 'Upload'}
-                    </button>
                   </div>
                 </td>
-                <td className="px-4 py-2.5">
-                  <div className="flex items-center justify-end gap-3">
-                    <button onClick={() => openDocEdit(d)} className="text-slate-400 hover:text-brand-600" title="Edit"><Pencil size={14} /></button>
-                    <button onClick={() => delDoc(d.id)} className="text-slate-400 hover:text-red-600" title="Hapus"><Trash2 size={14} /></button>
-                  </div>
-                </td>
+                {!readOnly && (
+                  <td className="px-4 py-2.5">
+                    <div className="flex items-center justify-end gap-3">
+                      <button onClick={() => openDocEdit(d)} className="text-slate-400 hover:text-brand-600" title="Edit"><Pencil size={14} /></button>
+                      <button onClick={() => delDoc(d.id)} className="text-slate-400 hover:text-red-600" title="Hapus"><Trash2 size={14} /></button>
+                    </div>
+                  </td>
+                )}
               </tr>
             )
           })}
@@ -272,18 +273,20 @@ export default function ClientTax() {
       <div className="card overflow-hidden">
         <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
           <h2 className="text-sm font-semibold text-slate-900 flex items-center gap-2"><Contact size={15} /> Berkas Pembeli</h2>
-          <button className="btn-primary text-xs flex items-center gap-1" onClick={() => openDocCreate('identity')}><Plus size={13} /> Tambah Berkas</button>
+          <button className="btn-primary text-xs flex items-center gap-1" onClick={openDocCreate}><Plus size={13} /> Tambah Berkas</button>
         </div>
-        {docTable(identityDocs, 'Belum ada berkas identitas. Tambahkan KTP, KK, NPWP.')}
+        {docTable(docs, 'Belum ada berkas identitas. Tambahkan KTP, KK, NPWP.')}
       </div>
 
-      {/* Dokumen & Legalitas (unit) */}
+      {/* Dokumen & Legalitas (unit) — read-only, otomatis dari unit */}
       <div className="card overflow-hidden">
         <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
-          <h2 className="text-sm font-semibold text-slate-900 flex items-center gap-2"><FileText size={15} /> Dokumen & Legalitas</h2>
-          <button className="btn-primary text-xs flex items-center gap-1" onClick={() => openDocCreate('legal')}><Plus size={13} /> Tambah Dokumen</button>
+          <h2 className="text-sm font-semibold text-slate-900 flex items-center gap-2"><FileText size={15} /> Dokumen & Legalitas Unit</h2>
+          <Link to="/property/legal-docs" className="text-xs text-brand-600 hover:underline">Kelola di menu Dokumen Legalitas →</Link>
         </div>
-        {docTable(legalDocs, 'Belum ada dokumen. Tambahkan checklist legalitas unit (SHM, SLF, IMB/PBG, PBB, dll).')}
+        {!client?.unit_id
+          ? <p className="px-4 py-6 text-center text-slate-400 text-sm">Pembeli belum terhubung ke unit — dokumen legalitas mengikuti unit.</p>
+          : docTable(unitDocs, 'Belum ada dokumen legalitas untuk unit ini. Tambahkan di menu Properti → Dokumen Legalitas.', true)}
       </div>
 
       {/* PPJB & AJB */}
@@ -407,12 +410,12 @@ export default function ClientTax() {
       </div>
 
       {/* Modal Dokumen */}
-      <Modal open={docModal} onClose={() => setDocModal(false)} title={docEditId ? 'Edit Dokumen' : docSection === 'identity' ? 'Tambah Berkas Pembeli' : 'Tambah Dokumen'}>
+      <Modal open={docModal} onClose={() => setDocModal(false)} title={docEditId ? 'Edit Berkas Pembeli' : 'Tambah Berkas Pembeli'}>
         <form onSubmit={submitDoc} className="space-y-3">
           <div>
             <label className="label">Jenis Dokumen *</label>
-            <input className="input" required list="doc-presets" placeholder={docSection === 'identity' ? 'KTP / KK / NPWP ...' : 'SHM / SLF / IMB / PBB ...'} value={docForm.doc_type} onChange={(e) => setDocForm({ ...docForm, doc_type: e.target.value })} />
-            <datalist id="doc-presets">{(docSection === 'identity' ? IDENTITY_PRESETS : LEGAL_PRESETS).map((d) => <option key={d} value={d} />)}</datalist>
+            <input className="input" required list="doc-presets" placeholder="KTP / KK / NPWP ..." value={docForm.doc_type} onChange={(e) => setDocForm({ ...docForm, doc_type: e.target.value })} />
+            <datalist id="doc-presets">{IDENTITY_PRESETS.map((d) => <option key={d} value={d} />)}</datalist>
           </div>
           <div>
             <label className="label">Keterangan</label>

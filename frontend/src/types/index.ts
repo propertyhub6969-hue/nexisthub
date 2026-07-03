@@ -424,7 +424,8 @@ export type DocStatus = 'belum' | 'proses' | 'terbit'
 
 export interface DocumentItem {
   id: string
-  client_id: string
+  client_id?: string
+  unit_id?: string
   doc_type: string
   name?: string
   status: DocStatus
@@ -438,7 +439,8 @@ export interface DocumentItem {
   updated_at: string
 }
 export interface DocumentCreate {
-  client_id: string
+  client_id?: string
+  unit_id?: string
   doc_type: string
   name?: string
   status?: DocStatus

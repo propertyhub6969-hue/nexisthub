@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from typing import Optional
 from datetime import datetime, date
 import uuid
@@ -15,7 +15,14 @@ class DocumentBase(BaseModel):
 
 
 class DocumentCreate(DocumentBase):
-    client_id: uuid.UUID
+    client_id: Optional[uuid.UUID] = None   # berkas pembeli
+    unit_id: Optional[uuid.UUID] = None      # dokumen legalitas unit
+
+    @model_validator(mode="after")
+    def _one_owner(self):
+        if bool(self.client_id) == bool(self.unit_id):
+            raise ValueError("Dokumen harus melekat ke SATU: client_id ATAU unit_id")
+        return self
 
 
 class DocumentUpdate(BaseModel):
@@ -28,7 +35,8 @@ class DocumentUpdate(BaseModel):
 
 class DocumentResponse(DocumentBase):
     id: uuid.UUID
-    client_id: uuid.UUID
+    client_id: Optional[uuid.UUID] = None
+    unit_id: Optional[uuid.UUID] = None
     file_name: Optional[str] = None
     file_type: Optional[str] = None
     file_size: Optional[int] = None

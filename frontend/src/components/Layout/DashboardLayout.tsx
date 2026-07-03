@@ -8,6 +8,7 @@ const pageTitles: Record<string, string> = {
   '/marketing/prospects': 'Prospek',
   '/marketing/clients': 'Pembeli',
   '/property/projects': 'Properti',
+  '/property/legal-docs': 'Dokumen Legalitas',
   '/construction': 'Konstruksi',
   '/sales': 'Penjualan',
   '/procurement': 'Procurement',

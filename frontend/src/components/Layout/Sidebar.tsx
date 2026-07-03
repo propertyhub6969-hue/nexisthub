@@ -5,6 +5,7 @@ import {
   UserCheck,
   Handshake,
   Building2,
+  FileCheck,
   HardHat,
   ShoppingCart,
   FileText,
@@ -36,7 +37,10 @@ const navItems = [
   {
     label: 'Properti',
     icon: Building2,
-    to: '/property/projects',
+    children: [
+      { label: 'Proyek & Unit', to: '/property/projects', icon: Building2 },
+      { label: 'Dokumen Legalitas', to: '/property/legal-docs', icon: FileCheck },
+    ],
   },
   {
     label: 'Konstruksi',

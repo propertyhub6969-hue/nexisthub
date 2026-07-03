@@ -16,6 +16,7 @@ import Pemberkasan from './pages/legal/Pemberkasan'
 import Projects from './pages/property/Projects'
 import ProjectUnits from './pages/property/ProjectUnits'
 import Siteplan from './pages/property/Siteplan'
+import LegalDocuments from './pages/property/LegalDocuments'
 import Procurement from './pages/procurement/Procurement'
 import Construction from './pages/construction/Construction'
 import Team from './pages/settings/Team'
@@ -53,6 +54,7 @@ export default function App() {
           <Route path="/marketing/clients/:clientId/tax" element={<ClientTax />} />
           <Route path="/marketing/clients/:clientId/kpr" element={<ClientKpr />} />
           <Route path="/property/projects"                 element={<Projects />} />
+          <Route path="/property/legal-docs"               element={<LegalDocuments />} />
           <Route path="/property/projects/:projectId/units" element={<ProjectUnits />} />
           <Route path="/property/projects/:projectId/siteplan" element={<Siteplan />} />
           <Route path="/construction"        element={<Construction />} />

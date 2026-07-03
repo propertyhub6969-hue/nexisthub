@@ -29,16 +29,20 @@ async def _get_doc(db, tenant_id, doc_id) -> Document:
 
 @router.get("/documents", response_model=list[DocumentResponse])
 async def list_documents(
-    client_id: uuid.UUID = Query(...),
+    client_id: uuid.UUID = Query(None),
+    unit_id: uuid.UUID = Query(None),
     ctx: AuthContext = Depends(get_current_context),
     db: AsyncSession = Depends(get_db),
 ):
-    r = await db.execute(
-        select(Document).where(
-            Document.client_id == client_id, Document.tenant_id == ctx.tenant_id,
-            Document.is_deleted == False)  # noqa: E712
-        .order_by(Document.created_at)
-    )
+    """Daftar dokumen — beri client_id (berkas pembeli) ATAU unit_id (legalitas unit)."""
+    if not client_id and not unit_id:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Sertakan client_id atau unit_id")
+    conds = [Document.tenant_id == ctx.tenant_id, Document.is_deleted == False]  # noqa: E712
+    if client_id:
+        conds.append(Document.client_id == client_id)
+    if unit_id:
+        conds.append(Document.unit_id == unit_id)
+    r = await db.execute(select(Document).where(*conds).order_by(Document.created_at))
     return r.scalars().all()
 
 
