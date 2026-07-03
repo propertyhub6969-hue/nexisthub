@@ -4,7 +4,7 @@ from datetime import datetime, date
 from decimal import Decimal
 import uuid
 
-from app.models.marketing import LeadStatus, ProspectStatus, ClientStatus, ClientPaymentType
+from app.models.marketing import LeadStatus, LeadTemperature, ProspectStatus, ClientStatus, ClientPaymentType
 
 
 # ── Generic pagination ────────────────────────────────────────────
@@ -27,6 +27,7 @@ class LeadBase(BaseModel):
     source: Optional[str] = Field(None, max_length=100)
     interest: Optional[str] = Field(None, max_length=200)
     interested_project_id: Optional[uuid.UUID] = None
+    temperature: Optional[LeadTemperature] = None
     notes: Optional[str] = None
 
 
@@ -42,6 +43,7 @@ class LeadUpdate(BaseModel):
     source: Optional[str] = Field(None, max_length=100)
     interest: Optional[str] = Field(None, max_length=200)
     interested_project_id: Optional[uuid.UUID] = None
+    temperature: Optional[LeadTemperature] = None
     notes: Optional[str] = None
     status: Optional[LeadStatus] = None
     assigned_to: Optional[uuid.UUID] = None

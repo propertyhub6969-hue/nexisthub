@@ -13,6 +13,12 @@ class LeadStatus(str, enum.Enum):
     UNQUALIFIED = "unqualified"
 
 
+class LeadTemperature(str, enum.Enum):
+    COLD = "cold"   # Kurang prospektif
+    WARM = "warm"   # Cukup tertarik
+    HOT = "hot"     # Sangat siap closing
+
+
 class ProspectStatus(str, enum.Enum):
     ACTIVE = "active"
     NEGOTIATION = "negotiation"
@@ -52,6 +58,9 @@ class Lead(BaseModel):
     status: Mapped[LeadStatus] = mapped_column(
         SAEnum(LeadStatus), default=LeadStatus.NEW, nullable=False
     )
+    temperature: Mapped[LeadTemperature] = mapped_column(
+        SAEnum(LeadTemperature), nullable=True
+    )  # Kategori: Cold/Warm/Hot Leads — opsional, diisi marketing saat kualifikasi
     assigned_to: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True

@@ -55,6 +55,7 @@ export interface TeamMemberUpdate {
 // ── Marketing ─────────────────────────────────────────────────────
 // NB: status values match backend enum values (lowercase).
 export type LeadStatus = 'new' | 'contacted' | 'qualified' | 'unqualified'
+export type LeadTemperature = 'cold' | 'warm' | 'hot'
 export type ProspectStatus = 'active' | 'negotiation' | 'won' | 'lost'
 export type ClientStatus = 'active' | 'completed' | 'inactive'
 export type ClientPaymentType = 'cash' | 'kpr'
@@ -67,6 +68,7 @@ export interface Lead {
   source?: string
   interest?: string
   interested_project_id?: string
+  temperature?: LeadTemperature
   notes?: string
   status: LeadStatus
   assigned_to?: string
@@ -80,6 +82,7 @@ export interface LeadCreate {
   email?: string
   source?: string
   interested_project_id?: string
+  temperature?: LeadTemperature
   notes?: string
   status?: LeadStatus
 }

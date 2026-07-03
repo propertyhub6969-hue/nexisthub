@@ -6,13 +6,19 @@ import Modal from '../../components/ui/Modal'
 import { marketingService } from '../../services/marketing'
 import { propertyService } from '../../services/property'
 import { waLink } from '../../utils/phone'
-import type { Lead, LeadCreate, LeadStatus, Project } from '../../types'
+import type { Lead, LeadCreate, LeadStatus, LeadTemperature, Project } from '../../types'
 
 const statusConfig: Record<LeadStatus, { label: string; variant: 'blue' | 'yellow' | 'green' | 'gray' }> = {
   new:         { label: 'Baru',         variant: 'blue' },
   contacted:   { label: 'Dihubungi',    variant: 'yellow' },
   qualified:   { label: 'Tervalidasi',  variant: 'green' },
   unqualified: { label: 'Tidak Sesuai', variant: 'gray' },
+}
+
+const temperatureConfig: Record<LeadTemperature, { label: string; variant: 'blue' | 'orange' | 'red' }> = {
+  cold: { label: 'Cold Lead', variant: 'blue' },
+  warm: { label: 'Warm Lead', variant: 'orange' },
+  hot:  { label: 'Hot Lead',  variant: 'red' },
 }
 
 const SOURCE_OPTIONS = [
@@ -26,7 +32,7 @@ const SOURCE_OPTIONS = [
   'Marketing Freelance',
 ]
 
-const emptyForm: LeadCreate = { full_name: '', phone: '', email: '', source: '', interested_project_id: '', status: 'new' }
+const emptyForm: LeadCreate = { full_name: '', phone: '', email: '', source: '', interested_project_id: '', temperature: undefined, status: 'new' }
 
 export default function Leads() {
   const navigate = useNavigate()
@@ -84,6 +90,7 @@ export default function Leads() {
       email: lead.email ?? '',
       source: lead.source ?? '',
       interested_project_id: lead.interested_project_id ?? '',
+      temperature: lead.temperature,
       status: lead.status,
     })
     setModalOpen(true)
@@ -164,7 +171,7 @@ export default function Leads() {
         <table className="w-full text-sm">
           <thead className="bg-slate-50 border-b border-slate-200">
             <tr>
-              {['Nama', 'No. HP', 'Email', 'Sumber', 'Properti Diminati', 'Status', 'Tanggal', ''].map((h, i) => (
+              {['Nama', 'No. HP', 'Email', 'Sumber', 'Properti Diminati', 'Kategori', 'Status', 'Tanggal', ''].map((h, i) => (
                 <th key={i} className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">
                   {h}
                 </th>
@@ -174,13 +181,13 @@ export default function Leads() {
           <tbody className="divide-y divide-slate-100">
             {loading ? (
               <tr>
-                <td colSpan={8} className="px-4 py-10 text-center text-slate-400">
+                <td colSpan={9} className="px-4 py-10 text-center text-slate-400">
                   <Loader2 size={18} className="inline animate-spin" />
                 </td>
               </tr>
             ) : leads.length === 0 ? (
               <tr>
-                <td colSpan={8} className="px-4 py-8 text-center text-slate-400 text-sm">
+                <td colSpan={9} className="px-4 py-8 text-center text-slate-400 text-sm">
                   Belum ada lead. Klik "Tambah Lead" untuk mulai.
                 </td>
               </tr>
@@ -209,6 +216,9 @@ export default function Leads() {
                     <td className="px-4 py-3 text-slate-500">{lead.email ?? '—'}</td>
                     <td className="px-4 py-3 text-slate-500">{lead.source ?? '—'}</td>
                     <td className="px-4 py-3 text-slate-500">{projectName(lead.interested_project_id) ?? '—'}</td>
+                    <td className="px-4 py-3">
+                      {lead.temperature ? <Badge label={temperatureConfig[lead.temperature].label} variant={temperatureConfig[lead.temperature].variant} /> : <span className="text-slate-400">—</span>}
+                    </td>
                     <td className="px-4 py-3">{s && <Badge label={s.label} variant={s.variant} />}</td>
                     <td className="px-4 py-3 text-slate-400 text-xs">
                       {new Date(lead.created_at).toLocaleDateString('id-ID')}
@@ -282,13 +292,24 @@ export default function Leads() {
               </select>
             </div>
           </div>
-          <div>
-            <label className="label">Status</label>
-            <select className="input" value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value as LeadStatus })}>
-              {(Object.keys(statusConfig) as LeadStatus[]).map((k) => (
-                <option key={k} value={k}>{statusConfig[k].label}</option>
-              ))}
-            </select>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="label">Kategori</label>
+              <select className="input" value={form.temperature ?? ''} onChange={(e) => setForm({ ...form, temperature: (e.target.value || undefined) as LeadTemperature | undefined })}>
+                <option value="">Pilih kategori...</option>
+                {(Object.keys(temperatureConfig) as LeadTemperature[]).map((k) => (
+                  <option key={k} value={k}>{temperatureConfig[k].label}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="label">Status</label>
+              <select className="input" value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value as LeadStatus })}>
+                {(Object.keys(statusConfig) as LeadStatus[]).map((k) => (
+                  <option key={k} value={k}>{statusConfig[k].label}</option>
+                ))}
+              </select>
+            </div>
           </div>
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" className="btn-secondary text-sm" onClick={closeModal}>Batal</button>
