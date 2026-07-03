@@ -75,7 +75,7 @@ export default function Sidebar() {
   const items = canManageTeam ? [...navItems, settingsItem] : navItems
 
   return (
-    <aside className="w-60 min-h-screen bg-sidebar flex flex-col">
+    <aside className="w-60 h-screen shrink-0 bg-sidebar flex flex-col">
       {/* Logo */}
       <div className="px-5 py-5 border-b border-blue-900">
         <NexistLogo size={32} showText={true} textColor="white" />
