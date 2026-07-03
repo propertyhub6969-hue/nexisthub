@@ -1,13 +1,14 @@
 import uuid
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, Query, status, UploadFile, File, Request
 from fastapi.responses import Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.audit import record_audit
+from app.core.files import file_etag, not_modified_response, cached_file_response
 from app.api.deps import get_current_context, AuthContext
 from app.models.document import Document
 from app.schemas.document import DocumentCreate, DocumentUpdate, DocumentResponse
@@ -113,18 +114,24 @@ async def upload_file(
 @router.get("/documents/{doc_id}/file")
 async def download_file(
     doc_id: uuid.UUID,
+    request: Request,
     ctx: AuthContext = Depends(get_current_context),
     db: AsyncSession = Depends(get_db),
 ):
-    row = (await db.execute(
-        select(Document.file_data, Document.file_type, Document.file_name).where(
+    meta = (await db.execute(
+        select(Document.file_size, Document.file_type, Document.file_name, Document.updated_at).where(
             Document.id == doc_id, Document.tenant_id == ctx.tenant_id, Document.is_deleted == False)  # noqa: E712
     )).first()
-    if row is None or row[0] is None:
+    if meta is None or meta[0] is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="File tidak ditemukan")
-    data, ctype, fname = row
-    return Response(
-        content=data,
-        media_type=ctype or "application/octet-stream",
-        headers={"Content-Disposition": f'inline; filename="{fname or "file"}"'},
-    )
+    size, ctype, fname, updated = meta
+    etag = file_etag(size, updated)
+    nm = not_modified_response(request, etag)
+    if nm is not None:
+        return nm
+    data = (await db.execute(
+        select(Document.file_data).where(Document.id == doc_id, Document.tenant_id == ctx.tenant_id)
+    )).scalar_one_or_none()
+    if data is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="File tidak ditemukan")
+    return cached_file_response(data, ctype, fname, etag)

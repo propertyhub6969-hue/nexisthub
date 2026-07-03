@@ -30,8 +30,14 @@ export default function LegalDocuments() {
   const [editId, setEditId] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [uploadingId, setUploadingId] = useState<string | null>(null)
+  const [viewingId, setViewingId] = useState<string | null>(null)
   const fileInput = useRef<HTMLInputElement | null>(null)
   const pendingUpload = useRef<string | null>(null)
+
+  async function viewFile(id: string) {
+    setViewingId(id)
+    try { await documentService.openFile(id) } catch { setError('Gagal membuka file.') } finally { setViewingId(null) }
+  }
 
   useEffect(() => {
     propertyService.listProjects({ size: 500 }).then((r) => setProjects(r.items)).catch(() => setError('Gagal memuat proyek.'))
@@ -144,8 +150,8 @@ export default function LegalDocuments() {
                     <td className="px-4 py-2.5">
                       <div className="flex items-center gap-2">
                         {d.has_file && (
-                          <button onClick={() => documentService.openFile(d.id)} className="inline-flex items-center gap-1 text-brand-600 hover:underline text-xs" title={d.file_name}>
-                            <Eye size={13} /> Lihat
+                          <button onClick={() => viewFile(d.id)} disabled={viewingId === d.id} className="inline-flex items-center gap-1 text-brand-600 hover:underline text-xs disabled:opacity-60" title={d.file_name}>
+                            {viewingId === d.id ? <Loader2 size={13} className="animate-spin" /> : <Eye size={13} />} Lihat
                           </button>
                         )}
                         <button onClick={() => triggerUpload(d.id)} className="inline-flex items-center gap-1 text-slate-500 hover:text-brand-600 text-xs">

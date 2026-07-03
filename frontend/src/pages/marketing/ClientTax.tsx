@@ -52,6 +52,7 @@ export default function ClientTax() {
   const [docForm, setDocForm] = useState<DocumentCreate>(emptyDoc(clientId))
   const [docEditId, setDocEditId] = useState<string | null>(null)
   const [uploadingId, setUploadingId] = useState<string | null>(null)
+  const [viewingId, setViewingId] = useState<string | null>(null)
   const fileInput = useRef<HTMLInputElement | null>(null)
   const pendingUpload = useRef<string | null>(null)
 
@@ -117,6 +118,10 @@ export default function ClientTax() {
   async function delDoc(id: string) {
     if (!confirm('Hapus (arsipkan) dokumen ini?')) return
     try { await documentService.remove(id); await reloadDocs() } catch { setError('Gagal menghapus dokumen.') }
+  }
+  async function viewDoc(id: string) {
+    setViewingId(id)
+    try { await documentService.openFile(id) } catch { setError('Gagal membuka file.') } finally { setViewingId(null) }
   }
   function triggerUpload(id: string) { pendingUpload.current = id; fileInput.current?.click() }
   async function onFilePicked(e: React.ChangeEvent<HTMLInputElement>) {
@@ -226,8 +231,8 @@ export default function ClientTax() {
                 <td className="px-4 py-2.5">
                   <div className="flex items-center gap-2">
                     {d.has_file ? (
-                      <button onClick={() => documentService.openFile(d.id)} className="inline-flex items-center gap-1 text-brand-600 hover:underline text-xs" title={d.file_name}>
-                        <Eye size={13} /> Lihat
+                      <button onClick={() => viewDoc(d.id)} disabled={viewingId === d.id} className="inline-flex items-center gap-1 text-brand-600 hover:underline text-xs disabled:opacity-60" title={d.file_name}>
+                        {viewingId === d.id ? <Loader2 size={13} className="animate-spin" /> : <Eye size={13} />} Lihat
                       </button>
                     ) : readOnly ? <span className="text-slate-400 text-xs">—</span> : null}
                     {!readOnly && (

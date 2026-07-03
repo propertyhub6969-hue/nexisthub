@@ -2,8 +2,9 @@ import uuid
 from datetime import date, datetime
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, Query, status, UploadFile, File, Request
 from fastapi.responses import Response
+from app.core.files import file_etag, not_modified_response, cached_file_response
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -243,20 +244,27 @@ async def upload_payment_file(
 @router.get("/records/{payment_id}/file")
 async def download_payment_file(
     payment_id: uuid.UUID,
+    request: Request,
     ctx: AuthContext = Depends(get_current_context),
     db: AsyncSession = Depends(get_db),
 ):
-    row = (await db.execute(
-        select(Payment.file_data, Payment.file_type, Payment.file_name).where(
+    meta = (await db.execute(
+        select(Payment.file_size, Payment.file_type, Payment.file_name, Payment.updated_at).where(
             Payment.id == payment_id, Payment.tenant_id == ctx.tenant_id, Payment.is_deleted == False)  # noqa: E712
     )).first()
-    if row is None or row[0] is None:
+    if meta is None or meta[0] is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="File tidak ditemukan")
-    data, ctype, fname = row
-    return Response(
-        content=data, media_type=ctype or "application/octet-stream",
-        headers={"Content-Disposition": f'inline; filename="{fname or "file"}"'},
-    )
+    size, ctype, fname, updated = meta
+    etag = file_etag(size, updated)
+    nm = not_modified_response(request, etag)
+    if nm is not None:
+        return nm
+    data = (await db.execute(
+        select(Payment.file_data).where(Payment.id == payment_id, Payment.tenant_id == ctx.tenant_id)
+    )).scalar_one_or_none()
+    if data is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="File tidak ditemukan")
+    return cached_file_response(data, ctype, fname, etag)
 
 
 @router.delete("/records/{payment_id}", status_code=status.HTTP_204_NO_CONTENT)
