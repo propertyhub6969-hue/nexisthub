@@ -10,8 +10,8 @@ import type { Prospect, ProspectCreate, ProspectStatus } from '../../types'
 const statusConfig: Record<ProspectStatus, { label: string; variant: 'blue' | 'yellow' | 'green' | 'red' }> = {
   active:      { label: 'Aktif',     variant: 'blue' },
   negotiation: { label: 'Negosiasi', variant: 'yellow' },
-  won:         { label: 'Menang',    variant: 'green' },
-  lost:        { label: 'Kalah',     variant: 'red' },
+  won:         { label: 'Closing',   variant: 'green' },
+  lost:        { label: 'Batal',     variant: 'red' },
 }
 
 const fmt = (n?: number) =>
