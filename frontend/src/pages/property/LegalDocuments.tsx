@@ -126,7 +126,7 @@ export default function LegalDocuments() {
           </div>
           <table className="w-full text-sm">
             <thead className="bg-slate-50 border-b border-slate-200">
-              <tr>{['Jenis', 'Keterangan', 'Status', 'File', ''].map((h, i) => (
+              <tr>{['Jenis', 'Nomor', 'Status', 'File', ''].map((h, i) => (
                 <th key={i} className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">{h}</th>))}</tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -175,8 +175,8 @@ export default function LegalDocuments() {
             <datalist id="legal-presets">{LEGAL_PRESETS.map((d) => <option key={d} value={d} />)}</datalist>
           </div>
           <div>
-            <label className="label">Keterangan</label>
-            <input className="input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+            <label className="label">Nomor</label>
+            <input className="input" placeholder="Nomor dokumen (mis. no. SHM / IMB)" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>

@@ -210,7 +210,7 @@ export default function ClientTax() {
     return (
       <table className="w-full text-sm">
         <thead className="bg-slate-50 border-b border-slate-200">
-          <tr>{['Jenis', 'Keterangan', 'Status', 'File', ...(readOnly ? [] : [''])].map((h, i) => (
+          <tr>{['Jenis', 'Nomor', 'Status', 'File', ...(readOnly ? [] : [''])].map((h, i) => (
             <th key={i} className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">{h}</th>))}</tr>
         </thead>
         <tbody className="divide-y divide-slate-100">
@@ -418,8 +418,8 @@ export default function ClientTax() {
             <datalist id="doc-presets">{IDENTITY_PRESETS.map((d) => <option key={d} value={d} />)}</datalist>
           </div>
           <div>
-            <label className="label">Keterangan</label>
-            <input className="input" value={docForm.name} onChange={(e) => setDocForm({ ...docForm, name: e.target.value })} />
+            <label className="label">Nomor</label>
+            <input className="input" placeholder="Nomor dokumen (mis. no. KTP / NPWP)" value={docForm.name} onChange={(e) => setDocForm({ ...docForm, name: e.target.value })} />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
