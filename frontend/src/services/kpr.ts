@@ -46,4 +46,8 @@ export const kprService = {
   async deleteDisbursement(paymentId: string): Promise<void> {
     await api.delete(`/kpr/disbursements/${paymentId}`)
   },
+  async reject(id: string, payload: { reason?: string; rejected_date?: string; cascade_release_unit: boolean }): Promise<KprApplication> {
+    const { data } = await api.post<KprApplication>(`/kpr/applications/${id}/reject`, payload)
+    return data
+  },
 }

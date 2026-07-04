@@ -204,6 +204,7 @@ export default function Clients() {
         return pt ? <Badge label={pt.label} variant={pt.variant} /> : <span className="text-slate-400">—</span>
       }
       case 'kpr_stage':
+        if (c.kpr_rejected) return <Badge label="Ditolak" variant="red" />
         return c.kpr_stage ? <Badge label={kprStageLabel[c.kpr_stage]} variant="blue" /> : <span className="text-slate-400">—</span>
       case 'status': {
         // Status pembayaran: Lunas bila sisa piutang habis; Batal bila pembeli nonaktif

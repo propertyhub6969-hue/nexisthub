@@ -76,6 +76,10 @@ class KprResponse(KprBase):
     # Pencairan bertahap: total yang sudah cair & retensi (plafon − total cair) — dihitung saat fetch
     total_disbursed: Decimal = Decimal(0)
     retention: Decimal = Decimal(0)
+    # Penolakan
+    rejected_date: Optional[date] = None
+    rejection_reason: Optional[str] = None
+    is_rejected: bool = False
     created_at: datetime
     updated_at: datetime
 
@@ -87,6 +91,12 @@ class DisburseRequest(BaseModel):
     amount: Decimal = Field(..., gt=0)
     pay_date: Optional[date] = None
     notes: Optional[str] = None
+
+
+class RejectRequest(BaseModel):
+    reason: Optional[str] = None
+    rejected_date: Optional[date] = None
+    cascade_release_unit: bool = False   # bebaskan unit + tandai pembeli batal
 
 
 # ── Pencairan (satu tahap) ────────────────────────────────────────

@@ -280,18 +280,22 @@ async def _attach_client_extras(db: AsyncSession, clients: list[Client]) -> None
     paid_by_client = {row[0]: row[1] for row in paid_rows}
 
     kpr_rows = (await db.execute(
-        select(KprApplication.client_id, KprApplication.stage, KprApplication.created_at)
+        select(KprApplication.client_id, KprApplication.stage, KprApplication.rejected_date, KprApplication.created_at)
         .where(KprApplication.client_id.in_(ids), KprApplication.is_deleted == False)  # noqa: E712
         .order_by(KprApplication.created_at.desc())
     )).all()
     stage_by_client = {}
-    for client_id, stage, _created_at in kpr_rows:
-        stage_by_client.setdefault(client_id, stage)  # baris pertama per klien = paling baru (sudah diurutkan desc)
+    rejected_by_client = {}
+    for client_id, stage, rejected_date, _created_at in kpr_rows:
+        if client_id not in stage_by_client:  # baris pertama per klien = KPR paling baru
+            stage_by_client[client_id] = stage
+            rejected_by_client[client_id] = rejected_date is not None
 
     for c in clients:
         price = c.contract_value or 0
         c.remaining = (price - paid_by_client.get(c.id, 0)) if c.contract_value is not None else None
         c.kpr_stage = stage_by_client.get(c.id)
+        c.kpr_rejected = rejected_by_client.get(c.id, False)
 
 
 @router.get("/clients", response_model=Paginated[ClientResponse])

@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { ArrowLeft, Loader2, Landmark, CheckCircle2, Banknote, Check, Plus, Trash2 } from 'lucide-react'
+import { ArrowLeft, Loader2, Landmark, CheckCircle2, Banknote, Check, Plus, Trash2, XCircle } from 'lucide-react'
 import Modal from '../../components/ui/Modal'
 import MoneyInput from '../../components/ui/MoneyInput'
 import { marketingService } from '../../services/marketing'
@@ -23,6 +23,7 @@ export default function ClientKpr() {
   const [client, setClient] = useState<Client | null>(null)
   const [banks, setBanks] = useState<Bank[]>([])
   const [kpr, setKpr] = useState<KprApplication | null>(null)
+  const [apps, setApps] = useState<KprApplication[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
@@ -32,15 +33,19 @@ export default function ClientKpr() {
   const [disDate, setDisDate] = useState('')
   const [disNotes, setDisNotes] = useState('')
   const [disbursements, setDisbursements] = useState<Disbursement[]>([])
+  const [rejModal, setRejModal] = useState(false)
+  const [rejReason, setRejReason] = useState('')
+  const [rejDate, setRejDate] = useState('')
+  const [rejCascade, setRejCascade] = useState(true)
 
   const load = useCallback(async () => {
     setLoading(true); setError('')
     try {
-      const [cl, bk, apps] = await Promise.all([
+      const [cl, bk, list] = await Promise.all([
         marketingService.getClient(clientId), kprService.listBanks(), kprService.listApplications(clientId),
       ])
-      setClient(cl); setBanks(bk)
-      const app = apps[0] ?? null
+      setClient(cl); setBanks(bk); setApps(list)
+      const app = list[0] ?? null
       setKpr(app)
       setDisbursements(app ? await kprService.listDisbursements(app.id) : [])
     } catch { setError('Gagal memuat data KPR.') } finally { setLoading(false) }
@@ -51,8 +56,26 @@ export default function ClientKpr() {
 
   async function createApp() {
     setSaving(true)
-    try { const k = await kprService.createApplication({ client_id: clientId, stage: 'collect_berkas' }); setKpr(k) }
+    try {
+      const k = await kprService.createApplication({ client_id: clientId, stage: 'collect_berkas' })
+      setKpr(k); setApps((prev) => [k, ...prev]); setDisbursements([])
+    }
     catch { setError('Gagal membuat pengajuan.') } finally { setSaving(false) }
+  }
+
+  // ── Tolak pengajuan ──
+  function openReject() { setRejReason(''); setRejDate(new Date().toISOString().slice(0, 10)); setRejCascade(true); setRejModal(true) }
+  async function submitReject(e: React.FormEvent) {
+    e.preventDefault()
+    if (!kpr) return
+    setSaving(true); setError('')
+    try {
+      const k = await kprService.reject(kpr.id, { reason: rejReason || undefined, rejected_date: rejDate || undefined, cascade_release_unit: rejCascade })
+      setKpr(k)
+      setApps((prev) => prev.map((a) => (a.id === k.id ? k : a)))
+      setRejModal(false)
+      if (rejCascade) { const cl = await marketingService.getClient(clientId); setClient(cl) }
+    } catch { setError('Gagal menolak pengajuan.') } finally { setSaving(false) }
   }
 
   function set<K extends keyof KprApplication>(field: K, value: KprApplication[K]) {
@@ -97,11 +120,12 @@ export default function ClientKpr() {
   }
   async function delDisbursement(paymentId: string) {
     if (!kpr || !confirm('Hapus pencairan ini?')) return
+    const kprId = kpr.id
     try {
       await kprService.deleteDisbursement(paymentId)
-      const apps = await kprService.listApplications(clientId)
-      setKpr(apps[0] ?? null)
-      await reloadDisbursements(kpr.id)
+      const list = await kprService.listApplications(clientId)
+      setApps(list); setKpr(list.find((a) => a.id === kprId) ?? list[0] ?? null)
+      await reloadDisbursements(kprId)
     } catch { setError('Gagal menghapus pencairan.') }
   }
 
@@ -111,12 +135,45 @@ export default function ClientKpr() {
 
   return (
     <div className="space-y-5">
-      <div>
-        <Link to="/marketing/clients" className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-brand-600 mb-1"><ArrowLeft size={14} /> Daftar Pembeli</Link>
-        <h1 className="text-lg font-semibold text-slate-900 flex items-center gap-2"><Landmark size={18} /> KPR — {client?.full_name ?? 'Pembeli'}</h1>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <Link to="/marketing/clients" className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-brand-600 mb-1"><ArrowLeft size={14} /> Daftar Pembeli</Link>
+          <h1 className="text-lg font-semibold text-slate-900 flex items-center gap-2"><Landmark size={18} /> KPR — {client?.full_name ?? 'Pembeli'}</h1>
+        </div>
+        {kpr && !kpr.is_rejected && (
+          <button onClick={openReject} className="btn-secondary text-sm text-red-600 flex items-center gap-2 shrink-0"><XCircle size={14} /> Tolak Pengajuan</button>
+        )}
       </div>
 
       {error && <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-2">{error}</div>}
+
+      {kpr?.is_rejected && (
+        <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3">
+          <p className="text-sm font-semibold text-red-700 flex items-center gap-2"><XCircle size={15} /> Pengajuan Ditolak {kpr.bank_name ? `(${kpr.bank_name})` : ''}{kpr.rejected_date ? ` · ${new Date(kpr.rejected_date).toLocaleDateString('id-ID')}` : ''}</p>
+          {kpr.rejection_reason && <p className="text-sm text-red-600 mt-1">Alasan: {kpr.rejection_reason}</p>}
+          <button onClick={createApp} disabled={saving} className="btn-primary text-xs inline-flex items-center gap-2 mt-2">
+            {saving && <Loader2 size={13} className="animate-spin" />} <Plus size={13} /> Ajukan Ulang ke Bank Lain
+          </button>
+        </div>
+      )}
+
+      {apps.length > 1 && (
+        <div className="card overflow-hidden">
+          <div className="px-4 py-2.5 border-b border-slate-100"><p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Riwayat Pengajuan KPR ({apps.length})</p></div>
+          <ul className="divide-y divide-slate-100">
+            {apps.map((a, i) => (
+              <li key={a.id} className="px-4 py-2.5 flex items-center gap-3 text-sm">
+                <span className="text-slate-700">{a.bank_name ?? 'Bank belum dipilih'}</span>
+                {a.is_rejected
+                  ? <span className="text-xs px-2 py-0.5 rounded-md bg-red-50 text-red-700 border border-red-200">Ditolak</span>
+                  : <span className="text-xs px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 border border-blue-200">{STAGES.find((s) => s.key === a.stage)?.label ?? a.stage}</span>}
+                {i === 0 && <span className="text-xs text-emerald-600">· terkini</span>}
+                <span className="ml-auto text-xs text-slate-400">{a.rejection_reason ?? ''}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {!kpr ? (
         <div className="card p-8 text-center">
@@ -277,6 +334,28 @@ export default function ClientKpr() {
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" className="btn-secondary text-sm" onClick={() => setDisModal(false)}>Batal</button>
             <button type="submit" className="btn-primary text-sm flex items-center gap-2" disabled={saving}>{saving && <Loader2 size={14} className="animate-spin" />}Simpan</button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Modal Tolak Pengajuan */}
+      <Modal open={rejModal} onClose={() => setRejModal(false)} title="Tolak Pengajuan KPR">
+        <form onSubmit={submitReject} className="space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div><label className="label">Tanggal Ditolak</label><input className="input" type="date" value={rejDate} onChange={(e) => setRejDate(e.target.value)} /></div>
+          </div>
+          <div>
+            <label className="label">Alasan Penolakan</label>
+            <textarea className="input" rows={2} placeholder="mis. SLIK/BI checking, penghasilan tak memenuhi, dll" value={rejReason} onChange={(e) => setRejReason(e.target.value)} />
+          </div>
+          <label className="flex items-start gap-2 text-sm text-slate-700">
+            <input type="checkbox" className="mt-0.5" checked={rejCascade} onChange={(e) => setRejCascade(e.target.checked)} />
+            <span>Bebaskan unit & tandai pembeli <b>Batal</b> — unit kembali <b>Tersedia</b> untuk dijual ke orang lain.</span>
+          </label>
+          <p className="text-xs text-slate-400">Data pengajuan TIDAK dihapus — tetap tersimpan sebagai riwayat "Ditolak". Pembeli bisa ajukan ulang ke bank lain.</p>
+          <div className="flex justify-end gap-2 pt-2">
+            <button type="button" className="btn-secondary text-sm" onClick={() => setRejModal(false)}>Batal</button>
+            <button type="submit" className="btn-primary text-sm bg-red-600 hover:bg-red-700 flex items-center gap-2" disabled={saving}>{saving && <Loader2 size={14} className="animate-spin" />}Tolak Pengajuan</button>
           </div>
         </form>
       </Modal>

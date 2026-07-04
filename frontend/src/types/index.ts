@@ -140,6 +140,7 @@ export interface Client {
   status: ClientStatus
   remaining?: number
   kpr_stage?: KprStage | null
+  kpr_rejected?: boolean
   created_at: string
   updated_at: string
 }
@@ -515,6 +516,9 @@ export interface KprApplication {
   pencairan_payment_id?: string
   total_disbursed?: number
   retention?: number
+  rejected_date?: string
+  rejection_reason?: string
+  is_rejected?: boolean
   notes?: string
   created_at: string
   updated_at: string

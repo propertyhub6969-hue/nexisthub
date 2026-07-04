@@ -159,6 +159,7 @@ class ClientResponse(ClientBase):
     # Dihitung saat fetch (bukan kolom DB): sisa piutang & tahap KPR berjalan
     remaining: Optional[Decimal] = None
     kpr_stage: Optional[str] = None
+    kpr_rejected: bool = False
     created_at: datetime
     updated_at: datetime
 

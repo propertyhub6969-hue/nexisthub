@@ -64,12 +64,19 @@ class KprApplication(BaseModel, SoftDeleteMixin):
         UUID(as_uuid=True), ForeignKey("payments.id", ondelete="SET NULL"), nullable=True
     )
     notes: Mapped[str] = mapped_column(Text, nullable=True)
+    # Penolakan KPR — status terminal (bisa terjadi di tahap mana pun). Datanya DIPERTAHANKAN utk analitik.
+    rejected_date: Mapped[Date] = mapped_column(Date, nullable=True)
+    rejection_reason: Mapped[str] = mapped_column(Text, nullable=True)
 
     bank: Mapped["Bank"] = relationship("Bank")
 
     @property
     def bank_name(self):
         return self.bank.name if self.bank else None
+
+    @property
+    def is_rejected(self) -> bool:
+        return self.rejected_date is not None
 
     def __repr__(self) -> str:
         return f"<KprApplication [{self.stage}]>"

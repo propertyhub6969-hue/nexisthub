@@ -16,7 +16,7 @@ from app.models.marketing import Client, ClientStatus
 from app.models.payment import Payment, PaymentSource, PaymentMethod, PaymentPurpose
 from app.schemas.kpr import (
     BankCreate, BankUpdate, BankResponse,
-    KprCreate, KprUpdate, KprResponse, DisburseRequest, DisbursementResponse,
+    KprCreate, KprUpdate, KprResponse, DisburseRequest, DisbursementResponse, RejectRequest,
 )
 
 router = APIRouter()
@@ -147,6 +147,25 @@ async def delete_kpr(kpr_id: uuid.UUID, ctx: AuthContext = Depends(get_current_c
     k = await _load_kpr(db, ctx.tenant_id, kpr_id)
     k.is_deleted = True; k.deleted_at = datetime.utcnow()
     await record_audit(db, ctx.tenant_id, ctx.user_id, "DELETE", "kpr_applications", kpr_id)
+
+
+@router.post("/applications/{kpr_id}/reject", response_model=KprResponse)
+async def reject_kpr(kpr_id: uuid.UUID, payload: RejectRequest, ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db)):
+    """Tandai pengajuan KPR DITOLAK (data dipertahankan). Opsional cascade: bebaskan unit & tandai pembeli batal."""
+    k = await _load_kpr(db, ctx.tenant_id, kpr_id)
+    k.rejected_date = payload.rejected_date or date.today()
+    k.rejection_reason = payload.reason
+    if payload.cascade_release_unit:
+        client = (await db.execute(
+            select(Client).where(Client.id == k.client_id, Client.tenant_id == ctx.tenant_id, Client.is_deleted == False)  # noqa: E712
+        )).scalar_one_or_none()
+        if client is not None and client.status != ClientStatus.INACTIVE:
+            client.status = ClientStatus.INACTIVE   # Batal → unit auto Tersedia via helper
+            await set_unit_status(db, ctx.tenant_id, client.unit_id, unit_status_for_client(client))
+    await db.flush()
+    await record_audit(db, ctx.tenant_id, ctx.user_id, "REJECT", "kpr_applications", kpr_id,
+                       new_data={"reason": payload.reason, "cascade": payload.cascade_release_unit})
+    return await _load_kpr(db, ctx.tenant_id, kpr_id)
 
 
 @router.get("/applications/{kpr_id}/disbursements", response_model=list[DisbursementResponse])
