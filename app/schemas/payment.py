@@ -28,6 +28,7 @@ class ScheduleUpdate(BaseModel):
     due_date: Optional[date] = None
     notes: Optional[str] = None
     status: Optional[ScheduleStatus] = None
+    reason: Optional[str] = None   # alasan (wajib bila mengubah nominal termin) — tak disimpan ke kolom, hanya utk audit
 
 
 class ScheduleResponse(ScheduleBase):
@@ -69,6 +70,7 @@ class PaymentUpdate(BaseModel):
     receipt_number: Optional[str] = Field(None, max_length=50)
     notes: Optional[str] = None
     schedule_id: Optional[uuid.UUID] = None
+    reason: Optional[str] = None   # alasan (wajib bila mengubah nominal/sumber/tgl/termin) — tak disimpan ke kolom, hanya utk audit
 
 
 class PaymentResponse(PaymentBase):

@@ -22,6 +22,7 @@ class AuditResponse(BaseModel):
     resource_id: Optional[str] = None
     old_data: Optional[str] = None
     new_data: Optional[str] = None
+    reason: Optional[str] = None
     user_name: Optional[str] = None
     created_at: datetime
 

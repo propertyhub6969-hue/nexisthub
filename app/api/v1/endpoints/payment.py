@@ -168,12 +168,18 @@ async def update_schedule(
 ):
     sch = await _get_schedule(db, ctx.tenant_id, schedule_id)
     data = payload.model_dump(exclude_unset=True)
+    reason = data.pop("reason", None)
+    before_amount = sch.amount
     for f, v in data.items():
         setattr(sch, f, v)
+    if sch.amount != before_amount and not (reason and reason.strip()):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                            detail="Alasan wajib diisi untuk perubahan nominal termin")
     await db.flush()
     await _recompute_schedule(db, ctx.tenant_id, schedule_id)   # nominal berubah → status Lunas/Belum ikut menyesuaikan
     await record_audit(db, ctx.tenant_id, ctx.user_id, "UPDATE", "payment_schedules", schedule_id,
-                       new_data={"label": sch.label, "amount": str(sch.amount)}, client_id=sch.client_id)
+                       new_data={"label": sch.label, "amount": str(sch.amount)}, client_id=sch.client_id,
+                       reason=(reason.strip() if reason else None))
     await db.refresh(sch)
     paid = Decimal(await db.scalar(
         select(func.coalesce(func.sum(Payment.amount), 0)).where(
@@ -187,6 +193,7 @@ async def update_schedule(
 @router.delete("/schedules/{schedule_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_schedule(
     schedule_id: uuid.UUID,
+    reason: str = Query(..., min_length=1, description="Alasan penghapusan (wajib)"),
     ctx: AuthContext = Depends(get_current_context),
     db: AsyncSession = Depends(get_db),
 ):
@@ -194,7 +201,8 @@ async def delete_schedule(
     sch.is_deleted = True
     sch.deleted_at = datetime.utcnow()
     await record_audit(db, ctx.tenant_id, ctx.user_id, "DELETE", "payment_schedules", schedule_id,
-                       old_data={"label": sch.label, "amount": str(sch.amount)}, client_id=sch.client_id)
+                       old_data={"label": sch.label, "amount": str(sch.amount)},
+                       client_id=sch.client_id, reason=reason.strip())
 
 
 # ═══════════════════════ PAYMENTS (Uang Masuk) ═══════════════════════
@@ -262,14 +270,22 @@ async def update_payment(
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Pencairan KPR dikelola di modul KPR, tidak bisa diubah di sini")
     old_schedule = pay.schedule_id
     data = payload.model_dump(exclude_unset=True)
+    reason = data.pop("reason", None)
+    # nilai material sebelum diubah (perubahan angka wajib disertai alasan)
+    before = (pay.amount, pay.source, pay.payment_date, pay.schedule_id)
     for f, v in data.items():
         setattr(pay, f, v)
+    material_changed = (pay.amount, pay.source, pay.payment_date, pay.schedule_id) != before
+    if material_changed and not (reason and reason.strip()):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                            detail="Alasan wajib diisi untuk perubahan nominal/sumber/tanggal/termin pembayaran")
     await db.flush()
     await _recompute_schedule(db, ctx.tenant_id, old_schedule)
     if pay.schedule_id != old_schedule:
         await _recompute_schedule(db, ctx.tenant_id, pay.schedule_id)
     await record_audit(db, ctx.tenant_id, ctx.user_id, "UPDATE", "payments", payment_id,
-                       new_data={"amount": str(pay.amount), "source": pay.source.value}, client_id=pay.client_id)
+                       new_data={"amount": str(pay.amount), "source": pay.source.value},
+                       client_id=pay.client_id, reason=(reason.strip() if reason else None))
     await db.refresh(pay)
     return pay
 
@@ -326,6 +342,7 @@ async def download_payment_file(
 @router.delete("/records/{payment_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_payment(
     payment_id: uuid.UUID,
+    reason: str = Query(..., min_length=1, description="Alasan penghapusan (wajib)"),
     ctx: AuthContext = Depends(get_current_context),
     db: AsyncSession = Depends(get_db),
 ):
@@ -338,4 +355,5 @@ async def delete_payment(
     await db.flush()
     await _recompute_schedule(db, ctx.tenant_id, sched)
     await record_audit(db, ctx.tenant_id, ctx.user_id, "DELETE", "payments", payment_id,
-                       old_data={"amount": str(pay.amount), "source": pay.source.value}, client_id=pay.client_id)
+                       old_data={"amount": str(pay.amount), "source": pay.source.value},
+                       client_id=pay.client_id, reason=reason.strip())

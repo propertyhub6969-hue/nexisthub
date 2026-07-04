@@ -78,6 +78,11 @@ export default function ClientPayments() {
   const [payEditId, setPayEditId] = useState<string | null>(null)
   const [transferFile, setTransferFile] = useState<File | null>(null)
   const [saving, setSaving] = useState(false)
+  // alasan edit (pembeli mengubah nominal/sumber/tgl/termin) + hapus (wajib)
+  const [payReason, setPayReason] = useState('')
+  const [schReason, setSchReason] = useState('')
+  const [delTarget, setDelTarget] = useState<{ type: 'payment' | 'schedule'; id: string; label: string } | null>(null)
+  const [delReason, setDelReason] = useState('')
 
   const load = useCallback(async () => {
     setLoading(true); setError('')
@@ -104,50 +109,82 @@ export default function ClientPayments() {
       paymentService.summary(clientId), paymentService.listSchedules(clientId), paymentService.listPayments(clientId),
     ])
     setSummary(sm); setSchedules(sc); setPayments(pm)
+    auditService.list({ client_id: clientId, limit: 50 }).then(setAudit).catch(() => {})   // riwayat ikut ter-refresh
   }
 
-  function openSchCreate() { setSchEditId(null); setSchForm({ ...emptySchedule(clientId), sequence: schedules.length + 1 }); setSchModal(true) }
+  function openSchCreate() { setSchEditId(null); setSchReason(''); setSchForm({ ...emptySchedule(clientId), sequence: schedules.length + 1 }); setSchModal(true) }
   function openSchEdit(s: PaymentSchedule) {
-    setSchEditId(s.id)
+    setSchEditId(s.id); setSchReason('')
     setSchForm({ client_id: clientId, label: s.label, sequence: s.sequence, amount: s.amount, due_date: s.due_date ?? '', status: s.status })
     setSchModal(true)
   }
   async function submitSchedule(e: React.FormEvent) {
-    e.preventDefault(); setSaving(true)
+    e.preventDefault()
+    if (schEditId) {
+      const orig = schedules.find((s) => s.id === schEditId)
+      if (orig && Number(schForm.amount) !== Number(orig.amount) && !schReason.trim()) {
+        setError('Alasan wajib diisi karena Anda mengubah nominal termin.'); return
+      }
+    }
+    setSaving(true)
     try {
-      const p = { ...schForm }
+      const p = { ...schForm } as Partial<PaymentScheduleCreate> & { reason?: string }
       if (p.due_date === '') delete p.due_date
-      if (schEditId) await paymentService.updateSchedule(schEditId, p)
-      else await paymentService.createSchedule(p)
+      if (schEditId) {
+        if (schReason.trim()) p.reason = schReason.trim()
+        await paymentService.updateSchedule(schEditId, p)
+      } else await paymentService.createSchedule(p as PaymentScheduleCreate)
       setSchModal(false); await reload()
     } catch { setError('Gagal menyimpan termin.') } finally { setSaving(false) }
   }
-  async function delSchedule(id: string) {
-    if (!confirm('Hapus termin ini?')) return
-    try { await paymentService.deleteSchedule(id); await reload() } catch { setError('Gagal menghapus termin.') }
-  }
 
-  function openPayCreate() { setPayEditId(null); setPayForm(emptyPayment(clientId)); setTransferFile(null); setPayModal(true) }
+  function openPayCreate() { setPayEditId(null); setPayReason(''); setPayForm(emptyPayment(clientId)); setTransferFile(null); setPayModal(true) }
   function openPayEdit(p: Payment) {
-    setPayEditId(p.id)
+    setPayEditId(p.id); setPayReason('')
     setPayForm({ client_id: clientId, schedule_id: p.schedule_id ?? '', amount: p.amount, payment_date: p.payment_date ?? '', method: p.method, source: p.source, purpose: p.purpose, receipt_number: p.receipt_number ?? '' })
     setTransferFile(null)
     setPayModal(true)
   }
   async function submitPayment(e: React.FormEvent) {
-    e.preventDefault(); setSaving(true)
+    e.preventDefault()
+    if (payEditId) {
+      const orig = payments.find((x) => x.id === payEditId)
+      const norm = (v?: string | null) => v ?? ''
+      const material = !!orig && (
+        Number(payForm.amount) !== Number(orig.amount) ||
+        payForm.source !== orig.source ||
+        norm(payForm.payment_date) !== norm(orig.payment_date) ||
+        norm(payForm.schedule_id) !== norm(orig.schedule_id)
+      )
+      if (material && !payReason.trim()) {
+        setError('Alasan wajib diisi karena Anda mengubah nominal/sumber/tanggal/termin pembayaran.'); return
+      }
+    }
+    setSaving(true)
     try {
-      const p = { ...payForm }
+      const p = { ...payForm } as Partial<PaymentCreate> & { reason?: string }
       const rec = p as unknown as Record<string, unknown>
       ;['schedule_id', 'payment_date', 'purpose', 'receipt_number'].forEach((k) => { if (rec[k] === '') delete rec[k] })
-      const result = payEditId ? await paymentService.updatePayment(payEditId, p) : await paymentService.createPayment(p)
+      let result: Payment
+      if (payEditId) {
+        if (payReason.trim()) p.reason = payReason.trim()
+        result = await paymentService.updatePayment(payEditId, p)
+      } else result = await paymentService.createPayment(p as PaymentCreate)
       if (transferFile) await paymentService.uploadPaymentFile(result.id, transferFile)
       setPayModal(false); setTransferFile(null); await reload()
     } catch { setError('Gagal menyimpan pembayaran.') } finally { setSaving(false) }
   }
-  async function delPayment(id: string) {
-    if (!confirm('Hapus pembayaran ini?')) return
-    try { await paymentService.deletePayment(id); await reload() } catch { setError('Gagal menghapus pembayaran.') }
+  function askDeletePayment(p: Payment) { setDelReason(''); setDelTarget({ type: 'payment', id: p.id, label: `Pembayaran ${fmt(p.amount)}` }) }
+  function askDeleteSchedule(s: PaymentSchedule) { setDelReason(''); setDelTarget({ type: 'schedule', id: s.id, label: `Termin ${s.label}` }) }
+  async function submitDelete(e: React.FormEvent) {
+    e.preventDefault()
+    if (!delTarget || !delReason.trim()) return
+    setSaving(true)
+    try {
+      if (delTarget.type === 'payment') await paymentService.deletePayment(delTarget.id, delReason.trim())
+      else await paymentService.deleteSchedule(delTarget.id, delReason.trim())
+      setDelTarget(null); await reload()
+    } catch { setError('Gagal menghapus.') } finally { setSaving(false) }
   }
 
   const scheduleLabel = (id?: string) => schedules.find((s) => s.id === id)?.label
@@ -246,7 +283,7 @@ export default function ClientPayments() {
                 <td className="px-4 py-2.5">
                   <div className="flex items-center justify-end gap-3">
                     <button onClick={() => openSchEdit(s)} className="text-slate-400 hover:text-brand-600" title="Edit"><Pencil size={14} /></button>
-                    <button onClick={() => delSchedule(s.id)} className="text-slate-400 hover:text-red-600" title="Hapus"><Trash2 size={14} /></button>
+                    <button onClick={() => askDeleteSchedule(s)} className="text-slate-400 hover:text-red-600" title="Hapus"><Trash2 size={14} /></button>
                   </div>
                 </td>
               </tr>
@@ -296,7 +333,7 @@ export default function ClientPayments() {
                       ) : (
                         <>
                           <button onClick={() => openPayEdit(p)} className="text-slate-400 hover:text-brand-600" title="Edit"><Pencil size={14} /></button>
-                          <button onClick={() => delPayment(p.id)} className="text-slate-400 hover:text-red-600" title="Hapus"><Trash2 size={14} /></button>
+                          <button onClick={() => askDeletePayment(p)} className="text-slate-400 hover:text-red-600" title="Hapus"><Trash2 size={14} /></button>
                         </>
                       )}
                     </div>
@@ -321,11 +358,12 @@ export default function ClientPayments() {
             {audit.map((a) => {
               const act = actionLabel[a.action] ?? { label: a.action, variant: 'blue' as const }
               return (
-                <li key={a.id} className="px-4 py-2.5 flex items-center gap-3 text-sm">
+                <li key={a.id} className="px-4 py-2.5 flex items-center gap-3 text-sm flex-wrap">
                   <Badge label={act.label} variant={act.variant} />
                   <span className="text-slate-700">
                     {resourceLabel[a.resource] ?? a.resource}<span className="text-slate-500">{auditDetail(a)}</span>
                   </span>
+                  {a.reason && <span className="text-xs text-amber-700 bg-amber-50 rounded px-1.5 py-0.5">alasan: {a.reason}</span>}
                   <span className="text-slate-400 text-xs">oleh {a.user_name ?? '—'}</span>
                   <span className="ml-auto text-xs text-slate-400">{new Date(a.created_at).toLocaleString('id-ID')}</span>
                 </li>
@@ -351,6 +389,12 @@ export default function ClientPayments() {
               <input className="input" type="date" value={schForm.due_date} onChange={(e) => setSchForm({ ...schForm, due_date: e.target.value })} />
             </div>
           </div>
+          {schEditId && (
+            <div>
+              <label className="label">Alasan <span className="text-slate-400 font-normal">(wajib bila mengubah nominal)</span></label>
+              <input className="input" placeholder="mis. koreksi nominal termin" value={schReason} onChange={(e) => setSchReason(e.target.value)} />
+            </div>
+          )}
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" className="btn-secondary text-sm" onClick={() => setSchModal(false)}>Batal</button>
             <button type="submit" className="btn-primary text-sm flex items-center gap-2" disabled={saving}>{saving && <Loader2 size={14} className="animate-spin" />}Simpan</button>
@@ -434,9 +478,35 @@ export default function ClientPayments() {
               )}
             </div>
           )}
+          {payEditId && (
+            <div>
+              <label className="label">Alasan <span className="text-slate-400 font-normal">(wajib bila mengubah nominal/sumber/tanggal/termin)</span></label>
+              <input className="input" placeholder="mis. koreksi nominal, salah alokasi termin" value={payReason} onChange={(e) => setPayReason(e.target.value)} />
+            </div>
+          )}
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" className="btn-secondary text-sm" onClick={() => setPayModal(false)}>Batal</button>
             <button type="submit" className="btn-primary text-sm flex items-center gap-2" disabled={saving}>{saving && <Loader2 size={14} className="animate-spin" />}Simpan</button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Modal Hapus dengan alasan (pembayaran / termin) */}
+      <Modal open={delTarget !== null} onClose={() => setDelTarget(null)} title="Hapus — wajib isi alasan">
+        <form onSubmit={submitDelete} className="space-y-3">
+          <p className="text-sm text-slate-600">
+            Menghapus <b>{delTarget?.label}</b>. Data diarsipkan (tidak benar-benar hilang) dan penghapusan ini tercatat di Riwayat beserta alasannya.
+          </p>
+          <div>
+            <label className="label">Alasan penghapusan *</label>
+            <textarea className="input" rows={2} required autoFocus placeholder="mis. salah input, dobel, alokasi termin keliru"
+              value={delReason} onChange={(e) => setDelReason(e.target.value)} />
+          </div>
+          <div className="flex justify-end gap-2 pt-1">
+            <button type="button" className="btn-secondary text-sm" onClick={() => setDelTarget(null)}>Batal</button>
+            <button type="submit" className="text-sm flex items-center gap-2 rounded-lg bg-red-600 text-white px-4 py-2 font-medium hover:bg-red-700 disabled:opacity-50" disabled={saving || !delReason.trim()}>
+              {saving && <Loader2 size={14} className="animate-spin" />}Hapus
+            </button>
           </div>
         </form>
       </Modal>

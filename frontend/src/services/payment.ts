@@ -19,12 +19,12 @@ export const paymentService = {
     const { data } = await api.post<PaymentSchedule>('/payments/schedules', payload)
     return data
   },
-  async updateSchedule(id: string, payload: Partial<PaymentScheduleCreate>): Promise<PaymentSchedule> {
+  async updateSchedule(id: string, payload: Partial<PaymentScheduleCreate> & { reason?: string }): Promise<PaymentSchedule> {
     const { data } = await api.patch<PaymentSchedule>(`/payments/schedules/${id}`, payload)
     return data
   },
-  async deleteSchedule(id: string): Promise<void> {
-    await api.delete(`/payments/schedules/${id}`)
+  async deleteSchedule(id: string, reason: string): Promise<void> {
+    await api.delete(`/payments/schedules/${id}`, { params: { reason } })
   },
 
   // ── Payments (uang masuk) ──
@@ -36,12 +36,12 @@ export const paymentService = {
     const { data } = await api.post<Payment>('/payments/records', payload)
     return data
   },
-  async updatePayment(id: string, payload: Partial<PaymentCreate>): Promise<Payment> {
+  async updatePayment(id: string, payload: Partial<PaymentCreate> & { reason?: string }): Promise<Payment> {
     const { data } = await api.patch<Payment>(`/payments/records/${id}`, payload)
     return data
   },
-  async deletePayment(id: string): Promise<void> {
-    await api.delete(`/payments/records/${id}`)
+  async deletePayment(id: string, reason: string): Promise<void> {
+    await api.delete(`/payments/records/${id}`, { params: { reason } })
   },
   async uploadPaymentFile(id: string, file: File): Promise<Payment> {
     const fd = new FormData()

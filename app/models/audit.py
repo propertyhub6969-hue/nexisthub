@@ -24,6 +24,7 @@ class AuditLog(BaseModel):
     client_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
     old_data: Mapped[str] = mapped_column(Text, nullable=True)          # JSON sebelum
     new_data: Mapped[str] = mapped_column(Text, nullable=True)          # JSON sesudah
+    reason: Mapped[str] = mapped_column(Text, nullable=True)            # alasan aksi (wajib utk hapus/edit-material pembayaran & termin)
     ip_address: Mapped[str] = mapped_column(String(50), nullable=True)
 
     user: Mapped["User"] = relationship("User", foreign_keys=[user_id])

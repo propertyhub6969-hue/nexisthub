@@ -915,6 +915,7 @@ export interface AuditEntry {
   resource_id?: string
   old_data?: string
   new_data?: string
+  reason?: string
   user_name?: string
   created_at: string
 }

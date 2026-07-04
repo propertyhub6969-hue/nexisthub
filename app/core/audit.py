@@ -17,9 +17,10 @@ def _dump(data) -> Optional[str]:
 
 
 async def record_audit(db, tenant_id, user_id, action: str, resource: str,
-                       resource_id=None, old_data=None, new_data=None, client_id=None):
+                       resource_id=None, old_data=None, new_data=None, client_id=None, reason=None):
     """Catat satu baris audit. Non-blocking terhadap alur utama.
-    `client_id` (opsional) mengelompokkan riwayat per pembeli lintas resource (payments/schedule/clients)."""
+    `client_id` (opsional) mengelompokkan riwayat per pembeli lintas resource (payments/schedule/clients).
+    `reason` (opsional) = alasan aksi (mis. hapus/edit pembayaran)."""
     log = AuditLog(
         tenant_id=tenant_id,
         user_id=user_id,
@@ -29,5 +30,6 @@ async def record_audit(db, tenant_id, user_id, action: str, resource: str,
         client_id=client_id,
         old_data=_dump(old_data),
         new_data=_dump(new_data),
+        reason=reason,
     )
     db.add(log)
