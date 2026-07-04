@@ -1,4 +1,4 @@
-import { NavLink, useNavigate } from 'react-router-dom'
+import { NavLink } from 'react-router-dom'
 import {
   LayoutDashboard,
   Users,
@@ -13,7 +13,6 @@ import {
   BarChart3,
   Settings,
   UsersRound,
-  LogOut,
 } from 'lucide-react'
 import { clsx } from 'clsx'
 import { useAuth } from '../../context/AuthContext'
@@ -78,8 +77,7 @@ const settingsItem = {
 }
 
 export default function Sidebar() {
-  const { logout, user } = useAuth()
-  const navigate = useNavigate()
+  const { user } = useAuth()
 
   const canManageTeam = user?.role === 'owner' || user?.role === 'admin'
   const items = canManageTeam ? [...navItems, settingsItem] : navItems
@@ -136,17 +134,6 @@ export default function Sidebar() {
           )
         )}
       </nav>
-
-      {/* Logout */}
-      <div className="px-3 py-4 border-t border-blue-900">
-        <button
-          onClick={logout}
-          className="flex items-center gap-3 px-3 py-2 w-full rounded-lg text-sm font-medium text-slate-400 hover:bg-blue-900 hover:text-white transition-colors"
-        >
-          <LogOut size={16} />
-          Logout
-        </button>
-      </div>
     </aside>
   )
 }
