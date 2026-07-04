@@ -296,6 +296,8 @@ export interface PaymentSchedule {
   due_date?: string
   status: ScheduleStatus
   is_overdue: boolean
+  paid: number
+  remaining: number
   notes?: string
   created_at: string
   updated_at: string

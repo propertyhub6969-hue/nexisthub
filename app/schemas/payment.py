@@ -35,6 +35,8 @@ class ScheduleResponse(ScheduleBase):
     client_id: uuid.UUID
     status: ScheduleStatus
     is_overdue: bool
+    paid: Decimal = Decimal(0)         # akumulasi pembayaran ke termin ini
+    remaining: Decimal = Decimal(0)    # sisa = amount − paid (min 0)
     created_at: datetime
     updated_at: datetime
 

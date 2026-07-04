@@ -133,6 +133,7 @@ export default function ClientPayments() {
 
   const scheduleLabel = (id?: string) => schedules.find((s) => s.id === id)?.label
   const unitCode = unit ? [unit.block, unit.unit_number].filter(Boolean).join('-') : ''
+  const selSchedule = schedules.find((s) => s.id === payForm.schedule_id)
 
   async function handlePrint(p: Payment) {
     await printReceipt({
@@ -211,10 +212,16 @@ export default function ClientPayments() {
             ) : schedules.map((s) => (
               <tr key={s.id} className="hover:bg-slate-50">
                 <td className="px-4 py-2.5 font-medium text-slate-900">{s.label}</td>
-                <td className="px-4 py-2.5 text-slate-600">{fmt(s.amount)}</td>
+                <td className="px-4 py-2.5 text-slate-600">
+                  {fmt(s.amount)}
+                  {s.status !== 'paid' && s.paid > 0 && (
+                    <div className="text-xs text-slate-400 mt-0.5">dibayar {fmt(s.paid)} · sisa {fmt(s.remaining)}</div>
+                  )}
+                </td>
                 <td className="px-4 py-2.5 text-slate-500 text-xs">{fmtDate(s.due_date)}</td>
                 <td className="px-4 py-2.5">
                   {s.status === 'paid' ? <Badge label="Lunas" variant="green" />
+                    : s.paid > 0 ? <Badge label="Sebagian" variant="yellow" />
                     : s.is_overdue ? <Badge label="Terlambat" variant="red" /> : <Badge label="Belum" variant="gray" />}
                 </td>
                 <td className="px-4 py-2.5">
@@ -367,8 +374,21 @@ export default function ClientPayments() {
               <label className="label">Untuk Termin</label>
               <select className="input" value={payForm.schedule_id} onChange={(e) => setPayForm({ ...payForm, schedule_id: e.target.value })}>
                 <option value="">— (tanpa termin)</option>
-                {schedules.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
+                {schedules
+                  // hanya termin yang belum lunas; termin yang sedang dipilih tetap tampil walau sudah lunas
+                  .filter((s) => s.status !== 'paid' || s.id === payForm.schedule_id)
+                  .map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.label}{s.status !== 'paid' ? ` — sisa ${fmt(s.remaining)}` : ' (Lunas)'}
+                    </option>
+                  ))}
               </select>
+              {selSchedule && selSchedule.status !== 'paid' && (
+                <p className={`text-xs mt-1 ${payForm.amount > selSchedule.remaining ? 'text-amber-600' : 'text-slate-400'}`}>
+                  Sisa termin ini: {fmt(selSchedule.remaining)}
+                  {payForm.amount > selSchedule.remaining ? ' — nominal melebihi sisa termin' : ''}
+                </p>
+              )}
             </div>
           </div>
           <div>

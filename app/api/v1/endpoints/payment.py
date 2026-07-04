@@ -115,7 +115,20 @@ async def list_schedules(
                PaymentSchedule.is_deleted == False)  # noqa: E712
         .order_by(PaymentSchedule.sequence, PaymentSchedule.due_date)
     )
-    return result.scalars().all()
+    schedules = result.scalars().all()
+
+    # akumulasi pembayaran per termin (utk tampilkan sudah dibayar & sisa — dukung pembayaran sebagian)
+    paid_rows = await db.execute(
+        select(Payment.schedule_id, func.coalesce(func.sum(Payment.amount), 0))
+        .where(Payment.client_id == client_id, Payment.tenant_id == ctx.tenant_id,
+               Payment.is_deleted == False, Payment.schedule_id.isnot(None))  # noqa: E712
+        .group_by(Payment.schedule_id)
+    )
+    paid_by_sched = {sid: Decimal(v) for sid, v in paid_rows.all()}
+    for s in schedules:
+        s.paid = paid_by_sched.get(s.id, Decimal(0))
+        s.remaining = max(Decimal(s.amount) - s.paid, Decimal(0))
+    return schedules
 
 
 @router.post("/schedules", response_model=ScheduleResponse, status_code=status.HTTP_201_CREATED)
@@ -129,6 +142,8 @@ async def create_schedule(
     db.add(sch)
     await db.flush()
     await db.refresh(sch)
+    sch.paid = Decimal(0)                       # termin baru: belum ada pembayaran
+    sch.remaining = Decimal(sch.amount)
     return sch
 
 
@@ -153,7 +168,14 @@ async def update_schedule(
     for f, v in payload.model_dump(exclude_unset=True).items():
         setattr(sch, f, v)
     await db.flush()
+    await _recompute_schedule(db, ctx.tenant_id, schedule_id)   # nominal berubah → status Lunas/Belum ikut menyesuaikan
     await db.refresh(sch)
+    paid = Decimal(await db.scalar(
+        select(func.coalesce(func.sum(Payment.amount), 0)).where(
+            Payment.schedule_id == schedule_id, Payment.is_deleted == False)  # noqa: E712
+    ))
+    sch.paid = paid
+    sch.remaining = max(Decimal(sch.amount) - paid, Decimal(0))
     return sch
 
 
