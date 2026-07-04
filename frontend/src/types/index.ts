@@ -467,6 +467,7 @@ export interface DocumentItem {
   unit_id?: string
   doc_type: string
   name?: string
+  address?: string
   status: DocStatus
   doc_date?: string
   land_area?: number
@@ -483,6 +484,7 @@ export interface DocumentCreate {
   unit_id?: string
   doc_type: string
   name?: string
+  address?: string
   status?: DocStatus
   doc_date?: string
   land_area?: number
@@ -491,6 +493,7 @@ export interface DocumentCreate {
 export interface DocumentBulkItem {
   doc_type: string
   name?: string
+  address?: string
   status?: DocStatus
   doc_date?: string
   land_area?: number

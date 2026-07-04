@@ -10,6 +10,7 @@ from app.models.document import DocStatus
 class DocumentBase(BaseModel):
     doc_type: str = Field(..., min_length=1, max_length=100)
     name: Optional[str] = Field(None, max_length=200)
+    address: Optional[str] = Field(None, max_length=300)   # alamat objek (mis. alamat PBB)
     status: DocStatus = DocStatus.BELUM
     doc_date: Optional[date] = None
     land_area: Optional[Decimal] = Field(None, ge=0)   # LT (m²) — utk dok legalitas unit
@@ -40,6 +41,7 @@ class DocumentBulkCreate(BaseModel):
 class DocumentUpdate(BaseModel):
     doc_type: Optional[str] = Field(None, min_length=1, max_length=100)
     name: Optional[str] = Field(None, max_length=200)
+    address: Optional[str] = Field(None, max_length=300)
     status: Optional[DocStatus] = None
     doc_date: Optional[date] = None
     land_area: Optional[Decimal] = Field(None, ge=0)

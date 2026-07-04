@@ -31,6 +31,7 @@ class Document(BaseModel, SoftDeleteMixin):
     )
     doc_type: Mapped[str] = mapped_column(String(100), nullable=False)   # KTP, KK, NPWP, SHM, SLF, IMB/PBG, PBB, dll
     name: Mapped[str] = mapped_column(String(200), nullable=True)        # nomor dokumen
+    address: Mapped[str] = mapped_column(String(300), nullable=True)     # alamat objek — mis. alamat objek pajak (PBB)
     land_area: Mapped[float] = mapped_column(Numeric(10, 2), nullable=True)  # LT (m²) — utk dok legalitas unit (SHM); disinkron ke Unit.land_area
     status: Mapped[DocStatus] = mapped_column(
         SAEnum(DocStatus), default=DocStatus.BELUM, nullable=False

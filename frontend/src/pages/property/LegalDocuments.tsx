@@ -10,10 +10,12 @@ const LEGAL_PRESETS = ['Sertifikat SHM', 'Sertifikat HGB', 'SLF', 'IMB / PBG', '
 // Checklist default untuk entry cepat (SHM & HGB alternatif; user isi yang relevan)
 const CHECKLIST_PRESETS = ['Sertifikat SHM', 'SLF', 'IMB / PBG', 'PBB']
 const isSertifikat = (t: string) => /shm|hgb|sertifikat/i.test(t)
+const isPBB = (t: string) => /pbb/i.test(t)
 
 interface ChecklistRow {
   doc_type: string
   name: string
+  address: string
   status: DocStatus
   doc_date: string
   land_area?: number
@@ -21,7 +23,7 @@ interface ChecklistRow {
   custom?: boolean
 }
 const rowFilled = (r: ChecklistRow) =>
-  r.status !== 'belum' || !!r.name.trim() || !!r.file || r.land_area != null
+  r.status !== 'belum' || !!r.name.trim() || !!r.address.trim() || !!r.file || r.land_area != null
 const docStatusCfg: Record<DocStatus, { label: string; variant: 'gray' | 'yellow' | 'green' }> = {
   belum:  { label: 'Belum Ada', variant: 'gray' },
   proses: { label: 'Proses',    variant: 'yellow' },
@@ -29,7 +31,7 @@ const docStatusCfg: Record<DocStatus, { label: string; variant: 'gray' | 'yellow
 }
 
 const unitLabel = (u?: Unit) => u ? [u.block, u.unit_number].filter(Boolean).join('-') : ''
-const emptyDoc = (): Omit<DocumentCreate, 'unit_id'> => ({ doc_type: '', name: '', status: 'belum', doc_date: '', land_area: undefined })
+const emptyDoc = (): Omit<DocumentCreate, 'unit_id'> => ({ doc_type: '', name: '', address: '', status: 'belum', doc_date: '', land_area: undefined })
 
 export default function LegalDocuments() {
   const [projects, setProjects] = useState<Project[]>([])
@@ -83,7 +85,7 @@ export default function LegalDocuments() {
   function openCreate() { setEditId(null); setForm(emptyDoc()); setModal(true) }
   function openEdit(d: DocumentItem) {
     setEditId(d.id)
-    setForm({ doc_type: d.doc_type, name: d.name ?? '', status: d.status, doc_date: d.doc_date ?? '', land_area: d.land_area })
+    setForm({ doc_type: d.doc_type, name: d.name ?? '', address: d.address ?? '', status: d.status, doc_date: d.doc_date ?? '', land_area: d.land_area })
     setModal(true)
   }
   async function submit(e: React.FormEvent) {
@@ -92,12 +94,12 @@ export default function LegalDocuments() {
       if (editId) {
         const p = { ...form }
         const rec = p as unknown as Record<string, unknown>
-        ;['name', 'doc_date'].forEach((k) => { if (rec[k] === '') delete rec[k] })
+        ;['name', 'address', 'doc_date'].forEach((k) => { if (rec[k] === '') delete rec[k] })
         await documentService.update(editId, p)
       } else {
         const p: DocumentCreate = { ...form, unit_id: unitId }
         const rec = p as unknown as Record<string, unknown>
-        ;['name', 'doc_date'].forEach((k) => { if (rec[k] === '') delete rec[k] })
+        ;['name', 'address', 'doc_date'].forEach((k) => { if (rec[k] === '') delete rec[k] })
         await documentService.create(p)
       }
       setModal(false); await loadDocs(unitId)
@@ -123,8 +125,8 @@ export default function LegalDocuments() {
     const existingTypes = new Set(docs.map((d) => d.doc_type.trim().toLowerCase()))
     const preset: ChecklistRow[] = CHECKLIST_PRESETS
       .filter((t) => !existingTypes.has(t.trim().toLowerCase()))
-      .map((t) => ({ doc_type: t, name: '', status: 'belum', doc_date: '', file: null }))
-    setRows(preset.length ? preset : [{ doc_type: '', name: '', status: 'belum', doc_date: '', file: null, custom: true }])
+      .map((t) => ({ doc_type: t, name: '', address: '', status: 'belum', doc_date: '', file: null }))
+    setRows(preset.length ? preset : [{ doc_type: '', name: '', address: '', status: 'belum', doc_date: '', file: null, custom: true }])
     setChecklistMsg('')
     setChecklistModal(true)
   }
@@ -132,7 +134,7 @@ export default function LegalDocuments() {
     setRows((prev) => prev.map((r, idx) => (idx === i ? { ...r, ...patch } : r)))
   }
   function addRow() {
-    setRows((prev) => [...prev, { doc_type: '', name: '', status: 'belum', doc_date: '', file: null, custom: true }])
+    setRows((prev) => [...prev, { doc_type: '', name: '', address: '', status: 'belum', doc_date: '', file: null, custom: true }])
   }
   function removeRow(i: number) {
     setRows((prev) => prev.filter((_, idx) => idx !== i))
@@ -147,6 +149,7 @@ export default function LegalDocuments() {
       const items: DocumentBulkItem[] = filled.map((r) => {
         const it: DocumentBulkItem = { doc_type: r.doc_type.trim(), status: r.status }
         if (r.name.trim()) it.name = r.name.trim()
+        if (isPBB(r.doc_type) && r.address.trim()) it.address = r.address.trim()
         if (r.doc_date) it.doc_date = r.doc_date
         if (r.land_area != null) it.land_area = r.land_area
         return it
@@ -222,7 +225,10 @@ export default function LegalDocuments() {
                 return (
                   <tr key={d.id} className="hover:bg-slate-50">
                     <td className="px-4 py-2.5 font-medium text-slate-900">{d.doc_type}</td>
-                    <td className="px-4 py-2.5 text-slate-500">{d.name ?? '—'}</td>
+                    <td className="px-4 py-2.5 text-slate-500">
+                      {d.name ?? '—'}
+                      {d.address && <div className="text-xs text-slate-400 mt-0.5">{d.address}</div>}
+                    </td>
                     <td className="px-4 py-2.5 text-slate-500">{d.land_area != null ? `${Number(d.land_area)} m²` : '—'}</td>
                     <td className="px-4 py-2.5">{st && <Badge label={st.label} variant={st.variant} />}</td>
                     <td className="px-4 py-2.5">
@@ -262,6 +268,12 @@ export default function LegalDocuments() {
             <label className="label">Nomor</label>
             <input className="input" placeholder="Nomor dokumen (mis. no. SHM / IMB)" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
           </div>
+          {isPBB(form.doc_type) && (
+            <div>
+              <label className="label">Alamat Objek Pajak (PBB)</label>
+              <input className="input" placeholder="Alamat pada SPPT PBB" value={form.address ?? ''} onChange={(e) => setForm({ ...form, address: e.target.value })} />
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="label">Status</label>
@@ -318,6 +330,10 @@ export default function LegalDocuments() {
                       value={r.land_area ?? ''} onChange={(e) => setRow(i, { land_area: e.target.value ? Number(e.target.value) : undefined })} />
                   ) : <div />}
                 </div>
+                {isPBB(r.doc_type) && (
+                  <input className="input" placeholder="Alamat objek pajak (PBB)"
+                    value={r.address} onChange={(e) => setRow(i, { address: e.target.value })} />
+                )}
                 <label className="flex items-center gap-2 text-xs text-slate-500 cursor-pointer w-fit">
                   <span className="inline-flex items-center gap-1 px-2 py-1 rounded border border-slate-200 hover:bg-slate-50">
                     <Paperclip size={12} /> {r.file ? 'Ganti file' : 'Lampirkan file'}
