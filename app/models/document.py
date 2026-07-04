@@ -1,6 +1,6 @@
 import uuid
 import enum
-from sqlalchemy import String, Text, ForeignKey, Enum as SAEnum, Date, Integer, LargeBinary
+from sqlalchemy import String, Text, ForeignKey, Enum as SAEnum, Date, Integer, LargeBinary, Numeric
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID
 from app.models.base import BaseModel, SoftDeleteMixin
@@ -30,7 +30,8 @@ class Document(BaseModel, SoftDeleteMixin):
         nullable=True, index=True   # opsional — diisi utk dokumen legalitas unit
     )
     doc_type: Mapped[str] = mapped_column(String(100), nullable=False)   # KTP, KK, NPWP, SHM, SLF, IMB/PBG, PBB, dll
-    name: Mapped[str] = mapped_column(String(200), nullable=True)        # keterangan tambahan
+    name: Mapped[str] = mapped_column(String(200), nullable=True)        # nomor dokumen
+    land_area: Mapped[float] = mapped_column(Numeric(10, 2), nullable=True)  # LT (m²) — utk dok legalitas unit (SHM); disinkron ke Unit.land_area
     status: Mapped[DocStatus] = mapped_column(
         SAEnum(DocStatus), default=DocStatus.BELUM, nullable=False
     )

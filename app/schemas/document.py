@@ -1,6 +1,7 @@
 from pydantic import BaseModel, Field, model_validator
 from typing import Optional
 from datetime import datetime, date
+from decimal import Decimal
 import uuid
 
 from app.models.document import DocStatus
@@ -11,6 +12,7 @@ class DocumentBase(BaseModel):
     name: Optional[str] = Field(None, max_length=200)
     status: DocStatus = DocStatus.BELUM
     doc_date: Optional[date] = None
+    land_area: Optional[Decimal] = Field(None, ge=0)   # LT (m²) — utk dok legalitas unit
     notes: Optional[str] = None
 
 
@@ -30,6 +32,7 @@ class DocumentUpdate(BaseModel):
     name: Optional[str] = Field(None, max_length=200)
     status: Optional[DocStatus] = None
     doc_date: Optional[date] = None
+    land_area: Optional[Decimal] = Field(None, ge=0)
     notes: Optional[str] = None
 
 

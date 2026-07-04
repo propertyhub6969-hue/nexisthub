@@ -14,7 +14,7 @@ const docStatusCfg: Record<DocStatus, { label: string; variant: 'gray' | 'yellow
 }
 
 const unitLabel = (u?: Unit) => u ? [u.block, u.unit_number].filter(Boolean).join('-') : ''
-const emptyDoc = (): Omit<DocumentCreate, 'unit_id'> => ({ doc_type: '', name: '', status: 'belum', doc_date: '' })
+const emptyDoc = (): Omit<DocumentCreate, 'unit_id'> => ({ doc_type: '', name: '', status: 'belum', doc_date: '', land_area: undefined })
 
 export default function LegalDocuments() {
   const [projects, setProjects] = useState<Project[]>([])
@@ -62,7 +62,7 @@ export default function LegalDocuments() {
   function openCreate() { setEditId(null); setForm(emptyDoc()); setModal(true) }
   function openEdit(d: DocumentItem) {
     setEditId(d.id)
-    setForm({ doc_type: d.doc_type, name: d.name ?? '', status: d.status, doc_date: d.doc_date ?? '' })
+    setForm({ doc_type: d.doc_type, name: d.name ?? '', status: d.status, doc_date: d.doc_date ?? '', land_area: d.land_area })
     setModal(true)
   }
   async function submit(e: React.FormEvent) {
@@ -132,20 +132,21 @@ export default function LegalDocuments() {
           </div>
           <table className="w-full text-sm">
             <thead className="bg-slate-50 border-b border-slate-200">
-              <tr>{['Jenis', 'Nomor', 'Status', 'File', ''].map((h, i) => (
+              <tr>{['Jenis', 'Nomor', 'LT (m²)', 'Status', 'File', ''].map((h, i) => (
                 <th key={i} className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">{h}</th>))}</tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {loading ? (
-                <tr><td colSpan={5} className="px-4 py-8 text-center text-slate-400"><Loader2 size={18} className="inline animate-spin" /></td></tr>
+                <tr><td colSpan={6} className="px-4 py-8 text-center text-slate-400"><Loader2 size={18} className="inline animate-spin" /></td></tr>
               ) : docs.length === 0 ? (
-                <tr><td colSpan={5} className="px-4 py-6 text-center text-slate-400 text-sm">Belum ada dokumen legalitas untuk unit ini.</td></tr>
+                <tr><td colSpan={6} className="px-4 py-6 text-center text-slate-400 text-sm">Belum ada dokumen legalitas untuk unit ini.</td></tr>
               ) : docs.map((d) => {
                 const st = docStatusCfg[d.status]
                 return (
                   <tr key={d.id} className="hover:bg-slate-50">
                     <td className="px-4 py-2.5 font-medium text-slate-900">{d.doc_type}</td>
                     <td className="px-4 py-2.5 text-slate-500">{d.name ?? '—'}</td>
+                    <td className="px-4 py-2.5 text-slate-500">{d.land_area != null ? `${Number(d.land_area)} m²` : '—'}</td>
                     <td className="px-4 py-2.5">{st && <Badge label={st.label} variant={st.variant} />}</td>
                     <td className="px-4 py-2.5">
                       <div className="flex items-center gap-2">
@@ -195,6 +196,12 @@ export default function LegalDocuments() {
               <label className="label">Tanggal</label>
               <input className="input" type="date" value={form.doc_date} onChange={(e) => setForm({ ...form, doc_date: e.target.value })} />
             </div>
+          </div>
+          <div>
+            <label className="label">Luas Tanah / LT (m²)</label>
+            <input className="input max-w-[240px]" type="number" min={0} step="0.01" placeholder="mis. 120"
+              value={form.land_area ?? ''} onChange={(e) => setForm({ ...form, land_area: e.target.value ? Number(e.target.value) : undefined })} />
+            <p className="text-xs text-slate-400 mt-1">Isi dari sertifikat (SHM/HGB). LT ini otomatis jadi Luas Tanah unit di Kelola Unit.</p>
           </div>
           <p className="text-xs text-slate-400">File bisa diupload dari tombol Upload di tabel setelah dokumen dibuat (maks 10 MB).</p>
           <div className="flex justify-end gap-2 pt-2">

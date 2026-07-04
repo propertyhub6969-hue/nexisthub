@@ -218,7 +218,8 @@ export default function ProjectUnits() {
             </div>
             <div>
               <label className="label">LT (m²)</label>
-              <input className="input" type="number" min={0} value={form.land_area ?? ''} onChange={(e) => setForm({ ...form, land_area: e.target.value ? Number(e.target.value) : undefined })} />
+              <input className="input bg-slate-50 text-slate-500" type="number" value={form.land_area ?? ''} readOnly title="Diambil otomatis dari Dokumen Legalitas unit" />
+              <p className="text-[11px] text-slate-400 mt-1">Otomatis dari Dokumen Legalitas (SHM). Ubah di menu Properti → Dokumen Legalitas.</p>
             </div>
             <div>
               <label className="label">LB (m²)</label>

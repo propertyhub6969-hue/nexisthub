@@ -11,6 +11,7 @@ from app.core.audit import record_audit
 from app.core.files import file_etag, not_modified_response, cached_file_response
 from app.api.deps import get_current_context, AuthContext
 from app.models.document import Document
+from app.models.property import Unit
 from app.schemas.document import DocumentCreate, DocumentUpdate, DocumentResponse
 
 router = APIRouter()
@@ -47,6 +48,15 @@ async def list_documents(
     return r.scalars().all()
 
 
+async def _sync_unit_land_area(db, tenant_id, d: Document) -> None:
+    """LT dari dokumen legalitas = sumber valid → sinkronkan ke Unit.land_area."""
+    if d.unit_id is None or d.land_area is None:
+        return
+    u = (await db.execute(select(Unit).where(Unit.id == d.unit_id, Unit.tenant_id == tenant_id))).scalar_one_or_none()
+    if u is not None:
+        u.land_area = d.land_area
+
+
 @router.post("/documents", response_model=DocumentResponse, status_code=status.HTTP_201_CREATED)
 async def create_document(
     payload: DocumentCreate,
@@ -56,6 +66,7 @@ async def create_document(
     d = Document(tenant_id=ctx.tenant_id, **payload.model_dump())
     db.add(d)
     await db.flush()
+    await _sync_unit_land_area(db, ctx.tenant_id, d)
     await record_audit(db, ctx.tenant_id, ctx.user_id, "CREATE", "documents", d.id, new_data=payload)
     await db.refresh(d)
     return d
@@ -72,6 +83,7 @@ async def update_document(
     for f, v in payload.model_dump(exclude_unset=True).items():
         setattr(d, f, v)
     await db.flush()
+    await _sync_unit_land_area(db, ctx.tenant_id, d)
     await db.refresh(d)
     return d
 

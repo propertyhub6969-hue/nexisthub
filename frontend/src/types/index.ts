@@ -446,6 +446,7 @@ export interface DocumentItem {
   name?: string
   status: DocStatus
   doc_date?: string
+  land_area?: number
   file_name?: string
   file_type?: string
   file_size?: number
@@ -461,6 +462,7 @@ export interface DocumentCreate {
   name?: string
   status?: DocStatus
   doc_date?: string
+  land_area?: number
   notes?: string
 }
 
