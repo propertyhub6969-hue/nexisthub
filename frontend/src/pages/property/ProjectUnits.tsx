@@ -1,10 +1,12 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { Plus, Trash2, Pencil, Loader2, ArrowLeft, Map } from 'lucide-react'
+import { Plus, Trash2, Pencil, Loader2, ArrowLeft, Map, FileSignature, Printer } from 'lucide-react'
 import Badge from '../../components/ui/Badge'
 import MoneyInput from '../../components/ui/MoneyInput'
 import Modal from '../../components/ui/Modal'
 import { propertyService } from '../../services/property'
+import { useAuth } from '../../context/AuthContext'
+import { printBast } from '../../utils/bast'
 import type { Project, Unit, UnitCreate, UnitStatus } from '../../types'
 
 const statusConfig: Record<UnitStatus, { label: string; variant: 'green' | 'yellow' | 'blue' | 'orange' }> = {
@@ -24,6 +26,7 @@ const emptyForm = (projectId: string): UnitCreate => ({
 
 export default function ProjectUnits() {
   const { projectId = '' } = useParams()
+  const { user } = useAuth()
   const [project, setProject] = useState<Project | null>(null)
   const [units, setUnits] = useState<Unit[]>([])
   const [loading, setLoading] = useState(true)
@@ -33,6 +36,12 @@ export default function ProjectUnits() {
   const [form, setForm] = useState<UnitCreate>(emptyForm(projectId))
   const [saving, setSaving] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
+
+  // BAST
+  const [bastModal, setBastModal] = useState(false)
+  const [bastUnit, setBastUnit] = useState<Unit | null>(null)
+  const [bastDate, setBastDate] = useState('')
+  const [savingBast, setSavingBast] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -115,6 +124,28 @@ export default function ProjectUnits() {
     }
   }
 
+  // ── BAST ──
+  function openBast(u: Unit) {
+    setBastUnit(u); setBastDate(u.bast_date ?? new Date().toISOString().slice(0, 10)); setBastModal(true)
+  }
+  async function submitBast(e: React.FormEvent) {
+    e.preventDefault()
+    if (!bastUnit) return
+    setSavingBast(true); setError('')
+    try {
+      const updated = await propertyService.createBast(bastUnit.id, { bast_date: bastDate || undefined })
+      setUnits((prev) => prev.map((u) => (u.id === updated.id ? updated : u)))
+      setBastModal(false)
+    } catch { setError('Gagal membuat BAST.') } finally { setSavingBast(false) }
+  }
+  function doPrintBast(u: Unit) {
+    printBast({
+      bastNumber: u.bast_number, bastDate: u.bast_date, petugas: u.bast_user_name ?? user?.full_name,
+      buyer: u.buyer_name, project: project?.name, unit: [u.block, u.unit_number].filter(Boolean).join('-'),
+      unitType: u.unit_type, landArea: u.land_area, buildingArea: u.building_area, price: u.price,
+    })
+  }
+
   return (
     <div className="space-y-4">
       {/* Header */}
@@ -158,16 +189,16 @@ export default function ProjectUnits() {
         <table className="w-full text-sm">
           <thead className="bg-slate-50 border-b border-slate-200">
             <tr>
-              {['Blok', 'No. Unit', 'Tipe', 'LT / LB', 'Harga', 'Status', ''].map((h, i) => (
+              {['Blok', 'No. Unit', 'Tipe', 'LT / LB', 'Harga', 'Status', 'BAST', ''].map((h, i) => (
                 <th key={i} className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">{h}</th>
               ))}
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {loading ? (
-              <tr><td colSpan={7} className="px-4 py-10 text-center text-slate-400"><Loader2 size={18} className="inline animate-spin" /></td></tr>
+              <tr><td colSpan={8} className="px-4 py-10 text-center text-slate-400"><Loader2 size={18} className="inline animate-spin" /></td></tr>
             ) : shown.length === 0 ? (
-              <tr><td colSpan={7} className="px-4 py-8 text-center text-slate-400 text-sm">{units.length === 0 ? 'Belum ada unit. Klik "Tambah Unit".' : 'Tidak ada unit dengan status ini.'}</td></tr>
+              <tr><td colSpan={8} className="px-4 py-8 text-center text-slate-400 text-sm">{units.length === 0 ? 'Belum ada unit. Klik "Tambah Unit".' : 'Tidak ada unit dengan status ini.'}</td></tr>
             ) : (
               shown.map((u) => {
                 const s = statusConfig[u.status]
@@ -182,7 +213,18 @@ export default function ProjectUnits() {
                     <td className="px-4 py-3 text-slate-600">{fmt(u.price)}</td>
                     <td className="px-4 py-3">{s && <Badge label={s.label} variant={s.variant} />}</td>
                     <td className="px-4 py-3">
+                      {u.bast_number ? (
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-slate-600">{u.bast_number}</span>
+                          <button onClick={() => doPrintBast(u)} className="text-slate-400 hover:text-brand-600" title="Cetak BAST"><Printer size={14} /></button>
+                        </div>
+                      ) : <span className="text-slate-400 text-xs">—</span>}
+                    </td>
+                    <td className="px-4 py-3">
                       <div className="flex items-center justify-end gap-3">
+                        <button onClick={() => openBast(u)} className="text-slate-400 hover:text-emerald-600 transition-colors" title={u.bast_number ? 'Ubah BAST' : 'Serah Terima (BAST)'}>
+                          <FileSignature size={15} />
+                        </button>
                         <button onClick={() => openEdit(u)} className="text-slate-400 hover:text-brand-600 transition-colors" title="Edit">
                           <Pencil size={15} />
                         </button>
@@ -234,7 +276,8 @@ export default function ProjectUnits() {
             <div>
               <label className="label">Status</label>
               <select className="input" value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value as UnitStatus })}>
-                {(Object.keys(statusConfig) as UnitStatus[]).map((k) => (
+                {/* Serah Terima diset lewat BAST, bukan manual — tampil hanya bila unit memang sudah handover */}
+                {(Object.keys(statusConfig) as UnitStatus[]).filter((k) => k !== 'handover' || form.status === 'handover').map((k) => (
                   <option key={k} value={k}>{statusConfig[k].label}</option>
                 ))}
               </select>
@@ -245,6 +288,37 @@ export default function ProjectUnits() {
             <button type="submit" className="btn-primary text-sm flex items-center gap-2" disabled={saving}>
               {saving && <Loader2 size={14} className="animate-spin" />}
               {editingId ? 'Simpan Perubahan' : 'Simpan'}
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Modal BAST */}
+      <Modal open={bastModal} onClose={() => setBastModal(false)} title={bastUnit?.bast_number ? 'Ubah BAST' : 'Buat BAST (Serah Terima)'}>
+        <form onSubmit={submitBast} className="space-y-3">
+          <p className="text-sm text-slate-500">
+            Unit <b>{bastUnit ? [bastUnit.block, bastUnit.unit_number].filter(Boolean).join('-') : '—'}</b>
+            {bastUnit?.buyer_name ? <> · pembeli <b>{bastUnit.buyer_name}</b></> : <span className="text-amber-600"> · belum ada pembeli terkait unit</span>}
+          </p>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="label">Tanggal BAST</label>
+              <input className="input" type="date" value={bastDate} onChange={(e) => setBastDate(e.target.value)} />
+            </div>
+            <div>
+              <label className="label">No. BAST</label>
+              <p className="text-sm text-slate-500 py-2">{bastUnit?.bast_number ?? 'Dibuat otomatis setelah simpan'}</p>
+            </div>
+          </div>
+          <div>
+            <label className="label">Petugas (Yang Menyerahkan)</label>
+            <input className="input bg-slate-50" value={bastUnit?.bast_user_name ?? user?.full_name ?? '—'} readOnly title="Otomatis dari user yang login" />
+          </div>
+          <p className="text-xs text-slate-400">Menyimpan BAST akan menandai unit sebagai <b>Serah Terima</b>. Setelah tersimpan, BAST bisa dicetak dari kolom BAST.</p>
+          <div className="flex justify-end gap-2 pt-2">
+            <button type="button" className="btn-secondary text-sm" onClick={() => setBastModal(false)}>Batal</button>
+            <button type="submit" className="btn-primary text-sm flex items-center gap-2" disabled={savingBast}>
+              {savingBast && <Loader2 size={14} className="animate-spin" />}Simpan BAST
             </button>
           </div>
         </form>

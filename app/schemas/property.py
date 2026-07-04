@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, date
 from decimal import Decimal
 import uuid
 
@@ -86,8 +86,17 @@ class UnitResponse(UnitBase):
     id: uuid.UUID
     project_id: uuid.UUID
     status: UnitStatus
+    bast_number: Optional[str] = None
+    bast_date: Optional[date] = None
+    bast_user_name: Optional[str] = None
+    buyer_name: Optional[str] = None          # pembeli aktif unit ini (dihitung saat fetch)
     created_at: datetime
     updated_at: datetime
 
     class Config:
         from_attributes = True
+
+
+class BastRequest(BaseModel):
+    bast_date: Optional[date] = None
+    notes: Optional[str] = None

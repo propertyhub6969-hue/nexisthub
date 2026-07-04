@@ -205,6 +205,10 @@ export interface Unit {
   position_y?: number
   notes?: string
   status: UnitStatus
+  bast_number?: string
+  bast_date?: string
+  bast_user_name?: string
+  buyer_name?: string
   created_at: string
   updated_at: string
 }

@@ -1,6 +1,6 @@
 import uuid
 import enum
-from sqlalchemy import String, Text, ForeignKey, Enum as SAEnum, Numeric, Integer, LargeBinary
+from sqlalchemy import String, Text, ForeignKey, Enum as SAEnum, Numeric, Integer, LargeBinary, Date
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID
 from app.models.base import BaseModel
@@ -84,8 +84,15 @@ class Unit(BaseModel):
     position_x: Mapped[float] = mapped_column(Numeric(8, 4), nullable=True)
     position_y: Mapped[float] = mapped_column(Numeric(8, 4), nullable=True)
     notes: Mapped[str] = mapped_column(Text, nullable=True)
+    # BAST (Berita Acara Serah Terima) — status Serah Terima diset via BAST, bukan manual
+    bast_number: Mapped[str] = mapped_column(String(50), nullable=True)   # auto: BAST-000001
+    bast_date: Mapped[Date] = mapped_column(Date, nullable=True)
+    bast_user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )  # user yang melakukan serah terima
 
     project: Mapped["Project"] = relationship("Project", back_populates="units")
+    bast_user: Mapped["User"] = relationship("User", foreign_keys=[bast_user_id])
 
     def __repr__(self) -> str:
         return f"<Unit {self.unit_number} [{self.status}]>"

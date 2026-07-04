@@ -54,6 +54,10 @@ export const propertyService = {
   async deleteUnit(id: string): Promise<void> {
     await api.delete(`/property/units/${id}`)
   },
+  async createBast(id: string, payload: { bast_date?: string; notes?: string }): Promise<Unit> {
+    const { data } = await api.post<Unit>(`/property/units/${id}/bast`, payload)
+    return data
+  },
 
   // ── Siteplan ──
   async uploadSiteplan(projectId: string, file: File): Promise<Project> {

@@ -7,13 +7,18 @@ from fastapi.responses import Response
 from sqlalchemy import select, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from datetime import date
+
 from app.core.database import get_db
+from app.core.audit import record_audit
 from app.api.deps import get_current_context, AuthContext
-from app.models.property import Project, Unit
+from app.models.property import Project, Unit, UnitStatus
+from app.models.marketing import Client, ClientStatus
+from app.models.user import User
 from app.schemas.marketing import Paginated
 from app.schemas.property import (
     ProjectCreate, ProjectUpdate, ProjectResponse,
-    UnitCreate, UnitUpdate, UnitResponse, UnitPosition,
+    UnitCreate, UnitUpdate, UnitResponse, UnitPosition, BastRequest,
 )
 
 router = APIRouter()
@@ -212,6 +217,27 @@ async def save_unit_positions(
 
 
 # ═══════════════════════ UNITS ═══════════════════════
+async def _attach_unit_extras(db: AsyncSession, tenant_id, units: list[Unit]) -> None:
+    """Set atribut transien: buyer_name (pembeli aktif unit) & bast_user_name (petugas serah terima)."""
+    if not units:
+        return
+    ids = [u.id for u in units]
+    brows = (await db.execute(
+        select(Client.unit_id, Client.full_name).where(
+            Client.unit_id.in_(ids), Client.tenant_id == tenant_id,
+            Client.status != ClientStatus.INACTIVE, Client.is_deleted == False)  # noqa: E712
+    )).all()
+    buyer = {r[0]: r[1] for r in brows}
+    uids = list({u.bast_user_id for u in units if u.bast_user_id})
+    users = {}
+    if uids:
+        urows = (await db.execute(select(User.id, User.full_name).where(User.id.in_(uids)))).all()
+        users = {r[0]: r[1] for r in urows}
+    for u in units:
+        u.buyer_name = buyer.get(u.id)
+        u.bast_user_name = users.get(u.bast_user_id)
+
+
 @router.get("/units", response_model=Paginated[UnitResponse])
 async def list_units(
     ctx: AuthContext = Depends(get_current_context),
@@ -238,7 +264,9 @@ async def list_units(
         .order_by(Unit.block, Unit.unit_number)
         .offset((page - 1) * size).limit(size)
     )
-    return _paginate(result.scalars().all(), total or 0, page, size)
+    items = result.scalars().all()
+    await _attach_unit_extras(db, ctx.tenant_id, items)
+    return _paginate(items, total or 0, page, size)
 
 
 @router.post("/units", response_model=UnitResponse, status_code=status.HTTP_201_CREATED)
@@ -253,6 +281,7 @@ async def create_unit(
     db.add(unit)
     await db.flush()
     await db.refresh(unit)
+    await _attach_unit_extras(db, ctx.tenant_id, [unit])
     return unit
 
 
@@ -263,6 +292,7 @@ async def _get_unit(db: AsyncSession, tenant_id: uuid.UUID, unit_id: uuid.UUID) 
     unit = result.scalar_one_or_none()
     if unit is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Unit tidak ditemukan")
+    await _attach_unit_extras(db, tenant_id, [unit])
     return unit
 
 
@@ -287,6 +317,33 @@ async def update_unit(
         setattr(unit, field, value)
     await db.flush()
     await db.refresh(unit)
+    await _attach_unit_extras(db, ctx.tenant_id, [unit])
+    return unit
+
+
+@router.post("/units/{unit_id}/bast", response_model=UnitResponse)
+async def create_bast(
+    unit_id: uuid.UUID,
+    payload: BastRequest,
+    ctx: AuthContext = Depends(get_current_context),
+    db: AsyncSession = Depends(get_db),
+):
+    """Buat BAST (serah terima) → nomor otomatis, petugas = user login, status unit → Serah Terima."""
+    unit = await _get_unit(db, ctx.tenant_id, unit_id)
+    if unit.bast_number is None:
+        n = await db.scalar(select(func.count()).select_from(Unit).where(
+            Unit.tenant_id == ctx.tenant_id, Unit.bast_number.isnot(None)))
+        unit.bast_number = f"BAST-{(n or 0) + 1:06d}"
+    unit.bast_date = payload.bast_date or date.today()
+    unit.bast_user_id = ctx.user_id
+    unit.status = UnitStatus.HANDOVER
+    if payload.notes:
+        unit.notes = payload.notes
+    await db.flush()
+    await record_audit(db, ctx.tenant_id, ctx.user_id, "BAST", "units", unit_id,
+                       new_data={"bast_number": unit.bast_number, "date": str(unit.bast_date)})
+    await db.refresh(unit)
+    await _attach_unit_extras(db, ctx.tenant_id, [unit])
     return unit
 
 
