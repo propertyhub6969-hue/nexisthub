@@ -20,7 +20,7 @@ ERP multi-tenant untuk **developer properti** (rumah **subsidi + komersial**, ba
   - Container: `nexisthub_backend` (:8000, entrypoint jalankan `alembic upgrade` lalu uvicorn), `nexisthub_frontend` (nginx SPA + proxy `/api/`→backend, `client_max_body_size 12M`), `nexisthub_db` (Postgres, host :5434).
   - **Kode di-COPY ke image (bukan volume)** → WAJIB rebuild tiap perubahan.
 - **Lokasi**: `/opt/nexisthub` di VPS (IP 72.60.43.158, `vps.nadinata.org`). Disk 193GB (sisa ±91GB per 2026-07-03).
-- **Git**: remote SSH `git@github.com:propertyhub6969-hue/nexisthub.git`, push aktif via SSH deploy key. Alembic head saat ini: **`d1a2b3c4e5f6`** (±36 migrasi; terakhir: `audit_logs.client_id`). ⚠️ **HATI-HATI revision id**: pernah bentrok (id `e1f2a3b4c5d6` sudah dipakai `add_client_payment_type`) → backend crash-loop. Sebelum buat migrasi, cek `grep -rl <id> alembic/versions/`.
+- **Git**: remote SSH `git@github.com:propertyhub6969-hue/nexisthub.git`, push aktif via SSH deploy key. Alembic head saat ini: **`9f8e7d6c5b4a`** (±37 migrasi; terakhir: backfill `audit_logs.client_id` utk riwayat pembeli lama). ⚠️ **HATI-HATI revision id**: pernah bentrok (id `e1f2a3b4c5d6` sudah dipakai `add_client_payment_type`) → backend crash-loop. Sebelum buat migrasi, cek `grep -rl <id> alembic/versions/`.
 
 ### Perintah operasional
 ```bash
