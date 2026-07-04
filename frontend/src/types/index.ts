@@ -512,6 +512,51 @@ export interface CashflowReport {
   months: CashflowMonth[]
 }
 
+export interface SalesProject {
+  project_id: string
+  project_name: string
+  units_total: number
+  units_available: number
+  units_booked: number
+  units_sold: number
+  buyers: number
+  contract_value: number
+  cash_in: number
+  remaining: number
+}
+
+export interface SalesRecapReport {
+  projects: SalesProject[]
+  units_total: number
+  units_sold: number
+  buyers: number
+  contract_value: number
+  cash_in: number
+  remaining: number
+}
+
+export interface AgingClient {
+  client_id: string
+  full_name: string
+  project_name?: string | null
+  unit_label?: string | null
+  overdue_count: number
+  outstanding: number
+  max_days: number
+  bucket: string
+}
+
+export interface AgingReport {
+  clients: AgingClient[]
+  total_outstanding: number
+  bucket_1_30: number
+  bucket_31_60: number
+  bucket_61_90: number
+  bucket_90p: number
+  overdue_clients: number
+  overdue_schedules: number
+}
+
 // ── Pemberkasan (ringkasan lintas pembeli, read-only) ──────────────
 export interface FilingSummaryItem {
   client_id: string

@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react'
 import {
   Loader2, Landmark, TrendingDown, CheckCircle2, XCircle, FileStack,
-  Wallet, Users, Building2, PiggyBank, HandCoins,
+  Wallet, Users, Building2, PiggyBank, HandCoins, Home, AlertTriangle, Clock,
 } from 'lucide-react'
 import { reportingService } from '../services/reporting'
-import type { KprRejectionReport, CashflowReport } from '../types'
+import type { KprRejectionReport, CashflowReport, SalesRecapReport, AgingReport } from '../types'
 
 const fmtRp = (n?: number | null) =>
   n == null ? '—' : new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(Number(n))
@@ -184,9 +184,165 @@ function KprRejectionTab() {
   )
 }
 
+// ═══════════════════════ REKAP PENJUALAN ═══════════════════════
+function SalesRecapTab() {
+  const [rep, setRep] = useState<SalesRecapReport | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    reportingService.salesRecap().then(setRep).catch(() => setError('Gagal memuat rekap penjualan.')).finally(() => setLoading(false))
+  }, [])
+
+  if (loading) return <div className="card p-12 text-center text-slate-400"><Loader2 size={20} className="inline animate-spin" /></div>
+  if (error) return <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-2">{error}</div>
+  if (!rep) return null
+  if (rep.projects.length === 0) {
+    return (
+      <div className="card p-12 flex flex-col items-center justify-center text-center">
+        <Home size={40} className="text-slate-300 mb-4" />
+        <h3 className="text-base font-semibold text-slate-700 mb-1">Belum ada proyek</h3>
+        <p className="text-sm text-slate-400">Rekap akan muncul setelah ada proyek & unit.</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-5">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <StatCard icon={<Home size={15} />} label="Unit Terjual" value={`${rep.units_sold} / ${rep.units_total}`} hint="sold + serah terima" />
+        <StatCard icon={<Users size={15} />} label="Pembeli" value={String(rep.buyers)} accent="text-brand-600" />
+        <StatCard icon={<Building2 size={15} />} label="Nilai Kontrak" value={fmtRp(rep.contract_value)} />
+        <StatCard icon={<Wallet size={15} />} label="Kas Masuk" value={fmtRp(rep.cash_in)} hint={`sisa ${fmtRp(rep.remaining)}`} accent="text-emerald-600" />
+      </div>
+
+      <div className="card overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="bg-slate-50 border-b border-slate-200">
+            <tr>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Proyek</th>
+              <th className="px-4 py-3 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">Unit (Terjual/Total)</th>
+              <th className="px-4 py-3 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">Booking</th>
+              <th className="px-4 py-3 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">Tersedia</th>
+              <th className="px-4 py-3 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">Pembeli</th>
+              <th className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Nilai Kontrak</th>
+              <th className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Kas Masuk</th>
+              <th className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Sisa</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {rep.projects.map((p) => (
+              <tr key={p.project_id} className="hover:bg-slate-50 transition-colors">
+                <td className="px-4 py-3 font-medium text-slate-900">{p.project_name}</td>
+                <td className="px-4 py-3 text-center">
+                  <span className="font-semibold text-slate-900">{p.units_sold}</span>
+                  <span className="text-slate-400"> / {p.units_total}</span>
+                </td>
+                <td className="px-4 py-3 text-center text-amber-600">{p.units_booked || '—'}</td>
+                <td className="px-4 py-3 text-center text-slate-400">{p.units_available || '—'}</td>
+                <td className="px-4 py-3 text-center text-brand-600">{p.buyers || '—'}</td>
+                <td className="px-4 py-3 text-right text-slate-600">{fmtRp(p.contract_value)}</td>
+                <td className="px-4 py-3 text-right text-emerald-600">{fmtRp(p.cash_in)}</td>
+                <td className="px-4 py-3 text-right font-medium text-slate-900">{fmtRp(p.remaining)}</td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot className="bg-slate-50 border-t border-slate-200 font-semibold text-slate-900">
+            <tr>
+              <td className="px-4 py-3">Total</td>
+              <td className="px-4 py-3 text-center">{rep.units_sold} / {rep.units_total}</td>
+              <td className="px-4 py-3" colSpan={2}></td>
+              <td className="px-4 py-3 text-center">{rep.buyers}</td>
+              <td className="px-4 py-3 text-right">{fmtRp(rep.contract_value)}</td>
+              <td className="px-4 py-3 text-right">{fmtRp(rep.cash_in)}</td>
+              <td className="px-4 py-3 text-right">{fmtRp(rep.remaining)}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+// ═══════════════════════ TUNGGAKAN / AGING PIUTANG ═══════════════════════
+const bucketStyle: Record<string, string> = {
+  '1-30': 'bg-amber-100 text-amber-700',
+  '31-60': 'bg-orange-100 text-orange-700',
+  '61-90': 'bg-red-100 text-red-700',
+  '90+': 'bg-red-200 text-red-800',
+}
+
+function AgingTab() {
+  const [rep, setRep] = useState<AgingReport | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    reportingService.aging().then(setRep).catch(() => setError('Gagal memuat tunggakan.')).finally(() => setLoading(false))
+  }, [])
+
+  if (loading) return <div className="card p-12 text-center text-slate-400"><Loader2 size={20} className="inline animate-spin" /></div>
+  if (error) return <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-2">{error}</div>
+  if (!rep) return null
+  if (rep.overdue_schedules === 0) {
+    return (
+      <div className="card p-12 flex flex-col items-center justify-center text-center">
+        <CheckCircle2 size={40} className="text-emerald-300 mb-4" />
+        <h3 className="text-base font-semibold text-slate-700 mb-1">Tidak ada tunggakan</h3>
+        <p className="text-sm text-slate-400">Semua termin yang jatuh tempo sudah lunas.</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-5">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+        <StatCard icon={<AlertTriangle size={15} />} label="Total Tunggakan" value={fmtRp(rep.total_outstanding)} hint={`${rep.overdue_clients} pembeli · ${rep.overdue_schedules} termin`} accent="text-red-600" />
+        <StatCard icon={<Clock size={15} />} label="1–30 hari" value={fmtRp(rep.bucket_1_30)} accent="text-amber-600" />
+        <StatCard icon={<Clock size={15} />} label="31–60 hari" value={fmtRp(rep.bucket_31_60)} accent="text-orange-600" />
+        <StatCard icon={<Clock size={15} />} label="61–90 hari" value={fmtRp(rep.bucket_61_90)} accent="text-red-600" />
+        <StatCard icon={<Clock size={15} />} label="&gt; 90 hari" value={fmtRp(rep.bucket_90p)} accent="text-red-700" />
+      </div>
+
+      <div className="card overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="bg-slate-50 border-b border-slate-200">
+            <tr>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Pembeli</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Proyek / Unit</th>
+              <th className="px-4 py-3 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">Termin Telat</th>
+              <th className="px-4 py-3 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">Telat Terlama</th>
+              <th className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Tunggakan</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {rep.clients.map((c) => (
+              <tr key={c.client_id} className="hover:bg-slate-50 transition-colors">
+                <td className="px-4 py-3 font-medium text-slate-900">{c.full_name}</td>
+                <td className="px-4 py-3 text-slate-500">
+                  {c.project_name ?? '—'}{c.unit_label ? <span className="text-slate-400"> · {c.unit_label}</span> : null}
+                </td>
+                <td className="px-4 py-3 text-center text-slate-600">{c.overdue_count}</td>
+                <td className="px-4 py-3 text-center">
+                  <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${bucketStyle[c.bucket] ?? 'bg-slate-100 text-slate-600'}`}>
+                    {c.max_days} hari
+                  </span>
+                </td>
+                <td className="px-4 py-3 text-right font-semibold text-red-600">{fmtRp(c.outstanding)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
 // ═══════════════════════ PAGE ═══════════════════════
 const TABS = [
   { key: 'cashflow', label: 'Arus Kas', desc: 'Kas masuk dari pembeli vs bank, plus piutang & retensi.' },
+  { key: 'sales', label: 'Rekap Penjualan', desc: 'Penjualan & kas masuk per proyek, status unit.' },
+  { key: 'aging', label: 'Tunggakan', desc: 'Termin lewat jatuh tempo, dikelompokkan umur & per pembeli.' },
   { key: 'kpr', label: 'Rejection-Rate KPR', desc: 'Persentase pengajuan KPR ditolak per bank penyalur.' },
 ] as const
 
@@ -215,7 +371,10 @@ export default function Reports() {
         ))}
       </div>
 
-      {tab === 'cashflow' ? <CashflowTab /> : <KprRejectionTab />}
+      {tab === 'cashflow' && <CashflowTab />}
+      {tab === 'sales' && <SalesRecapTab />}
+      {tab === 'aging' && <AgingTab />}
+      {tab === 'kpr' && <KprRejectionTab />}
     </div>
   )
 }
