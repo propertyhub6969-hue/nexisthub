@@ -62,7 +62,7 @@ docker run --rm -v "$PWD:/app" -w /app nexisthub-backend alembic heads
 - **Histori jangan hilang**: transaksional soft-delete + audit. KPR ditolak = TANDAI (bukan hapus) demi analitik.
 
 ## 5. Ditunda / Roadmap Berikutnya
-- **Laporan** (menu Reports masih ComingSoon): rekap penjualan, arus kas (pembeli vs bank + retensi), tunggakan, progres proyek, **rejection rate KPR per bank**. ← kandidat berikutnya, data sudah kaya.
+- **Laporan** (menu Reports): **rejection-rate KPR per bank SUDAH JADI & deployed** (2026-07-04, `GET /api/v1/reporting/kpr-rejection` → `app/api/v1/endpoints/reporting.py`; halaman `frontend/src/pages/Reports.tsx`; kartu ringkasan + tabel per bank + bar rate; "disetujui"=tahap SP3K/Akad/Pencairan). **Sisa laporan berikutnya**: rekap penjualan, arus kas (pembeli vs bank + retensi), tunggakan, progres proyek. Data sudah kaya.
 - **Agen & Komisi**: DITUNDA sampai user survey ke developer (skema komisi belum pasti).
 - **Optimasi skala (DITUNDA — fokus business process dulu)**: paginasi server-side + UI (SEMUA list ambil `size:500` render semua baris, TANPA paginasi — **bug laten: record ke-501+ per tenant tak tampil**); dropdown lazy (Clients/Leads ambil semua unit tiap buka); indeks DB; React Query caching. Ambang mulai: ±300+ record/modul per tenant.
 - **MinIO (file storage)**: pindah blob→object storage saat total file mendekati beberapa GB / backup DB berat. MinIO SUDAH ada di VPS (milik app lain, `s3-minio.nexisthub.id`); isolasi per `{tenant_id}/...`. Self-hosted (data tetap di VPS).
