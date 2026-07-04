@@ -20,7 +20,7 @@ ERP multi-tenant untuk **developer properti** (rumah **subsidi + komersial**, ba
   - Container: `nexisthub_backend` (:8000, entrypoint jalankan `alembic upgrade` lalu uvicorn), `nexisthub_frontend` (nginx SPA + proxy `/api/`→backend, `client_max_body_size 12M`), `nexisthub_db` (Postgres, host :5434).
   - **Kode di-COPY ke image (bukan volume)** → WAJIB rebuild tiap perubahan.
 - **Lokasi**: `/opt/nexisthub` di VPS (IP 72.60.43.158, `vps.nadinata.org`). Disk 193GB (sisa ±91GB per 2026-07-03).
-- **Git**: remote SSH `git@github.com:propertyhub6969-hue/nexisthub.git`, push aktif via SSH deploy key. Alembic head saat ini: **`c9d0e1f2a3b4`** (±34 migrasi).
+- **Git**: remote SSH `git@github.com:propertyhub6969-hue/nexisthub.git`, push aktif via SSH deploy key. Alembic head saat ini: **`d0e1f2a3b4c5`** (±35 migrasi; terakhir: `documents.address` utk alamat PBB).
 
 ### Perintah operasional
 ```bash
@@ -45,7 +45,7 @@ docker run --rm -v "$PWD:/app" -w /app nexisthub-backend alembic heads
 | **Properti** | Proyek→Unit; **LT read-only (dari Dokumen Legalitas)**; **Generate Unit Massal** (tombol di halaman unit → modal blok/nomor mulai/jumlah + default tipe/harga/LT/LB → `POST /property/units/bulk-generate`, idempotent skip nomor duplikat per blok, cap 500, auto zero-pad); **BAST/serah terima** (tombol per unit → nomor auto BAST-000001 + tgl + petugas login → status Serah Terima; cetak dokumen A4). **Siteplan interaktif** (upload denah + marker unit per status, zoom/pan, auto-tata grid, caching gambar) |
 | **Pembayaran & Cicilan** | per Pembeli: termin + uang masuk; **jenis pembayaran** (DP/Booking Fee/Cicilan/Realisasi KPR/Pelunasan), **no kwitansi otomatis** (KW-000001), **upload bukti transfer** (muncul saat metode Transfer), **cetak kuitansi + QR** (nama/unit/jumlah/tgl, landscape, terbilang). Ringkasan **PISAH 2 angka**: Sisa Kewajiban Pembeli vs **Retensi menunggu pencairan bank** |
 | **Pemberkasan** | menu sendiri (read-only): ringkasan dokumen (X/Y terbit) + pajak (X/Y lunas) + tahap KPR lintas SEMUA pembeli |
-| **Dokumen & Legalitas** | **Berkas Pembeli** (KTP/KK/NPWP, per pembeli) · **Dokumen Legalitas unit** (SHM/SLF/IMB-PBG/PBB, menu Properti→Dokumen Legalitas, per UNIT, +field LT→sinkron ke unit) · read-only auto-tampil di halaman pembeli · **Entry Cepat** (tombol → 1 form checklist multi-baris: `POST /legal/documents/bulk` upsert per jenis, isi status/nomor/tgl/LT + lampiran file per baris, simpan sekali) |
+| **Dokumen & Legalitas** | **Berkas Pembeli** (KTP/KK/NPWP, per pembeli) · **Dokumen Legalitas unit** (SHM/SLF/IMB-PBG/PBB, menu Properti→Dokumen Legalitas, per UNIT, +field LT→sinkron ke unit) · read-only auto-tampil di halaman pembeli · **Entry Cepat** (tombol → 1 form checklist multi-baris: `POST /legal/documents/bulk` upsert per jenis, isi status/nomor/tgl/LT + lampiran file per baris, simpan sekali) · **PBB punya field Alamat** (`documents.address`, muncul khusus jenis PBB di form satuan & Entry Cepat) |
 | **Pajak & Notaris** | PPh/BPHTB/PPN (ID Billing+NTPN+status incl DTP/bebas, **+upload bukti per baris**) + PPJB/AJB (nomor+file) + master Notaris + rincian biaya notaris |
 | **KPR** | 5 tahap + master Bank; field bertahap; **Pencairan Bertahap** (multi + total cair + **retensi**=plafon−cair; tiap pencairan→uang masuk Bank, read-only di menu Pembayaran); **KPR Ditolak** (alasan+tgl, cascade opsional bebaskan unit/batal pembeli, ajukan ulang bank lain, riwayat pengajuan, data dipertahankan) |
 | **Master Data** (dulu "Legal") | master Notaris & Bank |
