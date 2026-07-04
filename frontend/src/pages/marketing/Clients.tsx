@@ -23,7 +23,7 @@ const ALL_COLUMNS: ColDef[] = [
   { key: 'piutang', label: 'Sisa Piutang', toggleable: true },
   { key: 'cara_beli', label: 'Cara Beli', toggleable: true },
   { key: 'kpr_stage', label: 'Status Berkas KPR', toggleable: true },
-  { key: 'status', label: 'Status', toggleable: false },
+  { key: 'status', label: 'Status Bayar', toggleable: false },
   { key: 'aksi', label: '', toggleable: false },
 ]
 const DEFAULT_VISIBLE_COLS: Record<ToggleColKey, boolean> = {
@@ -206,8 +206,12 @@ export default function Clients() {
       case 'kpr_stage':
         return c.kpr_stage ? <Badge label={kprStageLabel[c.kpr_stage]} variant="blue" /> : <span className="text-slate-400">—</span>
       case 'status': {
-        const s = statusConfig[c.status]
-        return s ? <Badge label={s.label} variant={s.variant} /> : null
+        // Status pembayaran: Lunas bila sisa piutang habis; Batal bila pembeli nonaktif
+        if (c.status === 'inactive') return <Badge label="Batal" variant="gray" />
+        if (c.contract_value == null) return <span className="text-slate-400">—</span>
+        return (c.remaining ?? 0) <= 0
+          ? <Badge label="Lunas" variant="green" />
+          : <Badge label="Belum Lunas" variant="yellow" />
       }
       case 'aksi':
         return (
