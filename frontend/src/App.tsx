@@ -20,7 +20,7 @@ import LegalDocuments from './pages/property/LegalDocuments'
 import Procurement from './pages/procurement/Procurement'
 import Construction from './pages/construction/Construction'
 import Team from './pages/settings/Team'
-import ComingSoon from './pages/ComingSoon'
+import Reports from './pages/Reports'
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   return authService.isAuthenticated() ? <>{children}</> : <Navigate to="/login" replace />
@@ -62,7 +62,7 @@ export default function App() {
           <Route path="/legal"               element={<Notaries />} />
           <Route path="/pemberkasan"         element={<Pemberkasan />} />
           <Route path="/settings/team"       element={<Team />} />
-          <Route path="/reports"             element={<ComingSoon name="Laporan" />} />
+          <Route path="/reports"             element={<Reports />} />
         </Route>
 
         {/* Fallback */}

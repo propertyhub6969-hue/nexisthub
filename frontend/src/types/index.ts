@@ -474,6 +474,26 @@ export interface DocumentCreate {
 // ── KPR ───────────────────────────────────────────────────────────
 export type KprStage = 'collect_berkas' | 'berkas_masuk_bank' | 'sp3k' | 'akad_kredit' | 'pencairan'
 
+// ── Laporan: rejection-rate KPR per bank ──────────────────────────
+export interface KprRejectionBank {
+  bank_id: string | null
+  bank_name: string
+  total: number
+  rejected: number
+  approved: number
+  in_process: number
+  rejection_rate: number
+}
+
+export interface KprRejectionReport {
+  banks: KprRejectionBank[]
+  total: number
+  rejected: number
+  approved: number
+  in_process: number
+  rejection_rate: number
+}
+
 // ── Pemberkasan (ringkasan lintas pembeli, read-only) ──────────────
 export interface FilingSummaryItem {
   client_id: string

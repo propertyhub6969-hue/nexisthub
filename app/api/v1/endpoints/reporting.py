@@ -1,9 +1,12 @@
+import uuid
 from datetime import date
 from decimal import Decimal
+from typing import Optional
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy import select, func
+from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -11,8 +14,12 @@ from app.api.deps import get_current_context, AuthContext
 from app.models.marketing import Lead, Prospect, Client, ProspectStatus, ClientStatus
 from app.models.property import Unit, UnitStatus
 from app.models.payment import Payment, PaymentSchedule, ScheduleStatus
+from app.models.kpr import KprApplication, KprStage
 
 router = APIRouter()
+
+# Tahap yang menandakan pengajuan sudah DISETUJUI bank (SP3K = surat persetujuan kredit ke atas).
+APPROVED_STAGES = (KprStage.SP3K, KprStage.AKAD_KREDIT, KprStage.PENCAIRAN)
 
 
 class DashboardStats(BaseModel):
@@ -76,4 +83,74 @@ async def get_dashboard(
         units_total=units_total, units_available=units_available, units_booked=units_booked, units_sold=units_sold,
         payments_this_month=payments_this_month, total_contract=total_contract, total_paid=total_paid,
         outstanding=total_contract - total_paid, overdue_count=overdue_count,
+    )
+
+
+# ═══════════════════════ LAPORAN: REJECTION-RATE KPR PER BANK ═══════════════════════
+class KprRejectionBank(BaseModel):
+    bank_id: Optional[uuid.UUID]
+    bank_name: str
+    total: int          # total pengajuan (semua tahap) ke bank ini
+    rejected: int       # jumlah ditolak
+    approved: int       # sudah disetujui (SP3K/Akad/Pencairan), belum ditolak
+    in_process: int     # masih proses, belum ada keputusan
+    rejection_rate: float   # rejected / total * 100 (dibulatkan 1 desimal)
+
+
+class KprRejectionReport(BaseModel):
+    banks: list[KprRejectionBank]
+    total: int
+    rejected: int
+    approved: int
+    in_process: int
+    rejection_rate: float
+
+
+@router.get("/kpr-rejection", response_model=KprRejectionReport)
+async def kpr_rejection(
+    ctx: AuthContext = Depends(get_current_context),
+    db: AsyncSession = Depends(get_db),
+):
+    """Rejection-rate pengajuan KPR per bank — bantu developer pilih bank penyalur yang paling tinggi approval-nya."""
+    t = ctx.tenant_id
+    rows = (await db.execute(
+        select(KprApplication).options(selectinload(KprApplication.bank))
+        .where(KprApplication.tenant_id == t, KprApplication.is_deleted == False)  # noqa: E712
+    )).scalars().all()
+
+    # agregasi per bank
+    buckets: dict[Optional[uuid.UUID], dict] = {}
+    for k in rows:
+        key = k.bank_id
+        b = buckets.setdefault(key, {
+            "bank_id": key,
+            "bank_name": (k.bank.name if k.bank else "(Tanpa bank)"),
+            "total": 0, "rejected": 0, "approved": 0, "in_process": 0,
+        })
+        b["total"] += 1
+        if k.rejected_date is not None:
+            b["rejected"] += 1
+        elif k.stage in APPROVED_STAGES:
+            b["approved"] += 1
+        else:
+            b["in_process"] += 1
+
+    def rate(rejected: int, total: int) -> float:
+        return round(rejected / total * 100, 1) if total else 0.0
+
+    banks = [
+        KprRejectionBank(**b, rejection_rate=rate(b["rejected"], b["total"]))
+        for b in buckets.values()
+    ]
+    # urutkan: rejection-rate tertinggi dulu, lalu terbanyak pengajuan; bank tanpa nama di akhir
+    banks.sort(key=lambda x: (x.bank_id is None, -x.rejection_rate, -x.total, x.bank_name.lower()))
+
+    total = sum(b.total for b in banks)
+    rejected = sum(b.rejected for b in banks)
+    approved = sum(b.approved for b in banks)
+    in_process = sum(b.in_process for b in banks)
+
+    return KprRejectionReport(
+        banks=banks, total=total, rejected=rejected, approved=approved, in_process=in_process,
+        rejection_rate=rate(rejected, total),
     )
