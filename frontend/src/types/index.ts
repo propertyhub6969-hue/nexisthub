@@ -494,6 +494,24 @@ export interface KprRejectionReport {
   rejection_rate: number
 }
 
+export interface CashflowMonth {
+  month: string
+  from_buyer: number
+  from_bank: number
+  total: number
+}
+
+export interface CashflowReport {
+  total_contract: number
+  from_buyer: number
+  from_bank: number
+  total_in: number
+  kpr_plafond_total: number
+  buyer_remaining: number
+  retention_remaining: number
+  months: CashflowMonth[]
+}
+
 // ── Pemberkasan (ringkasan lintas pembeli, read-only) ──────────────
 export interface FilingSummaryItem {
   client_id: string
