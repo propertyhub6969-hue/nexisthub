@@ -141,6 +141,8 @@ async def create_schedule(
     sch = PaymentSchedule(tenant_id=ctx.tenant_id, **payload.model_dump())
     db.add(sch)
     await db.flush()
+    await record_audit(db, ctx.tenant_id, ctx.user_id, "CREATE", "payment_schedules", sch.id,
+                       new_data={"label": sch.label, "amount": str(sch.amount)}, client_id=sch.client_id)
     await db.refresh(sch)
     sch.paid = Decimal(0)                       # termin baru: belum ada pembayaran
     sch.remaining = Decimal(sch.amount)
@@ -165,10 +167,13 @@ async def update_schedule(
     db: AsyncSession = Depends(get_db),
 ):
     sch = await _get_schedule(db, ctx.tenant_id, schedule_id)
-    for f, v in payload.model_dump(exclude_unset=True).items():
+    data = payload.model_dump(exclude_unset=True)
+    for f, v in data.items():
         setattr(sch, f, v)
     await db.flush()
     await _recompute_schedule(db, ctx.tenant_id, schedule_id)   # nominal berubah → status Lunas/Belum ikut menyesuaikan
+    await record_audit(db, ctx.tenant_id, ctx.user_id, "UPDATE", "payment_schedules", schedule_id,
+                       new_data={"label": sch.label, "amount": str(sch.amount)}, client_id=sch.client_id)
     await db.refresh(sch)
     paid = Decimal(await db.scalar(
         select(func.coalesce(func.sum(Payment.amount), 0)).where(
@@ -189,7 +194,7 @@ async def delete_schedule(
     sch.is_deleted = True
     sch.deleted_at = datetime.utcnow()
     await record_audit(db, ctx.tenant_id, ctx.user_id, "DELETE", "payment_schedules", schedule_id,
-                       old_data={"label": sch.label, "amount": str(sch.amount)})
+                       old_data={"label": sch.label, "amount": str(sch.amount)}, client_id=sch.client_id)
 
 
 # ═══════════════════════ PAYMENTS (Uang Masuk) ═══════════════════════
@@ -229,7 +234,8 @@ async def create_payment(
     db.add(pay)
     await db.flush()
     await _recompute_schedule(db, ctx.tenant_id, pay.schedule_id)
-    await record_audit(db, ctx.tenant_id, ctx.user_id, "CREATE", "payments", pay.id, new_data=data)
+    await record_audit(db, ctx.tenant_id, ctx.user_id, "CREATE", "payments", pay.id,
+                       new_data=data, client_id=pay.client_id)
     await db.refresh(pay)
     return pay
 
@@ -255,12 +261,15 @@ async def update_payment(
     if pay.kpr_id is not None:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Pencairan KPR dikelola di modul KPR, tidak bisa diubah di sini")
     old_schedule = pay.schedule_id
-    for f, v in payload.model_dump(exclude_unset=True).items():
+    data = payload.model_dump(exclude_unset=True)
+    for f, v in data.items():
         setattr(pay, f, v)
     await db.flush()
     await _recompute_schedule(db, ctx.tenant_id, old_schedule)
     if pay.schedule_id != old_schedule:
         await _recompute_schedule(db, ctx.tenant_id, pay.schedule_id)
+    await record_audit(db, ctx.tenant_id, ctx.user_id, "UPDATE", "payments", payment_id,
+                       new_data={"amount": str(pay.amount), "source": pay.source.value}, client_id=pay.client_id)
     await db.refresh(pay)
     return pay
 
@@ -283,7 +292,7 @@ async def upload_payment_file(
     pay.file_size = len(data)
     await db.flush()
     await record_audit(db, ctx.tenant_id, ctx.user_id, "UPLOAD", "payments", payment_id,
-                       new_data={"file_name": file.filename, "size": len(data)})
+                       new_data={"file_name": file.filename, "size": len(data)}, client_id=pay.client_id)
     await db.refresh(pay)
     return pay
 
@@ -329,4 +338,4 @@ async def delete_payment(
     await db.flush()
     await _recompute_schedule(db, ctx.tenant_id, sched)
     await record_audit(db, ctx.tenant_id, ctx.user_id, "DELETE", "payments", payment_id,
-                       old_data={"amount": str(pay.amount), "source": pay.source.value})
+                       old_data={"amount": str(pay.amount), "source": pay.source.value}, client_id=pay.client_id)

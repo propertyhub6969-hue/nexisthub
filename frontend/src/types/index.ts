@@ -913,6 +913,8 @@ export interface AuditEntry {
   action: string
   resource: string
   resource_id?: string
+  old_data?: string
+  new_data?: string
   user_name?: string
   created_at: string
 }

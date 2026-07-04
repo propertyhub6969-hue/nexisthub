@@ -20,6 +20,8 @@ class AuditResponse(BaseModel):
     action: str
     resource: str
     resource_id: Optional[str] = None
+    old_data: Optional[str] = None
+    new_data: Optional[str] = None
     user_name: Optional[str] = None
     created_at: datetime
 
@@ -33,14 +35,18 @@ async def list_audit(
     db: AsyncSession = Depends(get_db),
     resource: Optional[str] = Query(None),
     resource_id: Optional[str] = Query(None),
+    client_id: Optional[uuid.UUID] = Query(None),
     limit: int = Query(50, ge=1, le=200),
 ):
-    """Riwayat perubahan data (audit trail), terbaru dulu."""
+    """Riwayat perubahan data (audit trail), terbaru dulu.
+    `client_id` mengambil SEMUA riwayat terkait pembeli (data pembeli + pembayaran + termin)."""
     conditions = [AuditLog.tenant_id == ctx.tenant_id]
     if resource:
         conditions.append(AuditLog.resource == resource)
     if resource_id:
         conditions.append(AuditLog.resource_id == str(resource_id))
+    if client_id:
+        conditions.append(AuditLog.client_id == client_id)
 
     result = await db.execute(
         select(AuditLog).options(selectinload(AuditLog.user))

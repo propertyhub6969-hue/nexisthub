@@ -261,7 +261,7 @@ async def convert_prospect(
     prospect.status = ProspectStatus.WON
     await db.flush()
     await record_audit(db, ctx.tenant_id, ctx.user_id, "CREATE", "clients", client.id,
-                       new_data={"from_prospect": str(prospect_id), "full_name": client.full_name})
+                       new_data={"from_prospect": str(prospect_id), "full_name": client.full_name}, client_id=client.id)
     return await _get_client(db, ctx.tenant_id, client.id)
 
 
@@ -344,7 +344,7 @@ async def create_client(
     # sinkronkan status unit yang dipilih
     if client.unit_id:
         await _set_unit_status(db, ctx.tenant_id, client.unit_id, _unit_status_for_client(client))
-    await record_audit(db, ctx.tenant_id, ctx.user_id, "CREATE", "clients", client.id, new_data=payload)
+    await record_audit(db, ctx.tenant_id, ctx.user_id, "CREATE", "clients", client.id, new_data=payload, client_id=client.id)
     return await _get_client(db, ctx.tenant_id, client.id)
 
 
@@ -401,7 +401,7 @@ async def update_client(
         await _set_unit_status(db, ctx.tenant_id, old_unit_id, UnitStatus.AVAILABLE)
     if client.unit_id:
         await _set_unit_status(db, ctx.tenant_id, client.unit_id, _unit_status_for_client(client))
-    await record_audit(db, ctx.tenant_id, ctx.user_id, "UPDATE", "clients", client_id, new_data=data)
+    await record_audit(db, ctx.tenant_id, ctx.user_id, "UPDATE", "clients", client_id, new_data=data, client_id=client_id)
     return await _get_client(db, ctx.tenant_id, client_id)
 
 
@@ -416,7 +416,7 @@ async def _upload_client_file(db, ctx, client_id, file, field_prefix: str, resou
     setattr(client, f"{field_prefix}_file_size", len(data))
     await db.flush()
     await record_audit(db, ctx.tenant_id, ctx.user_id, "UPLOAD", "clients", client_id,
-                       new_data={f"{resource_label}_file_name": file.filename, "size": len(data)})
+                       new_data={f"{resource_label}_file_name": file.filename, "size": len(data)}, client_id=client_id)
     return await _get_client(db, ctx.tenant_id, client_id)
 
 
@@ -484,4 +484,4 @@ async def delete_client(
     # bebaskan unit-nya kembali
     await _set_unit_status(db, ctx.tenant_id, unit_id, UnitStatus.AVAILABLE)
     await record_audit(db, ctx.tenant_id, ctx.user_id, "DELETE", "clients", client_id,
-                       old_data={"full_name": client.full_name})
+                       old_data={"full_name": client.full_name}, client_id=client_id)

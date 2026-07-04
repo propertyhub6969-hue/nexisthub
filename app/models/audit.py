@@ -20,6 +20,8 @@ class AuditLog(BaseModel):
     action: Mapped[str] = mapped_column(String(50), nullable=False)     # CREATE, UPDATE, DELETE
     resource: Mapped[str] = mapped_column(String(100), nullable=False)  # leads, clients, PO, dll
     resource_id: Mapped[str] = mapped_column(String(100), nullable=True)
+    # pengelompokan riwayat per PEMBELI lintas resource (payments/payment_schedules/clients menempel ke pembeli)
+    client_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
     old_data: Mapped[str] = mapped_column(Text, nullable=True)          # JSON sebelum
     new_data: Mapped[str] = mapped_column(Text, nullable=True)          # JSON sesudah
     ip_address: Mapped[str] = mapped_column(String(50), nullable=True)

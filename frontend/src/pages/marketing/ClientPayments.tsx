@@ -17,7 +17,26 @@ import type {
 const actionLabel: Record<string, { label: string; variant: 'green' | 'blue' | 'red' }> = {
   CREATE: { label: 'Dibuat', variant: 'green' },
   UPDATE: { label: 'Diubah', variant: 'blue' },
+  UPLOAD: { label: 'Upload', variant: 'blue' },
   DELETE: { label: 'Dihapus', variant: 'red' },
+}
+const resourceLabel: Record<string, string> = {
+  clients: 'Data pembeli',
+  payments: 'Pembayaran',
+  payment_schedules: 'Termin',
+}
+// ringkas detail audit (nominal) dari old_data/new_data JSON
+function auditDetail(a: AuditEntry): string {
+  const raw = a.new_data || a.old_data
+  if (!raw) return ''
+  try {
+    const d = JSON.parse(raw) as Record<string, unknown>
+    if (d.amount != null) return ` — ${fmt(Number(d.amount))}`
+    if (d.label) return ` — ${String(d.label)}`
+    if (d.full_name) return ` — ${String(d.full_name)}`
+    if (d.file_name) return ` — ${String(d.file_name)}`
+  } catch { /* abaikan */ }
+  return ''
 }
 
 const fmt = (n?: number) =>
@@ -70,7 +89,7 @@ export default function ClientPayments() {
         paymentService.listPayments(clientId),
       ])
       setClient(cl); setSummary(sm); setSchedules(sc); setPayments(pm)
-      auditService.list({ resource: 'clients', resource_id: clientId, limit: 30 }).then(setAudit).catch(() => {})
+      auditService.list({ client_id: clientId, limit: 50 }).then(setAudit).catch(() => {})
       if (cl.unit_id) {
         const u = await propertyService.listUnits({ project_id: cl.project_id, size: 500 })
         setUnit(u.items.find((x) => x.id === cl.unit_id) ?? null)
@@ -293,6 +312,7 @@ export default function ClientPayments() {
       <div className="card overflow-hidden">
         <div className="px-4 py-3 border-b border-slate-100">
           <h2 className="text-sm font-semibold text-slate-900 flex items-center gap-2"><History size={15} /> Riwayat Data Pembeli</h2>
+          <p className="text-xs text-slate-400 mt-0.5">Termasuk perubahan pembayaran & termin. Data yang dihapus diarsipkan (tidak benar-benar hilang) dan tercatat di sini.</p>
         </div>
         {audit.length === 0 ? (
           <p className="px-4 py-6 text-center text-slate-400 text-sm">Belum ada riwayat.</p>
@@ -303,7 +323,10 @@ export default function ClientPayments() {
               return (
                 <li key={a.id} className="px-4 py-2.5 flex items-center gap-3 text-sm">
                   <Badge label={act.label} variant={act.variant} />
-                  <span className="text-slate-600">oleh {a.user_name ?? '—'}</span>
+                  <span className="text-slate-700">
+                    {resourceLabel[a.resource] ?? a.resource}<span className="text-slate-500">{auditDetail(a)}</span>
+                  </span>
+                  <span className="text-slate-400 text-xs">oleh {a.user_name ?? '—'}</span>
                   <span className="ml-auto text-xs text-slate-400">{new Date(a.created_at).toLocaleString('id-ID')}</span>
                 </li>
               )
