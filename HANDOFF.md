@@ -20,7 +20,7 @@ ERP multi-tenant untuk **developer properti** (rumah **subsidi + komersial**, ba
   - Container: `nexisthub_backend` (:8000, entrypoint jalankan `alembic upgrade` lalu uvicorn), `nexisthub_frontend` (nginx SPA + proxy `/api/`→backend, `client_max_body_size 12M`), `nexisthub_db` (Postgres, host :5434).
   - **Kode di-COPY ke image (bukan volume)** → WAJIB rebuild tiap perubahan.
 - **Lokasi**: `/opt/nexisthub` di VPS (IP 72.60.43.158, `vps.nadinata.org`). Disk 193GB (sisa ±91GB per 2026-07-03).
-- **Git**: remote SSH `git@github.com:propertyhub6969-hue/nexisthub.git`, push aktif via SSH deploy key. Alembic head saat ini: **`d0e1f2a3b4c5`** (±35 migrasi; terakhir: `documents.address` utk alamat PBB).
+- **Git**: remote SSH `git@github.com:propertyhub6969-hue/nexisthub.git`, push aktif via SSH deploy key. Alembic head saat ini: **`d1a2b3c4e5f6`** (±36 migrasi; terakhir: `audit_logs.client_id`). ⚠️ **HATI-HATI revision id**: pernah bentrok (id `e1f2a3b4c5d6` sudah dipakai `add_client_payment_type`) → backend crash-loop. Sebelum buat migrasi, cek `grep -rl <id> alembic/versions/`.
 
 ### Perintah operasional
 ```bash
@@ -50,7 +50,7 @@ docker run --rm -v "$PWD:/app" -w /app nexisthub-backend alembic heads
 | **KPR** | 5 tahap + master Bank; field bertahap; **Pencairan Bertahap** (multi + total cair + **retensi**=plafon−cair; tiap pencairan→uang masuk Bank, read-only di menu Pembayaran); **KPR Ditolak** (alasan+tgl, cascade opsional bebaskan unit/batal pembeli, ajukan ulang bank lain, riwayat pengajuan, data dipertahankan) |
 | **Master Data** (dulu "Legal") | master Notaris & Bank |
 | **Procurement / Stok / Biaya / RAB / Konstruksi / Borongan** | (lengkap dari sesi sebelumnya — vendor/PO, stok+distribusi HPP rata², rollup biaya unit/umum, RAB+kebocoran, progres konstruksi, opname borongan) |
-| **Audit + Soft-delete** | catat create/update/delete/BAST/REJECT + siapa/kapan; data penting diarsip (tak hilang) |
+| **Audit + Soft-delete** | catat create/update/delete/BAST/REJECT + siapa/kapan; data penting diarsip (tak hilang). Audit punya `client_id` → panel **"Riwayat Data Pembeli"** di halaman Pembayaran menampilkan SEMUA aktivitas pembeli (data pembeli + pembayaran + termin, incl. hapus) dengan nominal. Nomor kwitansi (KW-xxxxxx) sengaja **tak dipakai ulang** walau ada yang dihapus (hitung termasuk terhapus) |
 
 ## 4. Keputusan Kunci (arsitektur & bisnis)
 - **Alur (b)**: PEMBELI = pusat transaksi. Pembayaran/pajak/dokumen/KPR/BAST menempel ke Pembeli/Unit.
