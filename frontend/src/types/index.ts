@@ -488,6 +488,17 @@ export interface DocumentCreate {
   land_area?: number
   notes?: string
 }
+export interface DocumentBulkItem {
+  doc_type: string
+  name?: string
+  status?: DocStatus
+  doc_date?: string
+  land_area?: number
+}
+export interface DocumentBulkCreate {
+  unit_id: string
+  items: DocumentBulkItem[]
+}
 
 // ── KPR ───────────────────────────────────────────────────────────
 export type KprStage = 'collect_berkas' | 'berkas_masuk_bank' | 'sp3k' | 'akad_kredit' | 'pencairan'

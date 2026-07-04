@@ -6,9 +6,12 @@ interface ModalProps {
   onClose: () => void
   title: string
   children: ReactNode
+  size?: 'md' | 'lg'
 }
 
-export default function Modal({ open, onClose, title, children }: ModalProps) {
+const sizeClass = { md: 'max-w-lg', lg: 'max-w-2xl' }
+
+export default function Modal({ open, onClose, title, children, size = 'md' }: ModalProps) {
   if (!open) return null
 
   return (
@@ -17,7 +20,7 @@ export default function Modal({ open, onClose, title, children }: ModalProps) {
       onClick={onClose}
     >
       <div
-        className="card w-full max-w-lg max-h-[90vh] overflow-y-auto"
+        className={`card w-full ${sizeClass[size]} max-h-[90vh] overflow-y-auto`}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3">

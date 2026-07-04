@@ -12,7 +12,7 @@ from app.core.files import file_etag, not_modified_response, cached_file_respons
 from app.api.deps import get_current_context, AuthContext
 from app.models.document import Document
 from app.models.property import Unit
-from app.schemas.document import DocumentCreate, DocumentUpdate, DocumentResponse
+from app.schemas.document import DocumentCreate, DocumentUpdate, DocumentResponse, DocumentBulkCreate
 
 router = APIRouter()
 
@@ -70,6 +70,54 @@ async def create_document(
     await record_audit(db, ctx.tenant_id, ctx.user_id, "CREATE", "documents", d.id, new_data=payload)
     await db.refresh(d)
     return d
+
+
+@router.post("/documents/bulk", response_model=list[DocumentResponse], status_code=status.HTTP_201_CREATED)
+async def bulk_upsert_documents(
+    payload: DocumentBulkCreate,
+    ctx: AuthContext = Depends(get_current_context),
+    db: AsyncSession = Depends(get_db),
+):
+    """Entry dokumen legalitas unit dalam satu form (checklist). Per jenis: kalau sudah ada → di-update,
+    kalau belum → dibuat. File diunggah terpisah (per baris) setelah metadata tersimpan."""
+    # pastikan unit milik tenant ini
+    unit = (await db.execute(
+        select(Unit).where(Unit.id == payload.unit_id, Unit.tenant_id == ctx.tenant_id)
+    )).scalar_one_or_none()
+    if unit is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Unit tidak ditemukan")
+
+    # dokumen legalitas unit yang sudah ada (untuk merge per jenis)
+    existing = (await db.execute(
+        select(Document).where(
+            Document.unit_id == payload.unit_id, Document.tenant_id == ctx.tenant_id,
+            Document.is_deleted == False)  # noqa: E712
+    )).scalars().all()
+    by_type = {d.doc_type.strip().lower(): d for d in existing}
+
+    result: list[Document] = []
+    for item in payload.items:
+        data = item.model_dump()
+        key = item.doc_type.strip().lower()
+        d = by_type.get(key)
+        if d is not None:                       # jenis sudah ada → update
+            for f, v in data.items():
+                setattr(d, f, v)
+            action = "UPDATE"
+        else:                                   # baru → buat
+            d = Document(tenant_id=ctx.tenant_id, unit_id=payload.unit_id, **data)
+            db.add(d)
+            by_type[key] = d
+            action = "CREATE"
+        await db.flush()
+        await _sync_unit_land_area(db, ctx.tenant_id, d)
+        await record_audit(db, ctx.tenant_id, ctx.user_id, action, "documents", d.id,
+                           new_data={"doc_type": d.doc_type, "status": d.status.value})
+        result.append(d)
+
+    for d in result:
+        await db.refresh(d)
+    return result
 
 
 @router.patch("/documents/{doc_id}", response_model=DocumentResponse)

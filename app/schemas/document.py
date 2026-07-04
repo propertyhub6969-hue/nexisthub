@@ -27,6 +27,16 @@ class DocumentCreate(DocumentBase):
         return self
 
 
+class DocumentBulkItem(DocumentBase):
+    """Satu baris dokumen dalam entry batch (checklist legalitas unit)."""
+    pass
+
+
+class DocumentBulkCreate(BaseModel):
+    unit_id: uuid.UUID
+    items: list[DocumentBulkItem] = Field(..., min_length=1, max_length=50)
+
+
 class DocumentUpdate(BaseModel):
     doc_type: Optional[str] = Field(None, min_length=1, max_length=100)
     name: Optional[str] = Field(None, max_length=200)

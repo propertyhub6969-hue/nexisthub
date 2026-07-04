@@ -1,7 +1,11 @@
 import api from './api'
-import type { DocumentItem, DocumentCreate } from '../types'
+import type { DocumentItem, DocumentCreate, DocumentBulkCreate } from '../types'
 
 export const documentService = {
+  async bulkCreate(payload: DocumentBulkCreate): Promise<DocumentItem[]> {
+    const { data } = await api.post<DocumentItem[]>('/legal/documents/bulk', payload)
+    return data
+  },
   async list(clientId: string): Promise<DocumentItem[]> {
     const { data } = await api.get<DocumentItem[]>('/legal/documents', { params: { client_id: clientId } })
     return data
