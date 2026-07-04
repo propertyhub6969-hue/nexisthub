@@ -226,6 +226,24 @@ export interface UnitCreate {
   status?: UnitStatus
 }
 
+export interface UnitBulkGenerate {
+  project_id: string
+  block?: string
+  start_number: number
+  count: number
+  pad?: number
+  unit_type?: string
+  land_area?: number
+  building_area?: number
+  price?: number
+}
+
+export interface UnitBulkResult {
+  created: number
+  skipped: number
+  units: Unit[]
+}
+
 // ── Sales (Penjualan) ─────────────────────────────────────────────
 export type SaleCategory = 'subsidi' | 'komersial'
 export type PaymentType = 'cash_keras' | 'cash_bertahap' | 'kpr'

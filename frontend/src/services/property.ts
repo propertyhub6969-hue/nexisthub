@@ -1,7 +1,7 @@
 import api from './api'
 import type {
   Project, ProjectCreate,
-  Unit, UnitCreate,
+  Unit, UnitCreate, UnitBulkGenerate, UnitBulkResult,
   PaginatedResponse,
 } from '../types'
 
@@ -45,6 +45,10 @@ export const propertyService = {
   },
   async createUnit(payload: UnitCreate): Promise<Unit> {
     const { data } = await api.post<Unit>('/property/units', payload)
+    return data
+  },
+  async bulkGenerateUnits(payload: UnitBulkGenerate): Promise<UnitBulkResult> {
+    const { data } = await api.post<UnitBulkResult>('/property/units/bulk-generate', payload)
     return data
   },
   async updateUnit(id: string, payload: Partial<UnitCreate>): Promise<Unit> {

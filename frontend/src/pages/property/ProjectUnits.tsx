@@ -1,13 +1,13 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { Plus, Trash2, Pencil, Loader2, ArrowLeft, Map, FileSignature, Printer } from 'lucide-react'
+import { Plus, Trash2, Pencil, Loader2, ArrowLeft, Map, FileSignature, Printer, Boxes } from 'lucide-react'
 import Badge from '../../components/ui/Badge'
 import MoneyInput from '../../components/ui/MoneyInput'
 import Modal from '../../components/ui/Modal'
 import { propertyService } from '../../services/property'
 import { useAuth } from '../../context/AuthContext'
 import { printBast } from '../../utils/bast'
-import type { Project, Unit, UnitCreate, UnitStatus } from '../../types'
+import type { Project, Unit, UnitCreate, UnitStatus, UnitBulkGenerate } from '../../types'
 
 const statusConfig: Record<UnitStatus, { label: string; variant: 'green' | 'yellow' | 'blue' | 'orange' }> = {
   available: { label: 'Tersedia',     variant: 'green' },
@@ -42,6 +42,13 @@ export default function ProjectUnits() {
   const [bastUnit, setBastUnit] = useState<Unit | null>(null)
   const [bastDate, setBastDate] = useState('')
   const [savingBast, setSavingBast] = useState(false)
+
+  // Generate unit massal
+  const emptyGen = (): UnitBulkGenerate => ({ project_id: projectId, block: '', start_number: 1, count: 10 })
+  const [genModal, setGenModal] = useState(false)
+  const [genForm, setGenForm] = useState<UnitBulkGenerate>(emptyGen())
+  const [genSaving, setGenSaving] = useState(false)
+  const [genMsg, setGenMsg] = useState('')
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -124,6 +131,37 @@ export default function ProjectUnits() {
     }
   }
 
+  // ── Generate unit massal ──
+  function openGenerate() {
+    setGenForm(emptyGen())
+    setGenMsg('')
+    setGenModal(true)
+  }
+  const genPad = String(Math.max(genForm.start_number, genForm.start_number + genForm.count - 1)).length
+  const genFmt = (n: number) => `${genForm.block ? genForm.block.trim() + '-' : ''}${String(n).padStart(genPad, '0')}`
+  const genPreview = genForm.count > 0
+    ? `${genFmt(genForm.start_number)} … ${genFmt(genForm.start_number + genForm.count - 1)}`
+    : '—'
+
+  async function submitGenerate(e: React.FormEvent) {
+    e.preventDefault()
+    setGenSaving(true); setError('')
+    try {
+      const payload: UnitBulkGenerate = { ...genForm, block: genForm.block?.trim() || undefined }
+      const rec = payload as unknown as Record<string, unknown>
+      ;['unit_type', 'land_area', 'building_area', 'price'].forEach((k) => { if (!rec[k]) delete rec[k] })
+      const res = await propertyService.bulkGenerateUnits(payload)
+      await load()
+      setGenMsg(`${res.created} unit dibuat${res.skipped ? `, ${res.skipped} dilewati (nomor sudah ada)` : ''}.`)
+      // reset jumlah agar tidak sengaja generate ganda; biarkan modal terbuka menampilkan hasil
+      setGenForm((f) => ({ ...f, start_number: f.start_number + f.count }))
+    } catch {
+      setError('Gagal generate unit.')
+    } finally {
+      setGenSaving(false)
+    }
+  }
+
   // ── BAST ──
   function openBast(u: Unit) {
     setBastUnit(u); setBastDate(u.bast_date ?? new Date().toISOString().slice(0, 10)); setBastModal(true)
@@ -161,6 +199,10 @@ export default function ProjectUnits() {
             <Map size={14} />
             Siteplan
           </Link>
+          <button className="btn-secondary flex items-center gap-2 text-sm" onClick={openGenerate}>
+            <Boxes size={14} />
+            Generate Massal
+          </button>
           <button className="btn-primary flex items-center gap-2 text-sm" onClick={openCreate}>
             <Plus size={14} />
             Tambah Unit
@@ -319,6 +361,67 @@ export default function ProjectUnits() {
             <button type="button" className="btn-secondary text-sm" onClick={() => setBastModal(false)}>Batal</button>
             <button type="submit" className="btn-primary text-sm flex items-center gap-2" disabled={savingBast}>
               {savingBast && <Loader2 size={14} className="animate-spin" />}Simpan BAST
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Modal Generate Unit Massal */}
+      <Modal open={genModal} onClose={() => setGenModal(false)} title="Generate Unit Massal">
+        <form onSubmit={submitGenerate} className="space-y-3">
+          <p className="text-sm text-slate-500">
+            Buat banyak unit sekaligus. Nomor yang sudah ada di blok yang sama otomatis dilewati (tak menimpa unit lama).
+          </p>
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="label">Blok / Cluster</label>
+              <input className="input" placeholder="A (opsional)" value={genForm.block ?? ''} onChange={(e) => setGenForm({ ...genForm, block: e.target.value })} />
+            </div>
+            <div>
+              <label className="label">Nomor mulai *</label>
+              <input className="input" type="number" min={1} required value={genForm.start_number}
+                onChange={(e) => setGenForm({ ...genForm, start_number: Math.max(1, Number(e.target.value) || 1) })} />
+            </div>
+            <div>
+              <label className="label">Jumlah unit *</label>
+              <input className="input" type="number" min={1} max={500} required value={genForm.count}
+                onChange={(e) => setGenForm({ ...genForm, count: Math.min(500, Math.max(1, Number(e.target.value) || 1)) })} />
+            </div>
+          </div>
+
+          <div className="rounded-lg bg-slate-50 border border-slate-200 px-3 py-2 text-sm text-slate-600">
+            Akan dibuat <b>{genForm.count}</b> unit: <b>{genPreview}</b>
+          </div>
+
+          <p className="text-xs font-medium text-slate-400 uppercase tracking-wider pt-1">Nilai default (opsional, sama untuk semua unit)</p>
+          <div className="grid grid-cols-4 gap-3">
+            <div className="col-span-2">
+              <label className="label">Tipe</label>
+              <input className="input" placeholder="36/72" value={genForm.unit_type ?? ''} onChange={(e) => setGenForm({ ...genForm, unit_type: e.target.value })} />
+            </div>
+            <div>
+              <label className="label">LT (m²)</label>
+              <input className="input" type="number" min={0} value={genForm.land_area ?? ''}
+                onChange={(e) => setGenForm({ ...genForm, land_area: e.target.value ? Number(e.target.value) : undefined })} />
+            </div>
+            <div>
+              <label className="label">LB (m²)</label>
+              <input className="input" type="number" min={0} value={genForm.building_area ?? ''}
+                onChange={(e) => setGenForm({ ...genForm, building_area: e.target.value ? Number(e.target.value) : undefined })} />
+            </div>
+          </div>
+          <div>
+            <label className="label">Harga (Rp)</label>
+            <MoneyInput value={genForm.price} onChange={(v) => setGenForm({ ...genForm, price: v })} />
+          </div>
+          <p className="text-[11px] text-slate-400">LT bisa disinkron ulang otomatis dari Dokumen Legalitas (SHM) nanti. Semua unit dibuat berstatus <b>Tersedia</b>.</p>
+
+          {genMsg && <div className="rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm px-3 py-2">{genMsg}</div>}
+
+          <div className="flex justify-end gap-2 pt-2">
+            <button type="button" className="btn-secondary text-sm" onClick={() => setGenModal(false)}>Tutup</button>
+            <button type="submit" className="btn-primary text-sm flex items-center gap-2" disabled={genSaving}>
+              {genSaving && <Loader2 size={14} className="animate-spin" />}Generate {genForm.count} Unit
             </button>
           </div>
         </form>

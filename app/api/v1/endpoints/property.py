@@ -19,6 +19,7 @@ from app.schemas.marketing import Paginated
 from app.schemas.property import (
     ProjectCreate, ProjectUpdate, ProjectResponse,
     UnitCreate, UnitUpdate, UnitResponse, UnitPosition, BastRequest,
+    UnitBulkGenerate, UnitBulkResult,
 )
 
 router = APIRouter()
@@ -283,6 +284,54 @@ async def create_unit(
     await db.refresh(unit)
     await _attach_unit_extras(db, ctx.tenant_id, [unit])
     return unit
+
+
+@router.post("/units/bulk-generate", response_model=UnitBulkResult, status_code=status.HTTP_201_CREATED)
+async def bulk_generate_units(
+    payload: UnitBulkGenerate,
+    ctx: AuthContext = Depends(get_current_context),
+    db: AsyncSession = Depends(get_db),
+):
+    """Buat banyak unit sekaligus (Blok {block} No {start..start+count-1}) dengan default tipe/harga/luas.
+    Aman & idempotent: nomor yang sudah ada di blok yang sama DILEWATI (tak menimpa/hapus unit lama)."""
+    await _get_project(db, ctx.tenant_id, payload.project_id)
+    block = (payload.block or "").strip() or None
+
+    # nomor yang sudah dipakai di blok yang sama (skip agar tak dobel)
+    existing_rows = await db.execute(
+        select(Unit.unit_number).where(
+            Unit.tenant_id == ctx.tenant_id, Unit.project_id == payload.project_id,
+            (Unit.block == block) if block is not None else Unit.block.is_(None),
+        )
+    )
+    existing = {str(n) for (n,) in existing_rows.all()}
+
+    end = payload.start_number + payload.count - 1
+    pad = payload.pad if payload.pad is not None else len(str(end))
+
+    created_units: list[Unit] = []
+    skipped = 0
+    for n in range(payload.start_number, end + 1):
+        num_str = str(n).zfill(pad)
+        if num_str in existing or str(n) in existing:  # sudah ada → lewati
+            skipped += 1
+            continue
+        existing.add(num_str)
+        created_units.append(Unit(
+            tenant_id=ctx.tenant_id, project_id=payload.project_id,
+            block=block, unit_number=num_str, unit_type=payload.unit_type,
+            land_area=payload.land_area, building_area=payload.building_area,
+            price=payload.price, status=UnitStatus.AVAILABLE,
+        ))
+
+    if created_units:
+        db.add_all(created_units)
+        await db.flush()
+        for u in created_units:
+            await db.refresh(u)
+        await _attach_unit_extras(db, ctx.tenant_id, created_units)
+
+    return UnitBulkResult(created=len(created_units), skipped=skipped, units=created_units)
 
 
 async def _get_unit(db: AsyncSession, tenant_id: uuid.UUID, unit_id: uuid.UUID) -> Unit:

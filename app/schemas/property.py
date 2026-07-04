@@ -69,6 +69,19 @@ class UnitCreate(UnitBase):
     status: UnitStatus = UnitStatus.AVAILABLE
 
 
+class UnitBulkGenerate(BaseModel):
+    """Buat banyak unit sekaligus: Blok {block} No {start_number..start_number+count-1}."""
+    project_id: uuid.UUID
+    block: Optional[str] = Field(None, max_length=50)
+    start_number: int = Field(1, ge=1)
+    count: int = Field(..., ge=1, le=500)
+    pad: Optional[int] = Field(None, ge=0, le=6)   # jumlah digit (leading zero); None = auto sesuai nomor terbesar
+    unit_type: Optional[str] = Field(None, max_length=100)
+    land_area: Optional[Decimal] = Field(None, ge=0)
+    building_area: Optional[Decimal] = Field(None, ge=0)
+    price: Optional[Decimal] = Field(None, ge=0)
+
+
 class UnitUpdate(BaseModel):
     block: Optional[str] = Field(None, max_length=50)
     unit_number: Optional[str] = Field(None, min_length=1, max_length=50)
@@ -95,6 +108,12 @@ class UnitResponse(UnitBase):
 
     class Config:
         from_attributes = True
+
+
+class UnitBulkResult(BaseModel):
+    created: int
+    skipped: int
+    units: list[UnitResponse]
 
 
 class BastRequest(BaseModel):
