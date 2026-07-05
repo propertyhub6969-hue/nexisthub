@@ -13,6 +13,7 @@ import {
   BarChart3,
   Settings,
   UsersRound,
+  Factory,
 } from 'lucide-react'
 import { clsx } from 'clsx'
 import { useAuth } from '../../context/AuthContext'
@@ -35,6 +36,11 @@ const navItems = [
     ],
   },
   {
+    label: 'Pemberkasan',
+    icon: ClipboardCheck,
+    to: '/pemberkasan',
+  },
+  {
     label: 'Properti',
     icon: Building2,
     children: [
@@ -43,24 +49,17 @@ const navItems = [
     ],
   },
   {
-    label: 'Konstruksi',
-    icon: HardHat,
-    to: '/construction',
-  },
-  {
-    label: 'Procurement',
-    icon: ShoppingCart,
-    to: '/procurement',
+    label: 'Produksi',
+    icon: Factory,
+    children: [
+      { label: 'Konstruksi', to: '/construction', icon: HardHat },
+      { label: 'Procurement', to: '/procurement', icon: ShoppingCart },
+    ],
   },
   {
     label: 'Master Data',
     icon: FileText,
     to: '/legal',
-  },
-  {
-    label: 'Pemberkasan',
-    icon: ClipboardCheck,
-    to: '/pemberkasan',
   },
   {
     label: 'Reports',
@@ -104,7 +103,7 @@ export default function Sidebar() {
               <p className="px-3 py-1.5 text-xs font-semibold text-slate-400 uppercase tracking-wider mt-3 mb-1">
                 {item.label}
               </p>
-              {item.children.map((child) => (
+              {item.children.filter((child) => canAccessPath(user?.role, child.to)).map((child) => (
                 <NavLink
                   key={child.to}
                   to={child.to}
