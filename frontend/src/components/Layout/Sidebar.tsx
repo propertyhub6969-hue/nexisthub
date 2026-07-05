@@ -33,12 +33,8 @@ const navItems = [
       { label: 'Leads', to: '/marketing/leads', icon: Users },
       { label: 'Prospek', to: '/marketing/prospects', icon: UserCheck },
       { label: 'Pembeli', to: '/marketing/clients', icon: Handshake },
+      { label: 'Pemberkasan', to: '/pemberkasan', icon: ClipboardCheck },
     ],
-  },
-  {
-    label: 'Pemberkasan',
-    icon: ClipboardCheck,
-    to: '/pemberkasan',
   },
   {
     label: 'Properti',

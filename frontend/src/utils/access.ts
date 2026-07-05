@@ -6,7 +6,7 @@ import type { UserRole } from '../types'
 // - role lain: akses penuh (status quo — belum dibatasi)
 const ROLE_PATHS: Partial<Record<UserRole, string[]>> = {
   produksi: ['/dashboard', '/construction', '/procurement'],
-  marketing: ['/marketing', '/property'],
+  marketing: ['/marketing', '/property', '/pemberkasan'],
 }
 
 export function canAccessPath(role: UserRole | undefined, path: string): boolean {
