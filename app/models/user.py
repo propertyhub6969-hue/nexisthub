@@ -11,7 +11,7 @@ class UserRole(str, enum.Enum):
     ADMIN = "admin"           # Admin - semua fitur kecuali billing
     MANAGER = "manager"       # Manager - bisa approve, lihat report
     PRODUKSI = "produksi"     # Produksi - akses Konstruksi & Procurement saja
-    STAFF = "staff"           # Staff - input data only
+    MARKETING = "marketing"   # Marketing - akses grup Marketing & Properti saja (dulu 'staff')
     VIEWER = "viewer"         # Read-only access
 
 
@@ -34,7 +34,7 @@ class User(BaseModel):
 
     # Role
     role: Mapped[UserRole] = mapped_column(
-        SAEnum(UserRole), default=UserRole.STAFF, nullable=False
+        SAEnum(UserRole), default=UserRole.MARKETING, nullable=False
     )
 
     # Multi-tenant FK
