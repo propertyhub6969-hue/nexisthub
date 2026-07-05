@@ -5,7 +5,7 @@ from app.models.user import UserRole
 
 # Roles an admin/owner may assign to a team member.
 # OWNER is intentionally excluded — ownership is set at registration only.
-ASSIGNABLE_ROLES = {UserRole.ADMIN, UserRole.MANAGER, UserRole.STAFF, UserRole.VIEWER}
+ASSIGNABLE_ROLES = {UserRole.ADMIN, UserRole.MANAGER, UserRole.PRODUKSI, UserRole.STAFF, UserRole.VIEWER}
 
 
 class TeamMemberCreate(BaseModel):
