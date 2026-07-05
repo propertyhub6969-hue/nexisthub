@@ -16,6 +16,7 @@ import {
 } from 'lucide-react'
 import { clsx } from 'clsx'
 import { useAuth } from '../../context/AuthContext'
+import { canAccessPath } from '../../utils/access'
 import NexistLogo from '../ui/NexistLogo'
 
 const navItems = [
@@ -80,7 +81,13 @@ export default function Sidebar() {
   const { user } = useAuth()
 
   const canManageTeam = user?.role === 'owner' || user?.role === 'admin'
-  const items = canManageTeam ? [...navItems, settingsItem] : navItems
+  const allItems = canManageTeam ? [...navItems, settingsItem] : navItems
+  // saring menu sesuai akses role (produksi = Dashboard/Konstruksi/Procurement; role lain penuh)
+  const items = allItems.filter((it) =>
+    'to' in it
+      ? canAccessPath(user?.role, it.to)
+      : it.children.some((c) => canAccessPath(user?.role, c.to))
+  )
 
   return (
     <aside className="w-60 h-screen shrink-0 bg-sidebar flex flex-col">

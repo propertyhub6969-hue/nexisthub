@@ -10,6 +10,7 @@ class UserRole(str, enum.Enum):
     OWNER = "owner"           # Pemilik perusahaan - full access
     ADMIN = "admin"           # Admin - semua fitur kecuali billing
     MANAGER = "manager"       # Manager - bisa approve, lihat report
+    PRODUKSI = "produksi"     # Produksi - akses Konstruksi & Procurement saja
     STAFF = "staff"           # Staff - input data only
     VIEWER = "viewer"         # Read-only access
 

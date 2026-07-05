@@ -17,7 +17,7 @@ export interface Token {
   token_type: string
 }
 
-export type UserRole = 'owner' | 'admin' | 'manager' | 'staff' | 'viewer'
+export type UserRole = 'owner' | 'admin' | 'manager' | 'produksi' | 'staff' | 'viewer'
 
 export interface UserResponse {
   id: string

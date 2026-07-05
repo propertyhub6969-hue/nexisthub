@@ -1,6 +1,8 @@
-import { Outlet, useLocation } from 'react-router-dom'
+import { Outlet, useLocation, Navigate } from 'react-router-dom'
 import Sidebar from './Sidebar'
 import Header from './Header'
+import { useAuth } from '../../context/AuthContext'
+import { canAccessPath } from '../../utils/access'
 
 const pageTitles: Record<string, string> = {
   '/dashboard': 'Dashboard',
@@ -20,6 +22,9 @@ const pageTitles: Record<string, string> = {
 
 export default function DashboardLayout() {
   const { pathname } = useLocation()
+  const { user } = useAuth()
+  // role produksi: cegah buka menu di luar haknya (redirect ke dashboard)
+  if (user && !canAccessPath(user.role, pathname)) return <Navigate to="/dashboard" replace />
   const title = pageTitles[pathname]
     ?? (pathname.includes('/siteplan') ? 'Siteplan Interaktif'
       : pathname.includes('/units') ? 'Kelola Unit'

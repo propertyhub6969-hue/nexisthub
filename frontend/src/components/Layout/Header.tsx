@@ -9,8 +9,10 @@ interface HeaderProps {
 const roleLabel: Record<string, string> = {
   owner: 'Owner',
   admin: 'Admin',
-  marketing: 'Marketing',
+  manager: 'Manager',
+  produksi: 'Produksi',
   staff: 'Staff',
+  viewer: 'Viewer',
 }
 
 export default function Header({ title }: HeaderProps) {

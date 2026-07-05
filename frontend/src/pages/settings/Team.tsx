@@ -6,18 +6,19 @@ import { usersService } from '../../services/users'
 import { useAuth } from '../../context/AuthContext'
 import type { TeamMember, TeamMemberCreate, UserRole } from '../../types'
 
-const roleConfig: Record<UserRole, { label: string; variant: 'orange' | 'blue' | 'green' | 'gray' }> = {
-  owner:   { label: 'Pemilik', variant: 'orange' },
-  admin:   { label: 'Admin',   variant: 'blue' },
-  manager: { label: 'Manager', variant: 'green' },
-  staff:   { label: 'Staff',   variant: 'gray' },
-  viewer:  { label: 'Viewer',  variant: 'gray' },
+const roleConfig: Record<UserRole, { label: string; variant: 'orange' | 'blue' | 'green' | 'gray' | 'yellow' }> = {
+  owner:    { label: 'Pemilik',  variant: 'orange' },
+  admin:    { label: 'Admin',    variant: 'blue' },
+  manager:  { label: 'Manager',  variant: 'green' },
+  produksi: { label: 'Produksi', variant: 'yellow' },
+  staff:    { label: 'Staff',    variant: 'gray' },
+  viewer:   { label: 'Viewer',   variant: 'gray' },
 }
 
 // Roles an actor is allowed to assign (mirrors backend rules).
 function assignableRoles(actorRole?: UserRole): UserRole[] {
-  if (actorRole === 'owner') return ['admin', 'manager', 'staff', 'viewer']
-  return ['manager', 'staff', 'viewer'] // admin cannot appoint admins
+  if (actorRole === 'owner') return ['admin', 'manager', 'produksi', 'staff', 'viewer']
+  return ['manager', 'produksi', 'staff', 'viewer'] // admin cannot appoint admins
 }
 
 const emptyCreate: TeamMemberCreate = { email: '', full_name: '', password: '', phone: '', role: 'staff' }
