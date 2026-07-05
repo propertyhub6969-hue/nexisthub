@@ -20,7 +20,7 @@ ERP multi-tenant untuk **developer properti** (rumah **subsidi + komersial**, ba
   - Container: `nexisthub_backend` (:8000, entrypoint jalankan `alembic upgrade` lalu uvicorn), `nexisthub_frontend` (nginx SPA + proxy `/api/`→backend, `client_max_body_size 12M`), `nexisthub_db` (Postgres, host :5434).
   - **Kode di-COPY ke image (bukan volume)** → WAJIB rebuild tiap perubahan.
 - **Lokasi**: `/opt/nexisthub` di VPS (IP 72.60.43.158, `vps.nadinata.org`). Disk 193GB (sisa ±91GB per 2026-07-03).
-- **Git**: remote SSH `git@github.com:propertyhub6969-hue/nexisthub.git`, push aktif via SSH deploy key. Alembic head saat ini: **`f7e6d5c4b3a2`** (±38 migrasi; terakhir: `audit_logs.reason` utk alasan hapus/edit). ⚠️ **HATI-HATI revision id**: pernah bentrok (id `e1f2a3b4c5d6` sudah dipakai `add_client_payment_type`) → backend crash-loop. Sebelum buat migrasi, cek `grep -rl <id> alembic/versions/`.
+- **Git**: remote SSH `git@github.com:propertyhub6969-hue/nexisthub.git`, push aktif via SSH deploy key. Alembic head saat ini: **`b3c4d5e6f7a8`** (±39 migrasi; terakhir: role `PRODUKSI`). ⚠️ Enum `userrole` pakai label = NAMA member UPPERCASE (OWNER/ADMIN/…); tambah value pakai uppercase (`ADD VALUE 'PRODUKSI'`) via `autocommit_block`. ⚠️ `frontend/src/lib/` di-gitignore — helper FE taruh di `frontend/src/utils/`. ⚠️ **HATI-HATI revision id**: pernah bentrok (id `e1f2a3b4c5d6` sudah dipakai `add_client_payment_type`) → backend crash-loop. Sebelum buat migrasi, cek `grep -rl <id> alembic/versions/`.
 
 ### Perintah operasional
 ```bash
@@ -38,7 +38,7 @@ docker run --rm -v "$PWD:/app" -w /app nexisthub-backend alembic heads
 | Modul | Isi |
 |---|---|
 | **Auth & Tenant** | register (tenant+owner), login, /auth/me (kembalikan role), JWT+tenant scoping |
-| **Role & Tim (RBAC)** | menu Pengaturan→Tim (owner/admin): tambah anggota (password awal manual), ubah role, aktif/nonaktif; role dari DB (bukan JWT) → efek live; guard owner tak bisa diubah |
+| **Role & Tim (RBAC)** | menu Pengaturan→Tim (owner/admin): tambah anggota (password awal manual), ubah role, aktif/nonaktif; role dari DB (bukan JWT) → efek live; guard owner tak bisa diubah. Role: owner/admin/manager/**produksi**/staff/viewer. **Role `produksi` = akses menu Dashboard/Konstruksi/Procurement saja** (enforcement FRONTEND: `utils/access.ts` `canAccessPath` → Sidebar saring menu + DashboardLayout redirect). Role LAIN masih akses penuh (menu belum digating; backend endpoint juga belum di-guard role kecuali `/team`) |
 | **Dashboard** | angka real: leads, unit, uang masuk bln ini, sisa piutang, termin telat |
 | **CRM / Marketing** | Leads (+kategori Cold/Warm/Hot, filter proyek/kategori), Prospek (+properti diminati, status Closing/Batal), Pembeli + **konversi funnel** (data + properti diminati terbawa Lead→Prospek→Pembeli), WhatsApp link |
 | **Pembeli (pusat transaksi)** | tabel: tanggal, harga jual, **sisa piutang**, **cara beli (Cash/KPR)**, **status berkas KPR** (incl. Ditolak), **Status Bayar (Lunas/Belum Lunas)**; filter proyek/unit, toggle kolom, aksi via dropdown ⋮. Form: identitas + marketing(auto login) + proyek/kavling (anti-dobel 409) + ttd digital + PPJB/AJB (nomor+file) |
