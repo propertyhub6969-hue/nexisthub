@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Optional, Literal
 from datetime import datetime, date
 from decimal import Decimal
 import uuid
@@ -40,6 +40,7 @@ class NotaryResponse(NotaryBase):
 # ── Tax Record ────────────────────────────────────────────────────
 class TaxBase(BaseModel):
     tax_type: TaxType
+    category: Literal['subsidi', 'komersial'] = 'komersial'
     base_amount: Optional[Decimal] = Field(None, ge=0)   # Nilai AJB (dasar pengenaan)
     amount: Optional[Decimal] = Field(None, ge=0)
     id_billing: Optional[str] = Field(None, max_length=50)
@@ -56,6 +57,7 @@ class TaxCreate(TaxBase):
 
 class TaxUpdate(BaseModel):
     tax_type: Optional[TaxType] = None
+    category: Optional[Literal['subsidi', 'komersial']] = None
     base_amount: Optional[Decimal] = Field(None, ge=0)
     amount: Optional[Decimal] = Field(None, ge=0)
     id_billing: Optional[str] = Field(None, max_length=50)

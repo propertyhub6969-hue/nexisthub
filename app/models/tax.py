@@ -55,6 +55,7 @@ class TaxRecord(BaseModel, SoftDeleteMixin):
         nullable=True, index=True
     )
     tax_type: Mapped[TaxType] = mapped_column(SAEnum(TaxType), nullable=False)
+    category: Mapped[str] = mapped_column(String(20), nullable=False, server_default="komersial")  # subsidi | komersial (PPh subsidi 1%, komersial 2.5%)
     base_amount: Mapped[float] = mapped_column(Numeric(15, 2), nullable=True)  # Nilai AJB (dasar pengenaan pajak)
     amount: Mapped[float] = mapped_column(Numeric(15, 2), nullable=True)  # null utk DTP/bebas
     id_billing: Mapped[str] = mapped_column(String(50), nullable=True)    # kode billing DJP

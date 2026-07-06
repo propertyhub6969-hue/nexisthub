@@ -8,7 +8,7 @@ import { marketingService } from '../../services/marketing'
 import { taxService } from '../../services/tax'
 import { documentService } from '../../services/document'
 import type {
-  Client, Notary, TaxRecord, TaxCreate, TaxType, TaxStatus, NotaryFee, NotaryFeeCreate,
+  Client, Notary, TaxRecord, TaxCreate, TaxType, TaxStatus, SaleCategory, NotaryFee, NotaryFeeCreate,
   DocumentItem, DocumentCreate, DocStatus,
 } from '../../types'
 
@@ -35,12 +35,12 @@ const taxStatusCfg: Record<TaxStatus, { label: string; variant: 'gray' | 'blue' 
 }
 
 const emptyDoc = (cid: string): DocumentCreate => ({ client_id: cid, doc_type: '', name: '', status: 'belum', doc_date: '' })
-const emptyTax = (cid: string): TaxCreate => ({ client_id: cid, tax_type: 'pph', base_amount: undefined, amount: undefined, id_billing: '', ntpn: '', tax_date: '', status: 'belum', notary_id: '' })
+const emptyTax = (cid: string): TaxCreate => ({ client_id: cid, tax_type: 'pph', category: 'komersial', base_amount: undefined, amount: undefined, id_billing: '', ntpn: '', tax_date: '', status: 'belum', notary_id: '' })
 
-// Hitung jumlah pajak dari Nilai AJB: PPh=2.5%, PPN=11%, BPHTB=(AJB−80jt)×5%
-function calcTax(type: TaxType, ajb?: number): number | undefined {
+// Hitung jumlah pajak dari Nilai AJB. PPh: komersial 2.5%, subsidi 1%. PPN 11%. BPHTB (AJB−80jt)×5%.
+function calcTax(type: TaxType, ajb?: number, category: SaleCategory = 'komersial'): number | undefined {
   if (!ajb) return undefined
-  if (type === 'pph') return Math.round(ajb * 0.025)
+  if (type === 'pph') return Math.round(ajb * (category === 'subsidi' ? 0.01 : 0.025))
   if (type === 'ppn') return Math.round(ajb * 0.11)
   if (type === 'bphtb') return Math.max(0, Math.round((ajb - 80_000_000) * 0.05))
   return undefined
@@ -149,12 +149,12 @@ export default function ClientTax() {
     setTaxEditId(null)
     // prefill Nilai AJB dari harga jual pembeli (bisa diubah); jumlah auto-hitung
     const ajb = client?.contract_value ? Number(client.contract_value) : undefined
-    setTaxForm({ ...emptyTax(clientId), base_amount: ajb, amount: calcTax('pph', ajb) })
+    setTaxForm({ ...emptyTax(clientId), base_amount: ajb, amount: calcTax('pph', ajb, 'komersial') })
     setTaxModal(true)
   }
   function openTaxEdit(x: TaxRecord) {
     setTaxEditId(x.id)
-    setTaxForm({ client_id: clientId, tax_type: x.tax_type, base_amount: x.base_amount, amount: x.amount, id_billing: x.id_billing ?? '', ntpn: x.ntpn ?? '', tax_date: x.tax_date ?? '', status: x.status, notary_id: x.notary_id ?? '' })
+    setTaxForm({ client_id: clientId, tax_type: x.tax_type, category: x.category ?? 'komersial', base_amount: x.base_amount, amount: x.amount, id_billing: x.id_billing ?? '', ntpn: x.ntpn ?? '', tax_date: x.tax_date ?? '', status: x.status, notary_id: x.notary_id ?? '' })
     setTaxModal(true)
   }
   async function submitTax(e: React.FormEvent) {
@@ -367,7 +367,10 @@ export default function ClientTax() {
               const st = taxStatusCfg[x.status]
               return (
                 <tr key={x.id} className="hover:bg-slate-50">
-                  <td className="px-4 py-2.5 font-medium text-slate-900">{taxTypeLabel[x.tax_type]}</td>
+                  <td className="px-4 py-2.5 font-medium text-slate-900">
+                    {taxTypeLabel[x.tax_type]}
+                    {x.category && <span className="ml-1.5 text-[10px] uppercase tracking-wide text-slate-400">{x.category}</span>}
+                  </td>
                   <td className="px-4 py-2.5 text-slate-600">{fmt(x.amount)}</td>
                   <td className="px-4 py-2.5 text-slate-500 text-xs">{x.id_billing ?? '—'}</td>
                   <td className="px-4 py-2.5 text-slate-500 text-xs">{x.ntpn ?? '—'}</td>
@@ -471,28 +474,32 @@ export default function ClientTax() {
               <label className="label">Jenis Pajak *</label>
               <select className="input" value={taxForm.tax_type} onChange={(e) => {
                 const t = e.target.value as TaxType
-                setTaxForm({ ...taxForm, tax_type: t, amount: calcTax(t, taxForm.base_amount) })
+                setTaxForm({ ...taxForm, tax_type: t, amount: calcTax(t, taxForm.base_amount, taxForm.category) })
               }}>
                 {(Object.keys(taxTypeLabel) as TaxType[]).map((k) => <option key={k} value={k}>{taxTypeLabel[k]}</option>)}
               </select>
             </div>
             <div>
-              <label className="label">Status</label>
-              <select className="input" value={taxForm.status} onChange={(e) => setTaxForm({ ...taxForm, status: e.target.value as TaxStatus })}>
-                {(Object.keys(taxStatusCfg) as TaxStatus[]).map((k) => <option key={k} value={k}>{taxStatusCfg[k].label}</option>)}
+              <label className="label">Kategori</label>
+              <select className="input" value={taxForm.category} onChange={(e) => {
+                const c = e.target.value as SaleCategory
+                setTaxForm({ ...taxForm, category: c, amount: calcTax(taxForm.tax_type, taxForm.base_amount, c) })
+              }}>
+                <option value="komersial">Komersial</option>
+                <option value="subsidi">Subsidi</option>
               </select>
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="label">Nilai AJB (Dasar)</label>
-              <MoneyInput value={taxForm.base_amount} onChange={(v) => setTaxForm({ ...taxForm, base_amount: v, amount: calcTax(taxForm.tax_type, v) })} />
+              <MoneyInput value={taxForm.base_amount} onChange={(v) => setTaxForm({ ...taxForm, base_amount: v, amount: calcTax(taxForm.tax_type, v, taxForm.category) })} />
             </div>
             <div>
               <label className="label">Jumlah (Rp)</label>
               <MoneyInput value={taxForm.amount} onChange={(v) => setTaxForm({ ...taxForm, amount: v })} />
               <p className="text-[11px] text-slate-400 mt-1">
-                {taxForm.tax_type === 'pph' ? 'Otomatis: AJB × 2,5%'
+                {taxForm.tax_type === 'pph' ? `Otomatis: AJB × ${taxForm.category === 'subsidi' ? '1%' : '2,5%'}`
                   : taxForm.tax_type === 'ppn' ? 'Otomatis: AJB × 11%'
                   : 'Otomatis: (AJB − 80jt) × 5%'} · bisa diubah manual
               </p>
@@ -500,10 +507,15 @@ export default function ClientTax() {
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
+              <label className="label">Status</label>
+              <select className="input" value={taxForm.status} onChange={(e) => setTaxForm({ ...taxForm, status: e.target.value as TaxStatus })}>
+                {(Object.keys(taxStatusCfg) as TaxStatus[]).map((k) => <option key={k} value={k}>{taxStatusCfg[k].label}</option>)}
+              </select>
+            </div>
+            <div>
               <label className="label">Tanggal</label>
               <input className="input" type="date" value={taxForm.tax_date} onChange={(e) => setTaxForm({ ...taxForm, tax_date: e.target.value })} />
             </div>
-            <div />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
