@@ -76,6 +76,8 @@ class TaxResponse(TaxBase):
     file_name: Optional[str] = None
     has_id_billing_file: bool = False
     id_billing_file_name: Optional[str] = None
+    has_validation_file: bool = False
+    validation_file_name: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 

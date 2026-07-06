@@ -65,6 +65,20 @@ export const taxService = {
     window.open(url, '_blank')
     setTimeout(() => URL.revokeObjectURL(url), 60000)
   },
+  async uploadValidationFile(id: string, file: File): Promise<TaxRecord> {
+    const fd = new FormData()
+    fd.append('file', file)
+    const { data } = await api.post<TaxRecord>(`/legal/tax-records/${id}/validation-file`, fd, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    return data
+  },
+  async openValidationFile(id: string): Promise<void> {
+    const res = await api.get(`/legal/tax-records/${id}/validation-file`, { responseType: 'blob' })
+    const url = URL.createObjectURL(res.data as Blob)
+    window.open(url, '_blank')
+    setTimeout(() => URL.revokeObjectURL(url), 60000)
+  },
 
   // ── Biaya Notaris ──
   async listFees(clientId: string): Promise<NotaryFee[]> {

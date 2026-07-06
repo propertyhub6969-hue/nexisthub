@@ -425,6 +425,8 @@ export interface TaxRecord {
   file_name?: string
   has_id_billing_file?: boolean
   id_billing_file_name?: string
+  has_validation_file?: boolean
+  validation_file_name?: string
   notes?: string
   created_at: string
   updated_at: string

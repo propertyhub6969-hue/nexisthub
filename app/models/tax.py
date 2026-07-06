@@ -75,6 +75,11 @@ class TaxRecord(BaseModel, SoftDeleteMixin):
     id_billing_file_type: Mapped[str] = mapped_column(String(100), nullable=True)
     id_billing_file_size: Mapped[int] = mapped_column(Integer, nullable=True)
     id_billing_file_data: Mapped[bytes] = mapped_column(LargeBinary, nullable=True, deferred=True)
+    # Bukti validasi pajak (dari kantor pajak) — terpisah; dipakai utk PPh
+    validation_file_name: Mapped[str] = mapped_column(String(255), nullable=True)
+    validation_file_type: Mapped[str] = mapped_column(String(100), nullable=True)
+    validation_file_size: Mapped[int] = mapped_column(Integer, nullable=True)
+    validation_file_data: Mapped[bytes] = mapped_column(LargeBinary, nullable=True, deferred=True)
 
     notary: Mapped["Notary"] = relationship("Notary")
 
@@ -85,6 +90,10 @@ class TaxRecord(BaseModel, SoftDeleteMixin):
     @property
     def has_id_billing_file(self) -> bool:
         return self.id_billing_file_name is not None
+
+    @property
+    def has_validation_file(self) -> bool:
+        return self.validation_file_name is not None
 
     @property
     def notary_name(self):
