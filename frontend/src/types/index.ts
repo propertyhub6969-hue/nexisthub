@@ -412,6 +412,7 @@ export interface TaxRecord {
   id: string
   client_id: string
   tax_type: TaxType
+  base_amount?: number
   amount?: number
   id_billing?: string
   ntpn?: string
@@ -428,6 +429,7 @@ export interface TaxRecord {
 export interface TaxCreate {
   client_id: string
   tax_type: TaxType
+  base_amount?: number
   amount?: number
   id_billing?: string
   ntpn?: string

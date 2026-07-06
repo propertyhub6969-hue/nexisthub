@@ -40,6 +40,7 @@ class NotaryResponse(NotaryBase):
 # ── Tax Record ────────────────────────────────────────────────────
 class TaxBase(BaseModel):
     tax_type: TaxType
+    base_amount: Optional[Decimal] = Field(None, ge=0)   # Nilai AJB (dasar pengenaan)
     amount: Optional[Decimal] = Field(None, ge=0)
     id_billing: Optional[str] = Field(None, max_length=50)
     ntpn: Optional[str] = Field(None, max_length=50)
@@ -55,6 +56,7 @@ class TaxCreate(TaxBase):
 
 class TaxUpdate(BaseModel):
     tax_type: Optional[TaxType] = None
+    base_amount: Optional[Decimal] = Field(None, ge=0)
     amount: Optional[Decimal] = Field(None, ge=0)
     id_billing: Optional[str] = Field(None, max_length=50)
     ntpn: Optional[str] = Field(None, max_length=50)
