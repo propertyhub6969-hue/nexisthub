@@ -20,7 +20,7 @@ const BERKAS_CHECKLIST = ['KTP', 'KK', 'NPWP', 'Buku Nikah', 'Slip Gaji / Ket. P
 const isKTP = (t: string) => /ktp/i.test(t)
 
 interface BerkasRow { doc_type: string; name: string; status: DocStatus; doc_date: string; file?: File | null; custom?: boolean }
-const berkasFilled = (r: BerkasRow) => r.status !== 'belum' || !!r.name.trim() || !!r.file
+const berkasFilled = (r: BerkasRow) => !!r.name.trim() || !!r.file
 
 const docStatusCfg: Record<DocStatus, { label: string; variant: 'gray' | 'yellow' | 'green' }> = {
   belum:  { label: 'Belum Ada', variant: 'gray' },
@@ -172,9 +172,9 @@ export default function ClientTax() {
     setBerkasSaving(true); setError('')
     try {
       const items: DocumentBulkItem[] = filled.map((r) => {
-        const it: DocumentBulkItem = { doc_type: r.doc_type.trim(), status: r.status }
+        // berkas yang diisi = dianggap ADA (terbit); status & tanggal tak dipakai di entry cepat
+        const it: DocumentBulkItem = { doc_type: r.doc_type.trim(), status: 'terbit' }
         if (r.name.trim()) it.name = r.name.trim()
-        if (r.doc_date) it.doc_date = r.doc_date
         return it
       })
       const created = await documentService.bulkCreate({ client_id: clientId, items })
@@ -614,13 +614,7 @@ export default function ClientTax() {
                   )}
                   <button type="button" onClick={() => setBerkasRows((prev) => prev.filter((_, idx) => idx !== i))} className="text-slate-400 hover:text-red-600" title="Hapus baris"><X size={15} /></button>
                 </div>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                  <select className="input" value={r.status} onChange={(e) => setBerkasRow(i, { status: e.target.value as DocStatus })}>
-                    {(Object.keys(docStatusCfg) as DocStatus[]).map((k) => <option key={k} value={k}>{docStatusCfg[k].label}</option>)}
-                  </select>
-                  <input className="input" placeholder="Nomor" value={r.name} onChange={(e) => setBerkasRow(i, { name: e.target.value })} />
-                  <input className="input" type="date" value={r.doc_date} onChange={(e) => setBerkasRow(i, { doc_date: e.target.value })} />
-                </div>
+                <input className="input" placeholder="Nomor (opsional)" value={r.name} onChange={(e) => setBerkasRow(i, { name: e.target.value })} />
                 <label className="flex items-center gap-2 text-xs text-slate-500 cursor-pointer w-fit">
                   <span className="inline-flex items-center gap-1 px-2 py-1 rounded border border-slate-200 hover:bg-slate-50">
                     <Paperclip size={12} /> {r.file ? 'Ganti file' : 'Lampirkan file'}
