@@ -1,19 +1,26 @@
 import type { UserRole } from '../types'
 
-// Peta akses menu per role (enforcement frontend).
-// - produksi : Dashboard, Konstruksi, Procurement
-// - marketing: grup Marketing & Properti saja
-// - role lain: akses penuh (status quo — belum dibatasi)
+// Peta akses menu per role (enforcement frontend; backend guard di api.py utk Konstruksi/Procurement).
+// - produksi : Dashboard + area Produksi (Konstruksi/Procurement)
+// - marketing: grup Marketing & Properti (+ Pemberkasan)
+// - role lain (owner/admin/manager/viewer): akses penuh KECUALI area Produksi yg dibatasi PROD_ROLES
 const ROLE_PATHS: Partial<Record<UserRole, string[]>> = {
   produksi: ['/dashboard', '/construction', '/procurement'],
   marketing: ['/marketing', '/property', '/pemberkasan'],
 }
 
+// Area Konstruksi & Procurement — hanya role ini (samakan dgn backend api.py PROD_ROLES).
+const PROD_AREA = ['/construction', '/procurement']
+const PROD_ROLES: UserRole[] = ['owner', 'admin', 'manager', 'produksi']
+
 export function canAccessPath(role: UserRole | undefined, path: string): boolean {
   if (!role) return true
+  // Area Produksi dibatasi utk semua role (termasuk viewer) — hanya PROD_ROLES yang boleh.
+  if (PROD_AREA.some((p) => path.startsWith(p))) return PROD_ROLES.includes(role)
+  // Role dgn allow-list eksplisit (produksi/marketing) — selain area Produksi, ikuti daftarnya.
   const allowed = ROLE_PATHS[role]
-  if (!allowed) return true // role tak dibatasi
-  return allowed.some((p) => path.startsWith(p))
+  if (allowed) return allowed.some((p) => path.startsWith(p))
+  return true // owner/admin/manager/viewer: penuh utk menu selain area Produksi
 }
 
 // Halaman default (landing/redirect) per role — harus berupa path yang boleh diakses role itu.

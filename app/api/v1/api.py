@@ -1,7 +1,13 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from app.api.v1.endpoints import auth, users, marketing, property, sale, payment, audit, tax, document, kpr, procurement, stock, expense, rab, construction, contractor, legal, reporting, filing
+from app.api.deps import require_role
+from app.models.user import UserRole
 
 api_router = APIRouter()
+
+# Area Produksi (Konstruksi & Procurement) — hanya role ini yang boleh (samakan dgn FE utils/access.ts).
+PROD_ROLES = (UserRole.OWNER, UserRole.ADMIN, UserRole.MANAGER, UserRole.PRODUKSI)
+prod_guard = Depends(require_role(*PROD_ROLES))
 
 api_router.include_router(auth.router,        prefix="/auth",        tags=["Auth"])
 api_router.include_router(users.router,       prefix="/team",        tags=["Team"])
@@ -13,12 +19,12 @@ api_router.include_router(audit.router,        prefix="/audit",       tags=["Aud
 api_router.include_router(tax.router,          prefix="/legal",       tags=["Legal-Tax"])
 api_router.include_router(document.router,     prefix="/legal",       tags=["Legal-Docs"])
 api_router.include_router(kpr.router,          prefix="/kpr",         tags=["KPR"])
-api_router.include_router(procurement.router, prefix="/procurement", tags=["Procurement"])
-api_router.include_router(stock.router,        prefix="/procurement", tags=["Stock"])
-api_router.include_router(expense.router,      prefix="/procurement", tags=["Expense"])
-api_router.include_router(rab.router,          prefix="/procurement", tags=["RAB"])
-api_router.include_router(construction.router, prefix="/construction", tags=["Construction"])
-api_router.include_router(contractor.router,   prefix="/construction", tags=["Contractor"])
+api_router.include_router(procurement.router, prefix="/procurement", tags=["Procurement"], dependencies=[prod_guard])
+api_router.include_router(stock.router,        prefix="/procurement", tags=["Stock"],       dependencies=[prod_guard])
+api_router.include_router(expense.router,      prefix="/procurement", tags=["Expense"],     dependencies=[prod_guard])
+api_router.include_router(rab.router,          prefix="/procurement", tags=["RAB"],         dependencies=[prod_guard])
+api_router.include_router(construction.router, prefix="/construction", tags=["Construction"], dependencies=[prod_guard])
+api_router.include_router(contractor.router,   prefix="/construction", tags=["Contractor"],   dependencies=[prod_guard])
 api_router.include_router(legal.router,       prefix="/legal",       tags=["Legal"])
 api_router.include_router(reporting.router,   prefix="/reporting",   tags=["Reporting"])
 api_router.include_router(filing.router,      prefix="/filing",      tags=["Pemberkasan"])
