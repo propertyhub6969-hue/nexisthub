@@ -420,29 +420,44 @@ export default function ClientTax() {
                     {st && <Badge label={st.label} variant={st.variant} />}
                     {x.tax_type === 'pph' && (
                       <div className="flex items-center gap-2 mt-1">
-                        {x.has_validation_file && (
-                          <button onClick={() => taxService.openValidationFile(x.id)} className="inline-flex items-center gap-1 text-brand-600 hover:underline text-xs" title={x.validation_file_name}>
-                            <Eye size={12} /> Validasi
+                        {x.has_file && (
+                          <button onClick={() => taxService.openTaxFile(x.id)} className="inline-flex items-center gap-1 text-brand-600 hover:underline text-xs" title={x.file_name}>
+                            <Eye size={12} /> Bukti PPh
                           </button>
                         )}
-                        <button onClick={() => triggerValUpload(x.id)} className="inline-flex items-center gap-1 text-slate-500 hover:text-brand-600 text-xs">
-                          {uploadingValId === x.id ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />} {x.has_validation_file ? 'Ganti Validasi' : 'Validasi'}
+                        <button onClick={() => triggerTaxUpload(x.id)} className="inline-flex items-center gap-1 text-slate-500 hover:text-brand-600 text-xs">
+                          {uploadingTaxId === x.id ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />} {x.has_file ? 'Ganti Bukti PPh' : 'Bukti PPh'}
                         </button>
                       </div>
                     )}
                   </td>
                   <td className="px-4 py-2.5 text-slate-500">{x.notary_name ?? '—'}</td>
                   <td className="px-4 py-2.5">
-                    <div className="flex items-center gap-2">
-                      {x.has_file && (
-                        <button onClick={() => taxService.openTaxFile(x.id)} className="inline-flex items-center gap-1 text-brand-600 hover:underline text-xs" title={x.file_name}>
-                          <Eye size={13} /> Lihat
+                    {x.tax_type === 'pph' ? (
+                      // PPh: kolom Bukti = bukti VALIDASI pajak
+                      <div className="flex items-center gap-2">
+                        {x.has_validation_file && (
+                          <button onClick={() => taxService.openValidationFile(x.id)} className="inline-flex items-center gap-1 text-brand-600 hover:underline text-xs" title={x.validation_file_name}>
+                            <Eye size={13} /> Validasi
+                          </button>
+                        )}
+                        <button onClick={() => triggerValUpload(x.id)} className="inline-flex items-center gap-1 text-slate-500 hover:text-brand-600 text-xs">
+                          {uploadingValId === x.id ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />} {x.has_validation_file ? 'Ganti Validasi' : 'Validasi'}
                         </button>
-                      )}
-                      <button onClick={() => triggerTaxUpload(x.id)} className="inline-flex items-center gap-1 text-slate-500 hover:text-brand-600 text-xs">
-                        {uploadingTaxId === x.id ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />} {x.has_file ? 'Ganti' : 'Upload'}
-                      </button>
-                    </div>
+                      </div>
+                    ) : (
+                      // Non-PPh: kolom Bukti = bukti bayar
+                      <div className="flex items-center gap-2">
+                        {x.has_file && (
+                          <button onClick={() => taxService.openTaxFile(x.id)} className="inline-flex items-center gap-1 text-brand-600 hover:underline text-xs" title={x.file_name}>
+                            <Eye size={13} /> Lihat
+                          </button>
+                        )}
+                        <button onClick={() => triggerTaxUpload(x.id)} className="inline-flex items-center gap-1 text-slate-500 hover:text-brand-600 text-xs">
+                          {uploadingTaxId === x.id ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />} {x.has_file ? 'Ganti' : 'Upload'}
+                        </button>
+                      </div>
+                    )}
                   </td>
                   <td className="px-4 py-2.5">
                     <div className="flex items-center justify-end gap-3">
