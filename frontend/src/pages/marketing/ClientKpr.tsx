@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { ArrowLeft, Loader2, Landmark, CheckCircle2, Banknote, Check, Plus, Trash2, XCircle } from 'lucide-react'
+import { ArrowLeft, Loader2, Landmark, CheckCircle2, Banknote, Check, Plus, Trash2, XCircle, BellRing, Scale, HardHat, FileCheck } from 'lucide-react'
 import Modal from '../../components/ui/Modal'
 import MoneyInput from '../../components/ui/MoneyInput'
 import { marketingService } from '../../services/marketing'
@@ -155,6 +155,26 @@ export default function ClientKpr() {
           <button onClick={createApp} disabled={saving} className="btn-primary text-xs inline-flex items-center gap-2 mt-2">
             {saving && <Loader2 size={13} className="animate-spin" />} <Plus size={13} /> Ajukan Ulang ke Bank Lain
           </button>
+        </div>
+      )}
+
+      {/* Pengingat saat tahap SP3K — tindak lanjut sebelum akad */}
+      {kpr && !kpr.is_rejected && kpr.stage === 'sp3k' && (
+        <div className="card p-4 bg-amber-50/50 border-amber-200">
+          <p className="text-sm font-semibold text-amber-700 flex items-center gap-2">
+            <BellRing size={15} /> SP3K sudah terbit — segera tindak lanjut sebelum akad
+          </p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <Link to={`/marketing/clients/${clientId}/tax`} className="inline-flex items-center gap-1.5 text-xs font-medium text-amber-700 bg-white border border-amber-200 rounded-lg px-3 py-1.5 hover:bg-amber-100 transition">
+              <Scale size={13} /> Bayarkan Pajak
+            </Link>
+            <Link to="/construction" className="inline-flex items-center gap-1.5 text-xs font-medium text-amber-700 bg-white border border-amber-200 rounded-lg px-3 py-1.5 hover:bg-amber-100 transition">
+              <HardHat size={13} /> Cek Progres Bangunan
+            </Link>
+            <Link to={`/marketing/clients/${clientId}/tax`} className="inline-flex items-center gap-1.5 text-xs font-medium text-amber-700 bg-white border border-amber-200 rounded-lg px-3 py-1.5 hover:bg-amber-100 transition">
+              <FileCheck size={13} /> Cek Dokumen
+            </Link>
+          </div>
         </div>
       )}
 
