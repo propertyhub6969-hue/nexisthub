@@ -79,16 +79,16 @@ export default function Pemberkasan() {
         <table className="w-full text-sm">
           <thead className="bg-slate-50 border-b border-slate-200">
             <tr>
-              {['Nama Pembeli', 'Proyek', 'Unit', 'Bank', 'Dokumen', 'Pajak', 'Status Berkas KPR', ''].map((h, i) => (
+              {['Nama Pembeli', 'Proyek', 'Unit', 'Bank', 'Dokumen', 'Pajak', 'Status Berkas KPR', 'Lama Pemberkasan', ''].map((h, i) => (
                 <th key={i} className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">{h}</th>
               ))}
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {loading ? (
-              <tr><td colSpan={8} className="px-4 py-10 text-center text-slate-400"><Loader2 size={18} className="inline animate-spin" /></td></tr>
+              <tr><td colSpan={9} className="px-4 py-10 text-center text-slate-400"><Loader2 size={18} className="inline animate-spin" /></td></tr>
             ) : filtered.length === 0 ? (
-              <tr><td colSpan={8} className="px-4 py-8 text-center text-slate-400 text-sm">
+              <tr><td colSpan={9} className="px-4 py-8 text-center text-slate-400 text-sm">
                 {items.length === 0 ? 'Belum ada pembeli.' : 'Tidak ada pembeli sesuai filter.'}
               </td></tr>
             ) : (
@@ -102,6 +102,11 @@ export default function Pemberkasan() {
                   <td className="px-4 py-3">{completionBadge(it.tax_settled, it.tax_total, 'Lunas')}</td>
                   <td className="px-4 py-3">
                     {it.kpr_stage ? <Badge label={kprStageLabel[it.kpr_stage]} variant="blue" /> : <span className="text-slate-400">—</span>}
+                  </td>
+                  <td className="px-4 py-3 whitespace-nowrap">
+                    {it.kpr_days == null ? <span className="text-slate-400">—</span>
+                      : it.kpr_akad ? <span className="text-slate-700"><span className="font-semibold">{it.kpr_days}</span> hari</span>
+                      : <span className="text-amber-600 text-xs">{it.kpr_days} hari (berjalan)</span>}
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center justify-end gap-3">

@@ -607,6 +607,8 @@ export interface FilingSummaryItem {
   tax_settled: number
   kpr_stage?: KprStage
   bank_name?: string
+  kpr_days?: number | null
+  kpr_akad: boolean
 }
 
 export interface Bank {

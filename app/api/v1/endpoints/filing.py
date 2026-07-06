@@ -1,3 +1,4 @@
+from datetime import date
 from fastapi import APIRouter, Depends
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -63,18 +64,27 @@ async def filing_summary(
         if tax_status != TaxStatus.BELUM:
             tax_settled[client_id] = tax_settled.get(client_id, 0) + cnt
 
-    # Tahap KPR + bank terbaru per pembeli
+    # Tahap KPR + bank + tanggal (untuk durasi pemberkasan) terbaru per pembeli
     kpr_rows = (await db.execute(
-        select(KprApplication.client_id, KprApplication.stage, KprApplication.bank_id, KprApplication.created_at)
+        select(KprApplication.client_id, KprApplication.stage, KprApplication.bank_id,
+               KprApplication.submitted_date, KprApplication.akad_date, KprApplication.created_at)
         .where(KprApplication.client_id.in_(ids), KprApplication.is_deleted == False)  # noqa: E712
         .order_by(KprApplication.created_at.desc())
     )).all()
     kpr_stage: dict = {}
     kpr_bank_id: dict = {}
-    for client_id, stage, bank_id, _created_at in kpr_rows:
+    kpr_days: dict = {}
+    kpr_akad: dict = {}
+    today = date.today()
+    for client_id, stage, bank_id, submitted_date, akad_date, _created_at in kpr_rows:
         if client_id not in kpr_stage:  # baris pertama per klien = paling baru
             kpr_stage[client_id] = stage
             kpr_bank_id[client_id] = bank_id
+            if submitted_date is not None:
+                end = akad_date if akad_date is not None else today
+                d = (end - submitted_date).days
+                kpr_days[client_id] = d if d >= 0 else None
+                kpr_akad[client_id] = akad_date is not None
     # nama bank
     bank_ids = {b for b in kpr_bank_id.values() if b}
     bank_names = {
@@ -96,5 +106,7 @@ async def filing_summary(
             tax_total=tax_total.get(c.id, 0), tax_settled=tax_settled.get(c.id, 0),
             kpr_stage=kpr_stage.get(c.id),
             bank_name=bank_names.get(kpr_bank_id.get(c.id)),
+            kpr_days=kpr_days.get(c.id),
+            kpr_akad=kpr_akad.get(c.id, False),
         ))
     return items

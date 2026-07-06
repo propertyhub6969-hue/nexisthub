@@ -15,3 +15,5 @@ class FilingSummaryItem(BaseModel):
     tax_settled: int = 0
     kpr_stage: Optional[str] = None
     bank_name: Optional[str] = None
+    kpr_days: Optional[int] = None   # lama pemberkasan (Collect Berkas → Akad; bila belum akad = s/d hari ini)
+    kpr_akad: bool = False           # True bila sudah akad (durasi final); False = masih berjalan
