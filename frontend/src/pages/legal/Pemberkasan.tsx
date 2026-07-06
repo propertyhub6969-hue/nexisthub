@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Search, Loader2, Scale, Landmark, Info } from 'lucide-react'
+import { Loader2, Scale, Landmark, Info } from 'lucide-react'
 import Badge from '../../components/ui/Badge'
 import Modal from '../../components/ui/Modal'
 import { filingService } from '../../services/filing'
@@ -34,7 +34,6 @@ export default function Pemberkasan() {
   const [items, setItems] = useState<FilingSummaryItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [search, setSearch] = useState('')
   const [projectFilter, setProjectFilter] = useState('')
   const [infoOpen, setInfoOpen] = useState(false)
 
@@ -45,13 +44,12 @@ export default function Pemberkasan() {
       .finally(() => setLoading(false))
   }, [])
 
-  // daftar proyek (unik) dari data untuk dropdown filter
-  const projectNames = Array.from(new Set(items.map((i) => i.project_name).filter(Boolean) as string[])).sort()
+  // jumlah pembeli per proyek (untuk chip filter)
+  const counts: Record<string, number> = {}
+  items.forEach((i) => { if (i.project_name) counts[i.project_name] = (counts[i.project_name] || 0) + 1 })
+  const projectNames = Object.keys(counts).sort()
 
-  const filtered = items.filter((it) =>
-    (!search || it.full_name.toLowerCase().includes(search.toLowerCase())) &&
-    (!projectFilter || it.project_name === projectFilter)
-  )
+  const filtered = items.filter((it) => !projectFilter || it.project_name === projectFilter)
 
   return (
     <div className="space-y-4">
@@ -59,19 +57,23 @@ export default function Pemberkasan() {
         Ringkasan kelengkapan dokumen, pajak, dan tahap KPR untuk semua pembeli — klik ikon untuk buka detailnya.
       </p>
 
+      {/* Filter proyek (chip) + tombol keterangan */}
       <div className="flex flex-wrap items-center gap-2">
-        <div className="relative max-w-xs">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input className="input pl-8" placeholder="Cari nama pembeli..." value={search} onChange={(e) => setSearch(e.target.value)} />
-        </div>
-        <select className="input w-52" value={projectFilter} onChange={(e) => setProjectFilter(e.target.value)}>
-          <option value="">Semua proyek</option>
-          {projectNames.map((p) => <option key={p} value={p}>{p}</option>)}
-        </select>
+        <button onClick={() => setProjectFilter('')}
+          className={`card px-3 py-2 text-sm ${projectFilter === '' ? 'ring-2 ring-brand-500' : ''}`}>
+          Semua Proyek <span className="font-semibold">{items.length}</span>
+        </button>
+        {projectNames.map((p) => (
+          <button key={p} onClick={() => setProjectFilter(projectFilter === p ? '' : p)}
+            className={`card px-3 py-2 text-sm flex items-center gap-2 ${projectFilter === p ? 'ring-2 ring-brand-500' : ''}`}>
+            <Badge label={p} variant="blue" />
+            <span className="font-semibold">{counts[p]}</span>
+          </button>
+        ))}
         <button
           type="button"
           onClick={() => setInfoOpen(true)}
-          className="btn-secondary flex items-center gap-2 text-sm"
+          className="card px-3 py-2 text-sm flex items-center gap-2 ml-auto text-slate-600 hover:text-brand-600 hover:ring-2 hover:ring-brand-500 transition"
           title="Keterangan tahap Status Berkas KPR"
         >
           <Info size={14} /> Keterangan Status KPR
@@ -94,7 +96,7 @@ export default function Pemberkasan() {
               <tr><td colSpan={7} className="px-4 py-10 text-center text-slate-400"><Loader2 size={18} className="inline animate-spin" /></td></tr>
             ) : filtered.length === 0 ? (
               <tr><td colSpan={7} className="px-4 py-8 text-center text-slate-400 text-sm">
-                {items.length === 0 ? 'Belum ada pembeli.' : 'Tidak ada pembeli sesuai filter.'}
+                {items.length === 0 ? 'Belum ada pembeli.' : 'Tidak ada pembeli untuk proyek ini.'}
               </td></tr>
             ) : (
               filtered.map((it) => (
