@@ -53,14 +53,18 @@ const navItems = [
     ],
   },
   {
-    label: 'Master Data',
+    label: 'Setting',
     icon: FileText,
-    to: '/legal',
+    children: [
+      { label: 'Master Data', to: '/legal', icon: FileText },
+    ],
   },
   {
-    label: 'Reports',
+    label: 'Report',
     icon: BarChart3,
-    to: '/reports',
+    children: [
+      { label: 'Report', to: '/reports', icon: BarChart3 },
+    ],
   },
 ]
 
