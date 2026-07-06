@@ -393,7 +393,8 @@ export type TaxStatus = 'belum' | 'dibayar' | 'validasi' | 'dtp' | 'bebas'
 export interface Notary {
   id: string
   name: string
-  office?: string
+  sk_number?: string
+  ktp?: string
   phone?: string
   address?: string
   notes?: string
@@ -402,7 +403,8 @@ export interface Notary {
 }
 export interface NotaryCreate {
   name: string
-  office?: string
+  sk_number?: string
+  ktp?: string
   phone?: string
   address?: string
   notes?: string

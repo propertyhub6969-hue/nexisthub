@@ -10,7 +10,8 @@ from app.models.tax import TaxType, TaxStatus
 # ── Notary ────────────────────────────────────────────────────────
 class NotaryBase(BaseModel):
     name: str = Field(..., min_length=2, max_length=200)
-    office: Optional[str] = Field(None, max_length=200)
+    sk_number: Optional[str] = Field(None, max_length=200)   # No. SK Notaris
+    ktp: Optional[str] = Field(None, max_length=30)          # No. KTP notaris
     phone: Optional[str] = Field(None, max_length=20)
     address: Optional[str] = None
     notes: Optional[str] = None
@@ -22,7 +23,8 @@ class NotaryCreate(NotaryBase):
 
 class NotaryUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=2, max_length=200)
-    office: Optional[str] = Field(None, max_length=200)
+    sk_number: Optional[str] = Field(None, max_length=200)
+    ktp: Optional[str] = Field(None, max_length=30)
     phone: Optional[str] = Field(None, max_length=20)
     address: Optional[str] = None
     notes: Optional[str] = None

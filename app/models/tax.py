@@ -29,7 +29,8 @@ class Notary(BaseModel, SoftDeleteMixin):
         nullable=False, index=True
     )
     name: Mapped[str] = mapped_column(String(200), nullable=False)
-    office: Mapped[str] = mapped_column(String(200), nullable=True)   # Nama kantor / PPAT
+    sk_number: Mapped[str] = mapped_column(String(200), nullable=True)   # No. SK Notaris (dulu 'office')
+    ktp: Mapped[str] = mapped_column(String(30), nullable=True)          # No. KTP notaris
     phone: Mapped[str] = mapped_column(String(20), nullable=True)
     address: Mapped[str] = mapped_column(Text, nullable=True)
     notes: Mapped[str] = mapped_column(Text, nullable=True)

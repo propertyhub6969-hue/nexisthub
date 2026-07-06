@@ -5,7 +5,7 @@ import { taxService } from '../../services/tax'
 import { kprService } from '../../services/kpr'
 import type { Notary, NotaryCreate, Bank, BankCreate } from '../../types'
 
-const emptyNotary: NotaryCreate = { name: '', office: '', phone: '', address: '' }
+const emptyNotary: NotaryCreate = { name: '', sk_number: '', ktp: '', phone: '', address: '' }
 const emptyBank: BankCreate = { name: '', notes: '' }
 
 export default function LegalMaster() {
@@ -35,12 +35,12 @@ export default function LegalMaster() {
 
   // ── Notary ──
   function openNCreate() { setNEditId(null); setNForm(emptyNotary); setNModal(true) }
-  function openNEdit(n: Notary) { setNEditId(n.id); setNForm({ name: n.name, office: n.office ?? '', phone: n.phone ?? '', address: n.address ?? '' }); setNModal(true) }
+  function openNEdit(n: Notary) { setNEditId(n.id); setNForm({ name: n.name, sk_number: n.sk_number ?? '', ktp: n.ktp ?? '', phone: n.phone ?? '', address: n.address ?? '' }); setNModal(true) }
   async function submitN(e: React.FormEvent) {
     e.preventDefault(); setSaving(true)
     try {
       const p = { ...nForm }; const rec = p as unknown as Record<string, unknown>
-      ;['office', 'phone', 'address'].forEach((k) => { if (rec[k] === '') delete rec[k] })
+      ;['sk_number', 'ktp', 'phone', 'address'].forEach((k) => { if (rec[k] === '') delete rec[k] })
       if (nEditId) await taxService.updateNotary(nEditId, p); else await taxService.createNotary(p)
       setNModal(false); setNotaries(await taxService.listNotaries())
     } catch { setError('Gagal menyimpan notaris.') } finally { setSaving(false) }
@@ -79,15 +79,16 @@ export default function LegalMaster() {
           <button className="btn-primary text-xs flex items-center gap-1" onClick={openNCreate}><Plus size={13} /> Tambah Notaris</button>
         </div>
         <table className="w-full text-sm">
-          <thead className="bg-slate-50 border-b border-slate-200"><tr>{['Nama', 'Kantor', 'No. HP', ''].map((h, i) => (
+          <thead className="bg-slate-50 border-b border-slate-200"><tr>{['Nama', 'No. SK Notaris', 'No. KTP', 'No. HP', ''].map((h, i) => (
             <th key={i} className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">{h}</th>))}</tr></thead>
           <tbody className="divide-y divide-slate-100">
             {notaries.length === 0 ? (
-              <tr><td colSpan={4} className="px-4 py-6 text-center text-slate-400 text-sm">Belum ada notaris.</td></tr>
+              <tr><td colSpan={5} className="px-4 py-6 text-center text-slate-400 text-sm">Belum ada notaris.</td></tr>
             ) : notaries.map((n) => (
               <tr key={n.id} className="hover:bg-slate-50">
                 <td className="px-4 py-2.5 font-medium text-slate-900">{n.name}</td>
-                <td className="px-4 py-2.5 text-slate-500">{n.office ?? '—'}</td>
+                <td className="px-4 py-2.5 text-slate-500">{n.sk_number ?? '—'}</td>
+                <td className="px-4 py-2.5 text-slate-500">{n.ktp ?? '—'}</td>
                 <td className="px-4 py-2.5 text-slate-500">{n.phone ?? '—'}</td>
                 <td className="px-4 py-2.5"><div className="flex items-center justify-end gap-3">
                   <button onClick={() => openNEdit(n)} className="text-slate-400 hover:text-brand-600"><Pencil size={14} /></button>
@@ -129,7 +130,8 @@ export default function LegalMaster() {
       <Modal open={nModal} onClose={() => setNModal(false)} title={nEditId ? 'Edit Notaris' : 'Tambah Notaris'}>
         <form onSubmit={submitN} className="space-y-3">
           <div><label className="label">Nama Notaris *</label><input className="input" required minLength={2} value={nForm.name} onChange={(e) => setNForm({ ...nForm, name: e.target.value })} /></div>
-          <div><label className="label">Nama Kantor / PPAT</label><input className="input" value={nForm.office} onChange={(e) => setNForm({ ...nForm, office: e.target.value })} /></div>
+          <div><label className="label">No. SK Notaris</label><input className="input" value={nForm.sk_number} onChange={(e) => setNForm({ ...nForm, sk_number: e.target.value })} /></div>
+          <div><label className="label">No. KTP Notaris</label><input className="input" value={nForm.ktp} onChange={(e) => setNForm({ ...nForm, ktp: e.target.value })} /></div>
           <div className="grid grid-cols-2 gap-3">
             <div><label className="label">No. HP</label><input className="input" value={nForm.phone} onChange={(e) => setNForm({ ...nForm, phone: e.target.value })} /></div>
             <div><label className="label">Alamat</label><input className="input" value={nForm.address} onChange={(e) => setNForm({ ...nForm, address: e.target.value })} /></div>
