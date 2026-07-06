@@ -161,6 +161,55 @@ async def download_tax_file(
     return cached_file_response(data, ctype, fname, etag)
 
 
+@router.post("/tax-records/{tax_id}/id-billing-file", response_model=TaxResponse)
+async def upload_tax_id_billing_file(
+    tax_id: uuid.UUID,
+    file: UploadFile = File(...),
+    ctx: AuthContext = Depends(get_current_context),
+    db: AsyncSession = Depends(get_db),
+):
+    """Upload bukti ID Billing (kode billing DJP) — terpisah dari bukti bayar; dipakai utk PPh."""
+    t = await _load_tax(db, ctx.tenant_id, tax_id)
+    data = await file.read()
+    if len(data) > MAX_FILE_BYTES:
+        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Ukuran file maksimal 10 MB")
+    t.id_billing_file_data = data
+    t.id_billing_file_name = file.filename
+    t.id_billing_file_type = file.content_type or "application/octet-stream"
+    t.id_billing_file_size = len(data)
+    await db.flush()
+    await record_audit(db, ctx.tenant_id, ctx.user_id, "UPLOAD", "tax_records", tax_id,
+                       new_data={"id_billing_file_name": file.filename, "size": len(data)})
+    return await _load_tax(db, ctx.tenant_id, tax_id)
+
+
+@router.get("/tax-records/{tax_id}/id-billing-file")
+async def download_tax_id_billing_file(
+    tax_id: uuid.UUID,
+    request: Request,
+    ctx: AuthContext = Depends(get_current_context),
+    db: AsyncSession = Depends(get_db),
+):
+    meta = (await db.execute(
+        select(TaxRecord.id_billing_file_size, TaxRecord.id_billing_file_type,
+               TaxRecord.id_billing_file_name, TaxRecord.updated_at).where(
+            TaxRecord.id == tax_id, TaxRecord.tenant_id == ctx.tenant_id, NOTDEL(TaxRecord))
+    )).first()
+    if meta is None or meta[0] is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="File tidak ditemukan")
+    size, ctype, fname, updated = meta
+    etag = file_etag(size, updated)
+    nm = not_modified_response(request, etag)
+    if nm is not None:
+        return nm
+    data = (await db.execute(
+        select(TaxRecord.id_billing_file_data).where(TaxRecord.id == tax_id, TaxRecord.tenant_id == ctx.tenant_id)
+    )).scalar_one_or_none()
+    if data is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="File tidak ditemukan")
+    return cached_file_response(data, ctype, fname, etag)
+
+
 # ═══════════════════════ NOTARY FEES ═══════════════════════
 @router.get("/notary-fees", response_model=list[FeeResponse])
 async def list_fees(client_id: uuid.UUID = Query(...), ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db)):

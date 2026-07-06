@@ -74,6 +74,8 @@ class TaxResponse(TaxBase):
     notary_name: Optional[str] = None
     has_file: bool = False
     file_name: Optional[str] = None
+    has_id_billing_file: bool = False
+    id_billing_file_name: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 

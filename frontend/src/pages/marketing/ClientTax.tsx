@@ -72,6 +72,10 @@ export default function ClientTax() {
   const [uploadingTaxId, setUploadingTaxId] = useState<string | null>(null)
   const taxFileInput = useRef<HTMLInputElement | null>(null)
   const pendingTaxUpload = useRef<string | null>(null)
+  // bukti ID Billing (khusus PPh)
+  const [uploadingBillId, setUploadingBillId] = useState<string | null>(null)
+  const billFileInput = useRef<HTMLInputElement | null>(null)
+  const pendingBillUpload = useRef<string | null>(null)
 
   const [feeModal, setFeeModal] = useState(false)
   const [feeForm, setFeeForm] = useState<NotaryFeeCreate>(emptyFee(clientId))
@@ -182,6 +186,15 @@ export default function ClientTax() {
     try { await taxService.uploadTaxFile(id, file); await reload() }
     catch { setError('Gagal upload bukti pajak (maks 10 MB).') } finally { setUploadingTaxId(null) }
   }
+  function triggerBillUpload(id: string) { pendingBillUpload.current = id; billFileInput.current?.click() }
+  async function onBillFilePicked(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]; const id = pendingBillUpload.current
+    e.target.value = ''
+    if (!file || !id) return
+    setUploadingBillId(id)
+    try { await taxService.uploadIdBillingFile(id, file); await reload() }
+    catch { setError('Gagal upload bukti ID Billing (maks 10 MB).') } finally { setUploadingBillId(null) }
+  }
 
   // fee handlers
   function openFeeCreate() { setFeeEditId(null); setFeeForm(emptyFee(clientId)); setFeeModal(true) }
@@ -288,6 +301,7 @@ export default function ClientTax() {
       {/* hidden file inputs untuk upload */}
       <input ref={fileInput} type="file" className="hidden" onChange={onFilePicked} />
       <input ref={taxFileInput} type="file" className="hidden" onChange={onTaxFilePicked} />
+      <input ref={billFileInput} type="file" className="hidden" onChange={onBillFilePicked} />
       <input ref={ppjbFileInput} type="file" className="hidden" onChange={(e) => onDeedFilePicked('ppjb', e)} />
       <input ref={ajbFileInput} type="file" className="hidden" onChange={(e) => onDeedFilePicked('ajb', e)} />
 
@@ -372,7 +386,21 @@ export default function ClientTax() {
                     {x.category && <span className="ml-1.5 text-[10px] uppercase tracking-wide text-slate-400">{x.category}</span>}
                   </td>
                   <td className="px-4 py-2.5 text-slate-600">{fmt(x.amount)}</td>
-                  <td className="px-4 py-2.5 text-slate-500 text-xs">{x.id_billing ?? '—'}</td>
+                  <td className="px-4 py-2.5 text-slate-500 text-xs">
+                    <div>{x.id_billing ?? '—'}</div>
+                    {x.tax_type === 'pph' && (
+                      <div className="flex items-center gap-2 mt-1">
+                        {x.has_id_billing_file && (
+                          <button onClick={() => taxService.openIdBillingFile(x.id)} className="inline-flex items-center gap-1 text-brand-600 hover:underline" title={x.id_billing_file_name}>
+                            <Eye size={12} /> Bukti
+                          </button>
+                        )}
+                        <button onClick={() => triggerBillUpload(x.id)} className="inline-flex items-center gap-1 text-slate-500 hover:text-brand-600">
+                          {uploadingBillId === x.id ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />} {x.has_id_billing_file ? 'Ganti' : 'Bukti'}
+                        </button>
+                      </div>
+                    )}
+                  </td>
                   <td className="px-4 py-2.5 text-slate-500 text-xs">{x.ntpn ?? '—'}</td>
                   <td className="px-4 py-2.5">{st && <Badge label={st.label} variant={st.variant} />}</td>
                   <td className="px-4 py-2.5 text-slate-500">{x.notary_name ?? '—'}</td>
