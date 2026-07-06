@@ -14,3 +14,4 @@ class FilingSummaryItem(BaseModel):
     tax_total: int = 0
     tax_settled: int = 0
     kpr_stage: Optional[str] = None
+    bank_name: Optional[str] = None

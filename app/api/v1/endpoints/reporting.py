@@ -95,6 +95,8 @@ class KprRejectionBank(BaseModel):
     approved: int       # sudah disetujui (SP3K/Akad/Pencairan), belum ditolak
     in_process: int     # masih proses, belum ada keputusan
     rejection_rate: float   # rejected / total * 100 (dibulatkan 1 desimal)
+    avg_days_to_akad: Optional[float] = None  # rata² lama pemberkasan Collect Berkas→Akad (hari)
+    akad_samples: int = 0                      # jumlah pengajuan yang dipakai utk rata² durasi
 
 
 class KprRejectionReport(BaseModel):
@@ -104,6 +106,8 @@ class KprRejectionReport(BaseModel):
     approved: int
     in_process: int
     rejection_rate: float
+    avg_days_to_akad: Optional[float] = None
+    akad_samples: int = 0
 
 
 @router.get("/kpr-rejection", response_model=KprRejectionReport)
@@ -126,6 +130,7 @@ async def kpr_rejection(
             "bank_id": key,
             "bank_name": (k.bank.name if k.bank else "(Tanpa bank)"),
             "total": 0, "rejected": 0, "approved": 0, "in_process": 0,
+            "akad_days_sum": 0, "akad_samples": 0,
         })
         b["total"] += 1
         if k.rejected_date is not None:
@@ -134,12 +139,26 @@ async def kpr_rejection(
             b["approved"] += 1
         else:
             b["in_process"] += 1
+        # durasi pemberkasan: Collect Berkas (submitted_date) → Akad (akad_date)
+        if k.submitted_date is not None and k.akad_date is not None:
+            days = (k.akad_date - k.submitted_date).days
+            if days >= 0:
+                b["akad_days_sum"] += days
+                b["akad_samples"] += 1
 
     def rate(rejected: int, total: int) -> float:
         return round(rejected / total * 100, 1) if total else 0.0
 
+    def avg_days(b: dict) -> Optional[float]:
+        return round(b["akad_days_sum"] / b["akad_samples"], 1) if b["akad_samples"] else None
+
     banks = [
-        KprRejectionBank(**b, rejection_rate=rate(b["rejected"], b["total"]))
+        KprRejectionBank(
+            bank_id=b["bank_id"], bank_name=b["bank_name"], total=b["total"],
+            rejected=b["rejected"], approved=b["approved"], in_process=b["in_process"],
+            rejection_rate=rate(b["rejected"], b["total"]),
+            avg_days_to_akad=avg_days(b), akad_samples=b["akad_samples"],
+        )
         for b in buckets.values()
     ]
     # urutkan: rejection-rate tertinggi dulu, lalu terbanyak pengajuan; bank tanpa nama di akhir
@@ -149,10 +168,14 @@ async def kpr_rejection(
     rejected = sum(b.rejected for b in banks)
     approved = sum(b.approved for b in banks)
     in_process = sum(b.in_process for b in banks)
+    akad_days_sum = sum(bk["akad_days_sum"] for bk in buckets.values())
+    akad_samples = sum(bk["akad_samples"] for bk in buckets.values())
 
     return KprRejectionReport(
         banks=banks, total=total, rejected=rejected, approved=approved, in_process=in_process,
         rejection_rate=rate(rejected, total),
+        avg_days_to_akad=(round(akad_days_sum / akad_samples, 1) if akad_samples else None),
+        akad_samples=akad_samples,
     )
 
 

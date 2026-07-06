@@ -148,11 +148,18 @@ function KprRejectionTab() {
         <StatCard icon={<TrendingDown size={15} />} label="Rejection Rate" value={`${report.rejection_rate}%`} hint="seluruh bank" />
       </div>
 
+      {report.avg_days_to_akad != null && (
+        <p className="text-sm text-slate-500">
+          Rata-rata lama pemberkasan (Collect Berkas → Akad): <b className="text-slate-800">{report.avg_days_to_akad} hari</b>
+          <span className="text-slate-400"> (dari {report.akad_samples} pengajuan yang sudah akad)</span>
+        </p>
+      )}
+
       <div className="card overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-slate-50 border-b border-slate-200">
             <tr>
-              {['Bank', 'Total', 'Disetujui', 'Proses', 'Ditolak', 'Rejection Rate'].map((h, i) => (
+              {['Bank', 'Total', 'Disetujui', 'Proses', 'Ditolak', 'Rejection Rate', 'Lama Pemberkasan'].map((h, i) => (
                 <th key={i} className={`px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap ${i === 0 ? 'text-left' : 'text-center'}`}>{h}</th>
               ))}
             </tr>
@@ -174,6 +181,11 @@ function KprRejectionTab() {
                     </div>
                     <span className={`w-12 text-right font-semibold ${rateColor(b.rejection_rate)}`}>{b.rejection_rate}%</span>
                   </div>
+                </td>
+                <td className="px-4 py-3 text-center text-slate-600 whitespace-nowrap">
+                  {b.avg_days_to_akad != null
+                    ? <><span className="font-semibold">{b.avg_days_to_akad}</span> hari<span className="text-slate-400 text-xs"> ({b.akad_samples})</span></>
+                    : <span className="text-slate-400">—</span>}
                 </td>
               </tr>
             ))}

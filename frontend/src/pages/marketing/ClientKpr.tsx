@@ -140,7 +140,8 @@ export default function ClientKpr() {
           <Link to="/marketing/clients" className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-brand-600 mb-1"><ArrowLeft size={14} /> Daftar Pembeli</Link>
           <h1 className="text-lg font-semibold text-slate-900 flex items-center gap-2"><Landmark size={18} /> KPR — {client?.full_name ?? 'Pembeli'}</h1>
         </div>
-        {kpr && !kpr.is_rejected && (
+        {/* Tombol tolak hilang setelah akad kredit tersimpan (tak bisa ditolak lagi) */}
+        {kpr && !kpr.is_rejected && stageIndex(kpr.stage) < stageIndex('akad_kredit') && (
           <button onClick={openReject} className="btn-secondary text-sm text-red-600 flex items-center gap-2 shrink-0"><XCircle size={14} /> Tolak Pengajuan</button>
         )}
       </div>
@@ -227,6 +228,11 @@ export default function ClientKpr() {
               <label className="label">Tgl Collect Berkas</label>
               <input className="input max-w-[240px]" type="date" value={kpr.submitted_date ?? ''} onChange={(e) => set('submitted_date', e.target.value)} />
               <p className="text-xs text-slate-400 mt-1">Default terisi otomatis dari tanggal pembeli pertama kali dientri.</p>
+            </div>
+            <div>
+              <label className="label">Catatan Collect Berkas</label>
+              <textarea className="input" rows={2} placeholder="mis. berkas atas nama berbeda, perlu perubahan nama, dokumen menyusul, dll"
+                value={kpr.notes ?? ''} onChange={(e) => set('notes', e.target.value)} />
             </div>
 
             {curIdx >= stageIndex('berkas_masuk_bank') && (

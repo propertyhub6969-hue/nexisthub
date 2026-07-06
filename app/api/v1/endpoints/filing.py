@@ -8,7 +8,7 @@ from app.models.marketing import Client
 from app.models.property import Project, Unit
 from app.models.document import Document, DocStatus
 from app.models.tax import TaxRecord, TaxStatus
-from app.models.kpr import KprApplication
+from app.models.kpr import KprApplication, Bank
 from app.schemas.filing import FilingSummaryItem
 
 router = APIRouter()
@@ -63,15 +63,23 @@ async def filing_summary(
         if tax_status != TaxStatus.BELUM:
             tax_settled[client_id] = tax_settled.get(client_id, 0) + cnt
 
-    # Tahap KPR terbaru per pembeli
+    # Tahap KPR + bank terbaru per pembeli
     kpr_rows = (await db.execute(
-        select(KprApplication.client_id, KprApplication.stage, KprApplication.created_at)
+        select(KprApplication.client_id, KprApplication.stage, KprApplication.bank_id, KprApplication.created_at)
         .where(KprApplication.client_id.in_(ids), KprApplication.is_deleted == False)  # noqa: E712
         .order_by(KprApplication.created_at.desc())
     )).all()
     kpr_stage: dict = {}
-    for client_id, stage, _created_at in kpr_rows:
-        kpr_stage.setdefault(client_id, stage)  # baris pertama per klien = paling baru
+    kpr_bank_id: dict = {}
+    for client_id, stage, bank_id, _created_at in kpr_rows:
+        if client_id not in kpr_stage:  # baris pertama per klien = paling baru
+            kpr_stage[client_id] = stage
+            kpr_bank_id[client_id] = bank_id
+    # nama bank
+    bank_ids = {b for b in kpr_bank_id.values() if b}
+    bank_names = {
+        b.id: b.name for b in (await db.execute(select(Bank).where(Bank.id.in_(bank_ids)))).scalars().all()
+    } if bank_ids else {}
 
     items = []
     for c in clients:
@@ -87,5 +95,6 @@ async def filing_summary(
             doc_total=doc_total.get(c.id, 0), doc_terbit=doc_terbit.get(c.id, 0),
             tax_total=tax_total.get(c.id, 0), tax_settled=tax_settled.get(c.id, 0),
             kpr_stage=kpr_stage.get(c.id),
+            bank_name=bank_names.get(kpr_bank_id.get(c.id)),
         ))
     return items

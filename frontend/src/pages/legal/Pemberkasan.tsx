@@ -79,16 +79,16 @@ export default function Pemberkasan() {
         <table className="w-full text-sm">
           <thead className="bg-slate-50 border-b border-slate-200">
             <tr>
-              {['Nama Pembeli', 'Proyek', 'Unit', 'Dokumen', 'Pajak', 'Status Berkas KPR', ''].map((h, i) => (
+              {['Nama Pembeli', 'Proyek', 'Unit', 'Bank', 'Dokumen', 'Pajak', 'Status Berkas KPR', ''].map((h, i) => (
                 <th key={i} className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">{h}</th>
               ))}
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {loading ? (
-              <tr><td colSpan={7} className="px-4 py-10 text-center text-slate-400"><Loader2 size={18} className="inline animate-spin" /></td></tr>
+              <tr><td colSpan={8} className="px-4 py-10 text-center text-slate-400"><Loader2 size={18} className="inline animate-spin" /></td></tr>
             ) : filtered.length === 0 ? (
-              <tr><td colSpan={7} className="px-4 py-8 text-center text-slate-400 text-sm">
+              <tr><td colSpan={8} className="px-4 py-8 text-center text-slate-400 text-sm">
                 {items.length === 0 ? 'Belum ada pembeli.' : 'Tidak ada pembeli sesuai filter.'}
               </td></tr>
             ) : (
@@ -97,6 +97,7 @@ export default function Pemberkasan() {
                   <td className="px-4 py-3 font-medium text-slate-900">{it.full_name}</td>
                   <td className="px-4 py-3 text-slate-500">{it.project_name ?? '—'}</td>
                   <td className="px-4 py-3 text-slate-500">{it.unit_label ?? '—'}</td>
+                  <td className="px-4 py-3 text-slate-500">{it.bank_name ?? '—'}</td>
                   <td className="px-4 py-3">{completionBadge(it.doc_terbit, it.doc_total, 'Terbit')}</td>
                   <td className="px-4 py-3">{completionBadge(it.tax_settled, it.tax_total, 'Lunas')}</td>
                   <td className="px-4 py-3">

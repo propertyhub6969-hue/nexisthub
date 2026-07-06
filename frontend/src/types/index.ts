@@ -517,6 +517,8 @@ export interface KprRejectionBank {
   approved: number
   in_process: number
   rejection_rate: number
+  avg_days_to_akad?: number | null
+  akad_samples: number
 }
 
 export interface KprRejectionReport {
@@ -526,6 +528,8 @@ export interface KprRejectionReport {
   approved: number
   in_process: number
   rejection_rate: number
+  avg_days_to_akad?: number | null
+  akad_samples: number
 }
 
 export interface CashflowMonth {
@@ -602,6 +606,7 @@ export interface FilingSummaryItem {
   tax_total: number
   tax_settled: number
   kpr_stage?: KprStage
+  bank_name?: string
 }
 
 export interface Bank {
