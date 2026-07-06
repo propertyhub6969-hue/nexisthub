@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { ArrowLeft, Plus, Trash2, Pencil, Loader2, Receipt, Scale, FileText, Upload, Eye, Contact, FileSignature } from 'lucide-react'
+import { ArrowLeft, Plus, Trash2, Pencil, Loader2, Receipt, Scale, FileText, Upload, Eye, Contact, FileSignature, ListChecks, Paperclip, X } from 'lucide-react'
 import Badge from '../../components/ui/Badge'
 import MoneyInput from '../../components/ui/MoneyInput'
 import Modal from '../../components/ui/Modal'
@@ -9,12 +9,18 @@ import { taxService } from '../../services/tax'
 import { documentService } from '../../services/document'
 import type {
   Client, Notary, TaxRecord, TaxCreate, TaxType, TaxStatus, SaleCategory, NotaryFee, NotaryFeeCreate,
-  DocumentItem, DocumentCreate, DocStatus,
+  DocumentItem, DocumentCreate, DocumentBulkItem, DocStatus,
 } from '../../types'
 
 // Berkas Pembeli = dokumen identitas melekat ke pembeli (client_id).
 // Dokumen legalitas unit dikelola terpisah di menu Properti → Dokumen Legalitas (unit_id).
 const IDENTITY_PRESETS = ['KTP', 'KK', 'NPWP']
+// Checklist entry cepat berkas pembeli (rumah subsidi biasanya banyak dokumen)
+const BERKAS_CHECKLIST = ['KTP', 'KK', 'NPWP', 'Buku Nikah', 'Slip Gaji / Ket. Penghasilan', 'Surat Ket. Kerja', 'Buku Tabungan / Rek. Koran', 'Pas Foto', 'Surat Pernyataan Belum Punya Rumah', 'SPT Tahunan']
+const isKTP = (t: string) => /ktp/i.test(t)
+
+interface BerkasRow { doc_type: string; name: string; status: DocStatus; doc_date: string; file?: File | null; custom?: boolean }
+const berkasFilled = (r: BerkasRow) => r.status !== 'belum' || !!r.name.trim() || !!r.file
 
 const docStatusCfg: Record<DocStatus, { label: string; variant: 'gray' | 'yellow' | 'green' }> = {
   belum:  { label: 'Belum Ada', variant: 'gray' },
@@ -63,6 +69,11 @@ export default function ClientTax() {
   const [docEditId, setDocEditId] = useState<string | null>(null)
   const [uploadingId, setUploadingId] = useState<string | null>(null)
   const [viewingId, setViewingId] = useState<string | null>(null)
+  // entry cepat berkas pembeli
+  const [berkasModal, setBerkasModal] = useState(false)
+  const [berkasRows, setBerkasRows] = useState<BerkasRow[]>([])
+  const [berkasSaving, setBerkasSaving] = useState(false)
+  const [berkasMsg, setBerkasMsg] = useState('')
   const fileInput = useRef<HTMLInputElement | null>(null)
   const pendingUpload = useRef<string | null>(null)
 
@@ -136,6 +147,48 @@ export default function ClientTax() {
   async function delDoc(id: string) {
     if (!confirm('Hapus (arsipkan) dokumen ini?')) return
     try { await documentService.remove(id); await reloadDocs() } catch { setError('Gagal menghapus dokumen.') }
+  }
+
+  // ── Entry cepat berkas pembeli (checklist) ──
+  function openBerkasChecklist() {
+    const existing = new Set(docs.map((d) => d.doc_type.trim().toLowerCase()))
+    const nik = client?.nik ?? ''
+    const preset: BerkasRow[] = BERKAS_CHECKLIST
+      .filter((t) => !existing.has(t.trim().toLowerCase()))
+      .map((t) => ({ doc_type: t, name: isKTP(t) ? nik : '', status: 'belum', doc_date: '', file: null }))
+    setBerkasRows(preset.length ? preset : [{ doc_type: '', name: '', status: 'belum', doc_date: '', file: null, custom: true }])
+    setBerkasMsg(''); setBerkasModal(true)
+  }
+  function setBerkasRow(i: number, patch: Partial<BerkasRow>) {
+    setBerkasRows((prev) => prev.map((r, idx) => (idx === i ? { ...r, ...patch } : r)))
+  }
+  function addBerkasRow() {
+    setBerkasRows((prev) => [...prev, { doc_type: '', name: '', status: 'belum', doc_date: '', file: null, custom: true }])
+  }
+  async function submitBerkasChecklist(e: React.FormEvent) {
+    e.preventDefault()
+    const filled = berkasRows.filter((r) => r.doc_type.trim() && berkasFilled(r))
+    if (filled.length === 0) { setBerkasMsg('Isi minimal satu baris (status/nomor/file).'); return }
+    setBerkasSaving(true); setError('')
+    try {
+      const items: DocumentBulkItem[] = filled.map((r) => {
+        const it: DocumentBulkItem = { doc_type: r.doc_type.trim(), status: r.status }
+        if (r.name.trim()) it.name = r.name.trim()
+        if (r.doc_date) it.doc_date = r.doc_date
+        return it
+      })
+      const created = await documentService.bulkCreate({ client_id: clientId, items })
+      let uploaded = 0
+      const withFile = filled.filter((r) => r.file).length
+      for (const r of filled) {
+        if (!r.file) continue
+        const doc = created.find((d) => d.doc_type.trim().toLowerCase() === r.doc_type.trim().toLowerCase())
+        if (doc) { try { await documentService.uploadFile(doc.id, r.file); uploaded++ } catch { /* lanjut */ } }
+      }
+      await reloadDocs()
+      setBerkasMsg(`${created.length} berkas tersimpan${withFile ? `, ${uploaded}/${withFile} file terunggah` : ''}.`)
+      setBerkasRows([])
+    } catch { setError('Gagal menyimpan berkas.') } finally { setBerkasSaving(false) }
   }
   async function viewDoc(id: string) {
     setViewingId(id)
@@ -323,7 +376,10 @@ export default function ClientTax() {
       <div className="card overflow-hidden">
         <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
           <h2 className="text-sm font-semibold text-slate-900 flex items-center gap-2"><Contact size={15} /> Berkas Pembeli</h2>
-          <button className="btn-primary text-xs flex items-center gap-1" onClick={openDocCreate}><Plus size={13} /> Tambah Berkas</button>
+          <div className="flex items-center gap-2">
+            <button className="btn-secondary text-xs flex items-center gap-1" onClick={openBerkasChecklist}><ListChecks size={13} /> Entry Cepat</button>
+            <button className="btn-primary text-xs flex items-center gap-1" onClick={openDocCreate}><Plus size={13} /> Tambah Berkas</button>
+          </div>
         </div>
         {docTable(docs, 'Belum ada berkas identitas. Tambahkan KTP, KK, NPWP.')}
       </div>
@@ -510,7 +566,11 @@ export default function ClientTax() {
         <form onSubmit={submitDoc} className="space-y-3">
           <div>
             <label className="label">Jenis Dokumen *</label>
-            <input className="input" required list="doc-presets" placeholder="KTP / KK / NPWP ..." value={docForm.doc_type} onChange={(e) => setDocForm({ ...docForm, doc_type: e.target.value })} />
+            <input className="input" required list="doc-presets" placeholder="KTP / KK / NPWP ..." value={docForm.doc_type} onChange={(e) => {
+              const dt = e.target.value
+              // No. KTP otomatis diambil dari data pembeli (NIK) bila nomor masih kosong
+              setDocForm((f) => ({ ...f, doc_type: dt, name: (!f.name && isKTP(dt) && client?.nik) ? client.nik : f.name }))
+            }} />
             <datalist id="doc-presets">{IDENTITY_PRESETS.map((d) => <option key={d} value={d} />)}</datalist>
           </div>
           <div>
@@ -533,6 +593,52 @@ export default function ClientTax() {
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" className="btn-secondary text-sm" onClick={() => setDocModal(false)}>Batal</button>
             <button type="submit" className="btn-primary text-sm flex items-center gap-2" disabled={saving}>{saving && <Loader2 size={14} className="animate-spin" />}Simpan</button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Modal Entry Cepat Berkas Pembeli */}
+      <Modal open={berkasModal} onClose={() => setBerkasModal(false)} title="Entry Cepat Berkas Pembeli" size="lg">
+        <form onSubmit={submitBerkasChecklist} className="space-y-3">
+          <p className="text-sm text-slate-500">
+            Isi beberapa berkas sekaligus untuk <b>{client?.full_name}</b>. Hanya baris yang diisi (status/nomor/file) yang disimpan; jenis yang sudah ada akan diperbarui. No. KTP otomatis dari data pembeli.
+          </p>
+          <div className="space-y-2">
+            {berkasRows.map((r, i) => (
+              <div key={i} className="rounded-lg border border-slate-200 p-3 space-y-2">
+                <div className="flex items-center gap-2">
+                  {r.custom ? (
+                    <input className="input flex-1" placeholder="Jenis berkas..." list="doc-presets" value={r.doc_type} onChange={(e) => setBerkasRow(i, { doc_type: e.target.value })} />
+                  ) : (
+                    <span className="font-medium text-slate-800 text-sm flex-1">{r.doc_type}</span>
+                  )}
+                  <button type="button" onClick={() => setBerkasRows((prev) => prev.filter((_, idx) => idx !== i))} className="text-slate-400 hover:text-red-600" title="Hapus baris"><X size={15} /></button>
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                  <select className="input" value={r.status} onChange={(e) => setBerkasRow(i, { status: e.target.value as DocStatus })}>
+                    {(Object.keys(docStatusCfg) as DocStatus[]).map((k) => <option key={k} value={k}>{docStatusCfg[k].label}</option>)}
+                  </select>
+                  <input className="input" placeholder="Nomor" value={r.name} onChange={(e) => setBerkasRow(i, { name: e.target.value })} />
+                  <input className="input" type="date" value={r.doc_date} onChange={(e) => setBerkasRow(i, { doc_date: e.target.value })} />
+                </div>
+                <label className="flex items-center gap-2 text-xs text-slate-500 cursor-pointer w-fit">
+                  <span className="inline-flex items-center gap-1 px-2 py-1 rounded border border-slate-200 hover:bg-slate-50">
+                    <Paperclip size={12} /> {r.file ? 'Ganti file' : 'Lampirkan file'}
+                  </span>
+                  {r.file && <span className="text-slate-600 truncate max-w-[180px]">{r.file.name}</span>}
+                  <input type="file" className="hidden" onChange={(e) => setBerkasRow(i, { file: e.target.files?.[0] ?? null })} />
+                </label>
+              </div>
+            ))}
+          </div>
+          <button type="button" onClick={addBerkasRow} className="text-sm text-brand-600 hover:underline flex items-center gap-1"><Plus size={13} /> Tambah baris berkas</button>
+          <p className="text-[11px] text-slate-400">File maks 10 MB per berkas.</p>
+          {berkasMsg && <div className="rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm px-3 py-2">{berkasMsg}</div>}
+          <div className="flex justify-end gap-2 pt-1">
+            <button type="button" className="btn-secondary text-sm" onClick={() => setBerkasModal(false)}>Tutup</button>
+            <button type="submit" className="btn-primary text-sm flex items-center gap-2" disabled={berkasSaving}>
+              {berkasSaving && <Loader2 size={14} className="animate-spin" />}Simpan Semua
+            </button>
           </div>
         </form>
       </Modal>

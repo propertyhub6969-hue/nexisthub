@@ -34,8 +34,15 @@ class DocumentBulkItem(DocumentBase):
 
 
 class DocumentBulkCreate(BaseModel):
-    unit_id: uuid.UUID
+    unit_id: Optional[uuid.UUID] = None      # dokumen legalitas unit
+    client_id: Optional[uuid.UUID] = None    # berkas pembeli
     items: list[DocumentBulkItem] = Field(..., min_length=1, max_length=50)
+
+    @model_validator(mode="after")
+    def _one_owner(self):
+        if bool(self.unit_id) == bool(self.client_id):
+            raise ValueError("Entry batch harus melekat ke SATU: unit_id ATAU client_id")
+        return self
 
 
 class DocumentUpdate(BaseModel):

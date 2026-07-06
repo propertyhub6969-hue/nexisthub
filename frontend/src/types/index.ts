@@ -509,7 +509,8 @@ export interface DocumentBulkItem {
   land_area?: number
 }
 export interface DocumentBulkCreate {
-  unit_id: string
+  unit_id?: string
+  client_id?: string
   items: DocumentBulkItem[]
 }
 

@@ -12,6 +12,7 @@ from app.core.files import file_etag, not_modified_response, cached_file_respons
 from app.api.deps import get_current_context, AuthContext
 from app.models.document import Document
 from app.models.property import Unit
+from app.models.marketing import Client
 from app.schemas.document import DocumentCreate, DocumentUpdate, DocumentResponse, DocumentBulkCreate
 
 router = APIRouter()
@@ -78,19 +79,30 @@ async def bulk_upsert_documents(
     ctx: AuthContext = Depends(get_current_context),
     db: AsyncSession = Depends(get_db),
 ):
-    """Entry dokumen legalitas unit dalam satu form (checklist). Per jenis: kalau sudah ada → di-update,
-    kalau belum → dibuat. File diunggah terpisah (per baris) setelah metadata tersimpan."""
-    # pastikan unit milik tenant ini
-    unit = (await db.execute(
-        select(Unit).where(Unit.id == payload.unit_id, Unit.tenant_id == ctx.tenant_id)
-    )).scalar_one_or_none()
-    if unit is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Unit tidak ditemukan")
+    """Entry dokumen dalam satu form (checklist) — untuk legalitas unit (unit_id) ATAU berkas pembeli (client_id).
+    Per jenis: kalau sudah ada → di-update, kalau belum → dibuat. File diunggah terpisah (per baris)."""
+    if payload.unit_id:
+        owner = (await db.execute(
+            select(Unit).where(Unit.id == payload.unit_id, Unit.tenant_id == ctx.tenant_id)
+        )).scalar_one_or_none()
+        if owner is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Unit tidak ditemukan")
+        owner_filter = Document.unit_id == payload.unit_id
+        owner_kwargs = {"unit_id": payload.unit_id}
+    else:
+        owner = (await db.execute(
+            select(Client).where(Client.id == payload.client_id, Client.tenant_id == ctx.tenant_id,
+                                 Client.is_deleted == False)  # noqa: E712
+        )).scalar_one_or_none()
+        if owner is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Pembeli tidak ditemukan")
+        owner_filter = Document.client_id == payload.client_id
+        owner_kwargs = {"client_id": payload.client_id}
 
-    # dokumen legalitas unit yang sudah ada (untuk merge per jenis)
+    # dokumen yang sudah ada (untuk merge per jenis)
     existing = (await db.execute(
         select(Document).where(
-            Document.unit_id == payload.unit_id, Document.tenant_id == ctx.tenant_id,
+            owner_filter, Document.tenant_id == ctx.tenant_id,
             Document.is_deleted == False)  # noqa: E712
     )).scalars().all()
     by_type = {d.doc_type.strip().lower(): d for d in existing}
@@ -105,7 +117,7 @@ async def bulk_upsert_documents(
                 setattr(d, f, v)
             action = "UPDATE"
         else:                                   # baru → buat
-            d = Document(tenant_id=ctx.tenant_id, unit_id=payload.unit_id, **data)
+            d = Document(tenant_id=ctx.tenant_id, **owner_kwargs, **data)
             db.add(d)
             by_type[key] = d
             action = "CREATE"
