@@ -20,7 +20,7 @@ const BERKAS_CHECKLIST = ['KTP', 'KK', 'NPWP', 'Buku Nikah', 'Slip Gaji / Ket. P
 const isKTP = (t: string) => /ktp/i.test(t)
 
 interface BerkasRow { doc_type: string; name: string; status: DocStatus; doc_date: string; file?: File | null; custom?: boolean }
-const berkasFilled = (r: BerkasRow) => !!r.name.trim() || !!r.file
+const berkasFilled = (r: BerkasRow) => !!r.file
 
 const docStatusCfg: Record<DocStatus, { label: string; variant: 'gray' | 'yellow' | 'green' }> = {
   belum:  { label: 'Belum Ada', variant: 'gray' },
@@ -125,10 +125,8 @@ export default function ClientTax() {
   }
   const reloadDocs = async () => setDocs(await documentService.list(clientId))
 
-  // document handlers — di halaman ini hanya BERKAS PEMBELI (identitas); dok legalitas unit read-only
-  function openDocCreate() {
-    setDocEditId(null); setDocForm(emptyDoc(clientId)); setDocModal(true)
-  }
+  // document handlers — di halaman ini hanya BERKAS PEMBELI (identitas); dok legalitas unit read-only.
+  // Penambahan berkas lewat Entry Cepat; modal ini hanya utk EDIT baris.
   function openDocEdit(d: DocumentItem) {
     setDocEditId(d.id)
     setDocForm({ client_id: clientId, doc_type: d.doc_type, name: d.name ?? '', status: d.status, doc_date: d.doc_date ?? '' })
@@ -168,7 +166,7 @@ export default function ClientTax() {
   async function submitBerkasChecklist(e: React.FormEvent) {
     e.preventDefault()
     const filled = berkasRows.filter((r) => r.doc_type.trim() && berkasFilled(r))
-    if (filled.length === 0) { setBerkasMsg('Isi minimal satu baris (status/nomor/file).'); return }
+    if (filled.length === 0) { setBerkasMsg('Lampirkan file pada minimal satu baris.'); return }
     setBerkasSaving(true); setError('')
     try {
       const items: DocumentBulkItem[] = filled.map((r) => {
@@ -376,10 +374,7 @@ export default function ClientTax() {
       <div className="card overflow-hidden">
         <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
           <h2 className="text-sm font-semibold text-slate-900 flex items-center gap-2"><Contact size={15} /> Berkas Pembeli</h2>
-          <div className="flex items-center gap-2">
-            <button className="btn-secondary text-xs flex items-center gap-1" onClick={openBerkasChecklist}><ListChecks size={13} /> Entry Cepat</button>
-            <button className="btn-primary text-xs flex items-center gap-1" onClick={openDocCreate}><Plus size={13} /> Tambah Berkas</button>
-          </div>
+          <button className="btn-primary text-xs flex items-center gap-1" onClick={openBerkasChecklist}><ListChecks size={13} /> Entry Cepat</button>
         </div>
         {docTable(docs, 'Belum ada berkas identitas. Tambahkan KTP, KK, NPWP.')}
       </div>
@@ -601,7 +596,7 @@ export default function ClientTax() {
       <Modal open={berkasModal} onClose={() => setBerkasModal(false)} title="Entry Cepat Berkas Pembeli" size="lg">
         <form onSubmit={submitBerkasChecklist} className="space-y-3">
           <p className="text-sm text-slate-500">
-            Isi beberapa berkas sekaligus untuk <b>{client?.full_name}</b>. Hanya baris yang diisi (status/nomor/file) yang disimpan; jenis yang sudah ada akan diperbarui. No. KTP otomatis dari data pembeli.
+            Unggah beberapa berkas sekaligus untuk <b>{client?.full_name}</b>. Cukup lampirkan file per jenis — hanya baris yang ada file yang disimpan; jenis yang sudah ada akan diperbarui.
           </p>
           <div className="space-y-2">
             {berkasRows.map((r, i) => (
@@ -614,7 +609,6 @@ export default function ClientTax() {
                   )}
                   <button type="button" onClick={() => setBerkasRows((prev) => prev.filter((_, idx) => idx !== i))} className="text-slate-400 hover:text-red-600" title="Hapus baris"><X size={15} /></button>
                 </div>
-                <input className="input" placeholder="Nomor (opsional)" value={r.name} onChange={(e) => setBerkasRow(i, { name: e.target.value })} />
                 <label className="flex items-center gap-2 text-xs text-slate-500 cursor-pointer w-fit">
                   <span className="inline-flex items-center gap-1 px-2 py-1 rounded border border-slate-200 hover:bg-slate-50">
                     <Paperclip size={12} /> {r.file ? 'Ganti file' : 'Lampirkan file'}
