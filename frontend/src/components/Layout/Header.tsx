@@ -1,9 +1,10 @@
 import { useState, useRef, useEffect } from 'react'
-import { Bell, ChevronDown, LogOut } from 'lucide-react'
+import { Bell, ChevronDown, LogOut, Menu } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 
 interface HeaderProps {
   title: string
+  onMenuClick?: () => void
 }
 
 const roleLabel: Record<string, string> = {
@@ -15,7 +16,7 @@ const roleLabel: Record<string, string> = {
   viewer: 'Viewer',
 }
 
-export default function Header({ title }: HeaderProps) {
+export default function Header({ title, onMenuClick }: HeaderProps) {
   const { user, logout } = useAuth()
   const [open, setOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -32,8 +33,13 @@ export default function Header({ title }: HeaderProps) {
   }, [open])
 
   return (
-    <header className="h-14 bg-white border-b border-slate-200 flex items-center justify-between px-6">
-      <h1 className="text-base font-semibold text-slate-900">{title}</h1>
+    <header className="h-14 bg-white border-b border-slate-200 flex items-center justify-between px-4 sm:px-6">
+      <div className="flex items-center gap-2 min-w-0">
+        <button onClick={onMenuClick} className="lg:hidden w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-600 -ml-1" aria-label="Buka menu">
+          <Menu size={18} />
+        </button>
+        <h1 className="text-base font-semibold text-slate-900 truncate">{title}</h1>
+      </div>
       <div className="flex items-center gap-3">
         <button className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-500 transition-colors relative">
           <Bell size={16} />

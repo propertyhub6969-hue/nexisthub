@@ -14,6 +14,7 @@ import {
   Settings,
   UsersRound,
   Factory,
+  X,
 } from 'lucide-react'
 import { clsx } from 'clsx'
 import { useAuth } from '../../context/AuthContext'
@@ -76,7 +77,7 @@ const settingsItem = {
   ],
 }
 
-export default function Sidebar() {
+export default function Sidebar({ open = false, onClose }: { open?: boolean; onClose?: () => void }) {
   const { user } = useAuth()
 
   const canManageTeam = user?.role === 'owner' || user?.role === 'admin'
@@ -89,11 +90,24 @@ export default function Sidebar() {
   )
 
   return (
-    <aside className="w-60 h-screen shrink-0 bg-sidebar flex flex-col">
-      {/* Logo */}
-      <div className="px-5 py-5 border-b border-blue-900">
-        <NexistLogo size={32} showText={true} textColor="white" />
-      </div>
+    <>
+      {/* Backdrop (mobile/tablet) */}
+      {open && <div className="fixed inset-0 bg-black/40 z-40 lg:hidden" onClick={onClose} />}
+
+      <aside
+        className={clsx(
+          'w-60 h-screen shrink-0 bg-sidebar flex flex-col z-50 transition-transform duration-200',
+          'fixed inset-y-0 left-0 lg:static lg:translate-x-0',
+          open ? 'translate-x-0' : '-translate-x-full',
+        )}
+      >
+        {/* Logo */}
+        <div className="px-5 py-5 border-b border-blue-900 flex items-center justify-between">
+          <NexistLogo size={32} showText={true} textColor="white" />
+          <button onClick={onClose} className="lg:hidden text-slate-300 hover:text-white" aria-label="Tutup menu">
+            <X size={20} />
+          </button>
+        </div>
 
       {/* Nav */}
       <nav className="flex-1 px-3 py-4 space-y-0.5">
@@ -107,6 +121,7 @@ export default function Sidebar() {
                 <NavLink
                   key={child.to}
                   to={child.to}
+                  onClick={onClose}
                   className={({ isActive }) =>
                     clsx(
                       'flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors',
@@ -125,6 +140,7 @@ export default function Sidebar() {
             <NavLink
               key={item.to}
               to={item.to!}
+              onClick={onClose}
               className={({ isActive }) =>
                 clsx(
                   'flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors',
@@ -140,6 +156,7 @@ export default function Sidebar() {
           )
         )}
       </nav>
-    </aside>
+      </aside>
+    </>
   )
 }
