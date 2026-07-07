@@ -1,11 +1,43 @@
 import { useEffect, useState } from 'react'
-import { Users, UserCheck, Handshake, Home, KeyRound, CheckCircle2, Wallet, TrendingUp, AlertTriangle, Loader2 } from 'lucide-react'
+import { Users, UserCheck, Handshake, Home, KeyRound, CheckCircle2, Wallet, TrendingUp, AlertTriangle, Loader2, BarChart3 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { reportingService } from '../services/reporting'
-import type { DashboardStats } from '../types'
+import type { DashboardStats, SalesMonthly } from '../types'
 
 const fmt = (n?: number) =>
   n == null ? '—' : new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(Number(n))
+const monthLabels = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des']
+const monShort = (ym: string) => { const [y, m] = ym.split('-'); return `${monthLabels[Number(m) - 1] ?? m} '${y.slice(2)}` }
+
+function SalesChart({ data }: { data: SalesMonthly[] }) {
+  const max = Math.max(1, ...data.map((d) => d.value))
+  const totalUnit = data.reduce((a, d) => a + d.count, 0)
+  const totalVal = data.reduce((a, d) => a + d.value, 0)
+  return (
+    <div className="card p-4 sm:p-5">
+      <div className="flex items-center justify-between gap-2 mb-4">
+        <h3 className="text-sm font-semibold text-slate-800 flex items-center gap-2"><BarChart3 size={15} /> Penjualan 12 Bulan Terakhir</h3>
+        <span className="text-xs text-slate-400 text-right">{totalUnit} unit · {fmt(totalVal)}</span>
+      </div>
+      {data.length === 0 ? (
+        <p className="py-10 text-center text-sm text-slate-400">Belum ada penjualan.</p>
+      ) : (
+        <div className="flex items-end gap-1.5 h-44">
+          {data.map((d) => (
+            <div key={d.month} className="flex-1 flex flex-col items-center gap-1 min-w-0 h-full justify-end"
+              title={`${monShort(d.month)}: ${d.count} unit · ${fmt(d.value)}`}>
+              <span className="text-[10px] text-slate-500 font-medium">{d.count || ''}</span>
+              <div className="w-full max-w-[36px] rounded-t bg-brand-500 hover:bg-brand-600 transition-colors"
+                style={{ height: `${Math.max((d.value / max) * 100, d.value > 0 ? 4 : 0)}%` }} />
+              <span className="text-[10px] text-slate-400 whitespace-nowrap">{monShort(d.month)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      <p className="text-[11px] text-slate-400 mt-3">Angka di atas batang = jumlah unit terjual; tinggi batang = nilai penjualan (hover untuk detail).</p>
+    </div>
+  )
+}
 
 function StatCard({ icon: Icon, label, value, color, bg, sub }: {
   icon: LucideIcon
@@ -27,10 +59,12 @@ function StatCard({ icon: Icon, label, value, color, bg, sub }: {
 
 export default function Dashboard() {
   const [stats, setStats] = useState<DashboardStats | null>(null)
+  const [sales, setSales] = useState<SalesMonthly[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     reportingService.dashboard().then(setStats).catch(() => {}).finally(() => setLoading(false))
+    reportingService.salesMonthly().then(setSales).catch(() => {})
   }, [])
 
   if (loading) return <div className="py-16 text-center text-slate-400"><Loader2 size={20} className="inline animate-spin" /></div>
@@ -57,6 +91,9 @@ export default function Dashboard() {
           <StatCard icon={CheckCircle2} label="Terjual" value={String(s?.units_sold ?? 0)} color="text-blue-500" bg="bg-blue-50" />
         </div>
       </div>
+
+      {/* Grafik Penjualan */}
+      <SalesChart data={sales} />
 
       {/* Keuangan */}
       <div>

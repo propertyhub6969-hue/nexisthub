@@ -543,6 +543,12 @@ export interface KprRejectionReport {
   akad_samples: number
 }
 
+export interface SalesMonthly {
+  month: string
+  count: number
+  value: number
+}
+
 export interface CashflowMonth {
   month: string
   from_buyer: number

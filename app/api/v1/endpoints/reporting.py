@@ -496,3 +496,28 @@ async def aging(
         overdue_clients=len(clients),
         overdue_schedules=sum(c.overdue_count for c in clients),
     )
+
+
+# ═══════════════════════ GRAFIK PENJUALAN PER BULAN ═══════════════════════
+class SalesMonthly(BaseModel):
+    month: str        # "YYYY-MM"
+    count: int        # jumlah unit terjual (pembeli) bulan itu
+    value: Decimal    # nilai penjualan (Σ harga jual)
+
+
+@router.get("/sales-monthly", response_model=list[SalesMonthly])
+async def sales_monthly(
+    ctx: AuthContext = Depends(get_current_context),
+    db: AsyncSession = Depends(get_db),
+):
+    """Penjualan per bulan (unit terjual + nilai) berdasarkan tanggal kontrak pembeli
+    (fallback tanggal entri). Untuk grafik dashboard — maks 12 bulan terakhir yang ada penjualan."""
+    t = ctx.tenant_id
+    ym = func.to_char(func.coalesce(Client.contract_date, func.date(Client.created_at)), "YYYY-MM")
+    rows = (await db.execute(
+        select(ym.label("ym"), func.count(), func.coalesce(func.sum(Client.contract_value), 0))
+        .where(Client.tenant_id == t, Client.is_deleted == False,  # noqa: E712
+               Client.status != ClientStatus.INACTIVE)
+        .group_by(ym).order_by(ym)
+    )).all()
+    return [SalesMonthly(month=m, count=c, value=Decimal(v)) for m, c, v in rows][-12:]
