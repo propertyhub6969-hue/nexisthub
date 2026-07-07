@@ -1,6 +1,6 @@
 import uuid
 import enum
-from sqlalchemy import String, Text, ForeignKey, Enum as SAEnum, Numeric, Integer, LargeBinary, Date
+from sqlalchemy import String, Text, ForeignKey, Enum as SAEnum, Numeric, Integer, LargeBinary, Date, JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID
 from app.models.base import BaseModel
@@ -72,7 +72,8 @@ class Unit(BaseModel):
     unit_type: Mapped[str] = mapped_column(String(100), nullable=True)     # Tipe (36/60, dll)
     land_area: Mapped[float] = mapped_column(Numeric(10, 2), nullable=True)     # Luas tanah (m2)
     building_area: Mapped[float] = mapped_column(Numeric(10, 2), nullable=True) # Luas bangunan (m2)
-    price: Mapped[float] = mapped_column(Numeric(15, 2), nullable=True)
+    price: Mapped[float] = mapped_column(Numeric(15, 2), nullable=True)   # total (= Σ price_breakdown bila diisi)
+    price_breakdown: Mapped[list] = mapped_column(JSON, nullable=True)    # rincian harga: [{label, amount}]
     status: Mapped[UnitStatus] = mapped_column(
         SAEnum(UnitStatus), default=UnitStatus.AVAILABLE, nullable=False
     )

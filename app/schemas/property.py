@@ -52,13 +52,20 @@ class UnitPosition(BaseModel):
 
 
 # ── Unit ──────────────────────────────────────────────────────────
+class PriceItem(BaseModel):
+    """Satu baris rincian harga unit (mis. Harga Dasar, Hook, Lebih Tanah, Booking Fee)."""
+    label: str = Field(..., min_length=1, max_length=100)
+    amount: Decimal = Field(0, ge=0)
+
+
 class UnitBase(BaseModel):
     block: Optional[str] = Field(None, max_length=50)
     unit_number: str = Field(..., min_length=1, max_length=50)
     unit_type: Optional[str] = Field(None, max_length=100)
     land_area: Optional[Decimal] = Field(None, ge=0)
     building_area: Optional[Decimal] = Field(None, ge=0)
-    price: Optional[Decimal] = Field(None, ge=0)
+    price: Optional[Decimal] = Field(None, ge=0)          # total (= Σ price_breakdown bila diisi)
+    price_breakdown: Optional[list[PriceItem]] = None     # rincian harga per baris
     position_x: Optional[Decimal] = None
     position_y: Optional[Decimal] = None
     notes: Optional[str] = None
@@ -89,6 +96,7 @@ class UnitUpdate(BaseModel):
     land_area: Optional[Decimal] = Field(None, ge=0)
     building_area: Optional[Decimal] = Field(None, ge=0)
     price: Optional[Decimal] = Field(None, ge=0)
+    price_breakdown: Optional[list[PriceItem]] = None
     position_x: Optional[Decimal] = None
     position_y: Optional[Decimal] = None
     notes: Optional[str] = None

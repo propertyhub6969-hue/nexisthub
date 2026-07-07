@@ -193,6 +193,11 @@ export interface ProjectCreate {
   status?: ProjectStatus
 }
 
+export interface PriceItem {
+  label: string
+  amount: number
+}
+
 export interface Unit {
   id: string
   project_id: string
@@ -202,6 +207,7 @@ export interface Unit {
   land_area?: number
   building_area?: number
   price?: number
+  price_breakdown?: PriceItem[]
   position_x?: number
   position_y?: number
   notes?: string
@@ -222,6 +228,7 @@ export interface UnitCreate {
   land_area?: number
   building_area?: number
   price?: number
+  price_breakdown?: PriceItem[]
   notes?: string
   status?: UnitStatus
 }

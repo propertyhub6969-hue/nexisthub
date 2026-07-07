@@ -1,5 +1,6 @@
 import uuid
 import math
+from decimal import Decimal
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status, UploadFile, File, Request
@@ -270,6 +271,20 @@ async def list_units(
     return _paginate(items, total or 0, page, size)
 
 
+def _apply_price_breakdown(data: dict) -> None:
+    """Bila `price_breakdown` diisi → simpan sbg JSON [{label, amount}] & set price = totalnya.
+    Bila kosong/None (dan key ada) → kosongkan rincian (harga pakai field manual)."""
+    if "price_breakdown" not in data:
+        return
+    pb = data.get("price_breakdown")
+    if pb:
+        items = [{"label": str(i["label"]).strip(), "amount": float(i["amount"] or 0)} for i in pb]
+        data["price_breakdown"] = items
+        data["price"] = sum((Decimal(str(i["amount"])) for i in items), Decimal(0))
+    else:
+        data["price_breakdown"] = None
+
+
 @router.post("/units", response_model=UnitResponse, status_code=status.HTTP_201_CREATED)
 async def create_unit(
     payload: UnitCreate,
@@ -278,7 +293,9 @@ async def create_unit(
 ):
     # pastikan project milik tenant ini
     await _get_project(db, ctx.tenant_id, payload.project_id)
-    unit = Unit(tenant_id=ctx.tenant_id, **payload.model_dump())
+    data = payload.model_dump()
+    _apply_price_breakdown(data)
+    unit = Unit(tenant_id=ctx.tenant_id, **data)
     db.add(unit)
     await db.flush()
     await db.refresh(unit)
@@ -362,7 +379,9 @@ async def update_unit(
     db: AsyncSession = Depends(get_db),
 ):
     unit = await _get_unit(db, ctx.tenant_id, unit_id)
-    for field, value in payload.model_dump(exclude_unset=True).items():
+    data = payload.model_dump(exclude_unset=True)
+    _apply_price_breakdown(data)
+    for field, value in data.items():
         setattr(unit, field, value)
     await db.flush()
     await db.refresh(unit)

@@ -1,13 +1,15 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { Plus, Trash2, Pencil, Loader2, ArrowLeft, Map, FileSignature, Printer, Boxes } from 'lucide-react'
+import { Plus, Trash2, Pencil, Loader2, ArrowLeft, Map, FileSignature, Printer, Boxes, X } from 'lucide-react'
 import Badge from '../../components/ui/Badge'
 import MoneyInput from '../../components/ui/MoneyInput'
 import Modal from '../../components/ui/Modal'
 import { propertyService } from '../../services/property'
 import { useAuth } from '../../context/AuthContext'
 import { printBast } from '../../utils/bast'
-import type { Project, Unit, UnitCreate, UnitStatus, UnitBulkGenerate } from '../../types'
+import type { Project, Unit, UnitCreate, UnitStatus, UnitBulkGenerate, PriceItem } from '../../types'
+
+const PRICE_PRESETS = ['Harga Dasar', 'Hook', 'Lebih Tanah', 'Lebih Bangunan', 'Booking Fee']
 
 const statusConfig: Record<UnitStatus, { label: string; variant: 'green' | 'yellow' | 'blue' | 'orange' }> = {
   available: { label: 'Tersedia',     variant: 'green' },
@@ -34,8 +36,11 @@ export default function ProjectUnits() {
   const [statusFilter, setStatusFilter] = useState('')
   const [modalOpen, setModalOpen] = useState(false)
   const [form, setForm] = useState<UnitCreate>(emptyForm(projectId))
+  const [priceRows, setPriceRows] = useState<PriceItem[]>([{ label: 'Harga Dasar', amount: 0 }])
   const [saving, setSaving] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
+
+  const priceTotal = priceRows.reduce((a, r) => a + (Number(r.amount) || 0), 0)
 
   // BAST
   const [bastModal, setBastModal] = useState(false)
@@ -75,6 +80,7 @@ export default function ProjectUnits() {
   function openCreate() {
     setEditingId(null)
     setForm(emptyForm(projectId))
+    setPriceRows([{ label: 'Harga Dasar', amount: 0 }])
     setModalOpen(true)
   }
 
@@ -90,21 +96,31 @@ export default function ProjectUnits() {
       price: u.price,
       status: u.status,
     })
+    // muat rincian; kalau belum ada, satu baris 'Harga Dasar' = harga lama
+    setPriceRows(u.price_breakdown?.length ? u.price_breakdown.map((p) => ({ label: p.label, amount: Number(p.amount) })) : [{ label: 'Harga Dasar', amount: Number(u.price ?? 0) }])
     setModalOpen(true)
   }
+
+  function setPriceRow(i: number, patch: Partial<PriceItem>) {
+    setPriceRows((prev) => prev.map((r, idx) => (idx === i ? { ...r, ...patch } : r)))
+  }
+  function addPriceRow() { setPriceRows((prev) => [...prev, { label: '', amount: 0 }]) }
+  function removePriceRow(i: number) { setPriceRows((prev) => prev.filter((_, idx) => idx !== i)) }
 
   function closeModal() {
     setModalOpen(false)
     setEditingId(null)
     setForm(emptyForm(projectId))
+    setPriceRows([{ label: 'Harga Dasar', amount: 0 }])
   }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setSaving(true)
     try {
-      const payload: UnitCreate = { ...form }
-      ;(['land_area', 'building_area', 'price'] as const).forEach((k) => { if (!payload[k]) delete payload[k] })
+      const filled = priceRows.filter((r) => r.label.trim() && Number(r.amount) > 0)
+      const payload: UnitCreate = { ...form, price: priceTotal, price_breakdown: filled }
+      ;(['land_area', 'building_area'] as const).forEach((k) => { if (!payload[k]) delete payload[k] })
       const rec = payload as unknown as Record<string, unknown>
       ;['block', 'unit_type'].forEach((k) => { if (rec[k] === '') delete rec[k] })
       if (editingId) {
@@ -310,20 +326,32 @@ export default function ProjectUnits() {
               <input className="input" type="number" min={0} value={form.building_area ?? ''} onChange={(e) => setForm({ ...form, building_area: e.target.value ? Number(e.target.value) : undefined })} />
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="label">Harga (Rp)</label>
-              <MoneyInput value={form.price} onChange={(v) => setForm({ ...form, price: v })} />
+          {/* Rincian Harga (Harga Dasar, Hook, Lebih Tanah, Booking Fee, dll) */}
+          <div>
+            <label className="label">Rincian Harga (Rp)</label>
+            <datalist id="price-presets">{PRICE_PRESETS.map((p) => <option key={p} value={p} />)}</datalist>
+            <div className="space-y-2">
+              {priceRows.map((r, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <input className="input flex-1" list="price-presets" placeholder="Komponen (mis. Hook)" value={r.label} onChange={(e) => setPriceRow(i, { label: e.target.value })} />
+                  <div className="w-40 shrink-0"><MoneyInput value={r.amount || undefined} onChange={(v) => setPriceRow(i, { amount: v ?? 0 })} /></div>
+                  <button type="button" onClick={() => removePriceRow(i)} className="text-slate-400 hover:text-red-600 shrink-0" title="Hapus baris" disabled={priceRows.length === 1}><X size={16} /></button>
+                </div>
+              ))}
             </div>
-            <div>
-              <label className="label">Status</label>
-              <select className="input" value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value as UnitStatus })}>
-                {/* Serah Terima diset lewat BAST, bukan manual — tampil hanya bila unit memang sudah handover */}
-                {(Object.keys(statusConfig) as UnitStatus[]).filter((k) => k !== 'handover' || form.status === 'handover').map((k) => (
-                  <option key={k} value={k}>{statusConfig[k].label}</option>
-                ))}
-              </select>
+            <div className="flex items-center justify-between mt-2">
+              <button type="button" onClick={addPriceRow} className="text-sm text-brand-600 hover:underline flex items-center gap-1"><Plus size={13} /> Tambah baris</button>
+              <span className="text-sm font-semibold text-slate-900">Total: {fmt(priceTotal)}</span>
             </div>
+          </div>
+          <div>
+            <label className="label">Status</label>
+            <select className="input max-w-[240px]" value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value as UnitStatus })}>
+              {/* Serah Terima diset lewat BAST, bukan manual — tampil hanya bila unit memang sudah handover */}
+              {(Object.keys(statusConfig) as UnitStatus[]).filter((k) => k !== 'handover' || form.status === 'handover').map((k) => (
+                <option key={k} value={k}>{statusConfig[k].label}</option>
+              ))}
+            </select>
           </div>
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" className="btn-secondary text-sm" onClick={closeModal}>Batal</button>
