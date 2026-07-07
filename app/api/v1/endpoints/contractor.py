@@ -35,7 +35,7 @@ async def _to_response(db, c: ContractorContract, unit: Unit) -> ContractRespons
     paid = await _paid(db, c.id)
     return ContractResponse(
         id=c.id, project_id=c.project_id, unit_id=c.unit_id, unit_label=_lbl(unit),
-        vendor_id=c.vendor_id, vendor_name=c.vendor_name, title=c.title,
+        contractor_name=c.contractor_name, pengawas=c.pengawas, vendor_name=c.vendor_name, title=c.title,
         total_value=Decimal(c.total_value or 0), paid=paid, remaining=Decimal(c.total_value or 0) - paid,
         notes=c.notes, created_at=c.created_at, updated_at=c.updated_at,
     )

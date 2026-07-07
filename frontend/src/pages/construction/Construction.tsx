@@ -5,9 +5,8 @@ import Modal from '../../components/ui/Modal'
 import MoneyInput from '../../components/ui/MoneyInput'
 import { constructionService } from '../../services/construction'
 import { propertyService } from '../../services/property'
-import { procurementService } from '../../services/procurement'
 import type {
-  Project, Unit, Vendor, UnitConstructionRow, ConstructionSummary, ConstructionStage, ConstructionUpsert,
+  Project, Unit, UnitConstructionRow, ConstructionSummary, ConstructionStage, ConstructionUpsert,
   ContractorContract, ContractCreate, Opname,
 } from '../../types'
 
@@ -42,9 +41,8 @@ export default function Construction() {
   // borongan
   const [contracts, setContracts] = useState<ContractorContract[]>([])
   const [units, setUnits] = useState<Unit[]>([])
-  const [vendors, setVendors] = useState<Vendor[]>([])
   const [cModal, setCModal] = useState(false)
-  const [cForm, setCForm] = useState<ContractCreate>({ unit_id: '', vendor_id: '', title: '', total_value: 0 })
+  const [cForm, setCForm] = useState<ContractCreate>({ unit_id: '', contractor_name: '', pengawas: '', title: '', total_value: 0 })
   const [cEditId, setCEditId] = useState<string | null>(null)
   const [opModal, setOpModal] = useState(false)
   const [opContract, setOpContract] = useState<ContractorContract | null>(null)
@@ -65,10 +63,10 @@ export default function Construction() {
   }, [])
   const loadBorongan = useCallback(async (pid: string) => {
     if (!pid) { setContracts([]); return }
-    const [c, u, v] = await Promise.all([
-      constructionService.listContracts(pid), propertyService.listUnits({ project_id: pid, size: 500 }), procurementService.listVendors(),
+    const [c, u] = await Promise.all([
+      constructionService.listContracts(pid), propertyService.listUnits({ project_id: pid, size: 500 }),
     ])
-    setContracts(c); setUnits(u.items); setVendors(v)
+    setContracts(c); setUnits(u.items)
   }, [])
   useEffect(() => { if (project && tab === 'progres') loadProgres(project) }, [project, tab, loadProgres])
   useEffect(() => { if (project && tab === 'borongan') loadBorongan(project) }, [project, tab, loadBorongan])
@@ -87,12 +85,14 @@ export default function Construction() {
   }
 
   // borongan handlers
-  function openCCreate() { setCEditId(null); setCForm({ unit_id: '', vendor_id: '', title: '', total_value: 0 }); setCModal(true) }
-  function openCEdit(c: ContractorContract) { setCEditId(c.id); setCForm({ unit_id: c.unit_id, vendor_id: c.vendor_id ?? '', title: c.title ?? '', total_value: c.total_value, notes: c.notes }); setCModal(true) }
+  function openCCreate() { setCEditId(null); setCForm({ unit_id: '', contractor_name: '', pengawas: '', title: '', total_value: 0 }); setCModal(true) }
+  function openCEdit(c: ContractorContract) { setCEditId(c.id); setCForm({ unit_id: c.unit_id, contractor_name: c.contractor_name ?? c.vendor_name ?? '', pengawas: c.pengawas ?? '', title: c.title ?? '', total_value: c.total_value, notes: c.notes }); setCModal(true) }
   async function submitContract(e: React.FormEvent) {
     e.preventDefault(); setSaving(true)
     try {
-      const p = { ...cForm }; if (p.vendor_id === '') delete p.vendor_id
+      const p = { ...cForm }
+      const rec = p as unknown as Record<string, unknown>
+      ;['contractor_name', 'pengawas'].forEach((k) => { if (rec[k] === '') delete rec[k] })
       if (cEditId) await constructionService.updateContract(cEditId, p); else await constructionService.createContract(p)
       setCModal(false); await loadBorongan(project)
     } catch { setError('Gagal menyimpan kontrak.') } finally { setSaving(false) }
@@ -180,15 +180,16 @@ export default function Construction() {
           </div>
           <div className="card overflow-hidden">
             <table className="w-full text-sm">
-              <thead className="bg-slate-50 border-b border-slate-200"><tr>{['Unit', 'Kontraktor', 'Nilai Borongan', 'Terbayar', 'Sisa', ''].map((h, i) => (
+              <thead className="bg-slate-50 border-b border-slate-200"><tr>{['Unit', 'Kontraktor', 'Pengawas', 'Nilai Borongan', 'Terbayar', 'Sisa', ''].map((h, i) => (
                 <th key={i} className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">{h}</th>))}</tr></thead>
               <tbody className="divide-y divide-slate-100">
                 {contracts.length === 0 ? (
-                  <tr><td colSpan={6} className="px-4 py-8 text-center text-slate-400 text-sm">Belum ada kontrak borongan.</td></tr>
+                  <tr><td colSpan={7} className="px-4 py-8 text-center text-slate-400 text-sm">Belum ada kontrak borongan.</td></tr>
                 ) : contracts.map((c) => (
                   <tr key={c.id} className="hover:bg-slate-50">
                     <td className="px-4 py-2.5 font-medium text-slate-900">{c.unit_label}</td>
-                    <td className="px-4 py-2.5 text-slate-600">{c.vendor_name ?? '—'}</td>
+                    <td className="px-4 py-2.5 text-slate-600">{c.contractor_name ?? c.vendor_name ?? '—'}</td>
+                    <td className="px-4 py-2.5 text-slate-500">{c.pengawas ?? '—'}</td>
                     <td className="px-4 py-2.5 text-slate-600">{fmt(c.total_value)}</td>
                     <td className="px-4 py-2.5 text-emerald-600">{fmt(c.paid)}</td>
                     <td className={`px-4 py-2.5 font-medium ${Number(c.remaining) > 0 ? 'text-amber-600' : 'text-slate-500'}`}>{fmt(c.remaining)}</td>
@@ -236,14 +237,13 @@ export default function Construction() {
                 <option value="">Pilih unit...</option>{units.map((u) => <option key={u.id} value={u.id}>{[u.block, u.unit_number].filter(Boolean).join('-')}</option>)}
               </select></div>
             <div><label className="label">Kontraktor</label>
-              <select className="input" value={cForm.vendor_id} onChange={(e) => setCForm({ ...cForm, vendor_id: e.target.value })}>
-                <option value="">Pilih...</option>{vendors.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
-              </select></div>
+              <input className="input" placeholder="Nama kontraktor" value={cForm.contractor_name} onChange={(e) => setCForm({ ...cForm, contractor_name: e.target.value })} /></div>
           </div>
           <div className="grid grid-cols-2 gap-3">
+            <div><label className="label">Pengawas</label><input className="input" placeholder="Nama pengawas" value={cForm.pengawas} onChange={(e) => setCForm({ ...cForm, pengawas: e.target.value })} /></div>
             <div><label className="label">Judul</label><input className="input" placeholder="Borongan A-01" value={cForm.title} onChange={(e) => setCForm({ ...cForm, title: e.target.value })} /></div>
-            <div><label className="label">Nilai Borongan (Rp) *</label><MoneyInput required value={cForm.total_value || undefined} onChange={(v) => setCForm({ ...cForm, total_value: v ?? 0 })} /></div>
           </div>
+          <div><label className="label">Nilai Borongan (Rp) *</label><MoneyInput required value={cForm.total_value || undefined} onChange={(v) => setCForm({ ...cForm, total_value: v ?? 0 })} /></div>
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" className="btn-secondary text-sm" onClick={() => setCModal(false)}>Batal</button>
             <button type="submit" className="btn-primary text-sm flex items-center gap-2" disabled={saving}>{saving && <Loader2 size={14} className="animate-spin" />}Simpan</button>

@@ -23,7 +23,9 @@ class ContractorContract(BaseModel, SoftDeleteMixin):
     )
     vendor_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("vendors.id", ondelete="SET NULL"), nullable=True, index=True
-    )
+    )  # legacy — kontraktor kini diisi bebas (contractor_name), tak lagi dari master vendor
+    contractor_name: Mapped[str] = mapped_column(String(200), nullable=True)  # nama kontraktor (isian bebas)
+    pengawas: Mapped[str] = mapped_column(String(200), nullable=True)         # nama pengawas
     title: Mapped[str] = mapped_column(String(200), nullable=True)
     total_value: Mapped[float] = mapped_column(Numeric(15, 2), nullable=False, default=0)  # nilai borongan
     notes: Mapped[str] = mapped_column(Text, nullable=True)

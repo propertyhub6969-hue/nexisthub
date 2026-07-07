@@ -7,14 +7,16 @@ import uuid
 
 class ContractCreate(BaseModel):
     unit_id: uuid.UUID
-    vendor_id: Optional[uuid.UUID] = None
+    contractor_name: Optional[str] = Field(None, max_length=200)
+    pengawas: Optional[str] = Field(None, max_length=200)
     title: Optional[str] = Field(None, max_length=200)
     total_value: Decimal = Field(0, ge=0)
     notes: Optional[str] = None
 
 
 class ContractUpdate(BaseModel):
-    vendor_id: Optional[uuid.UUID] = None
+    contractor_name: Optional[str] = Field(None, max_length=200)
+    pengawas: Optional[str] = Field(None, max_length=200)
     title: Optional[str] = Field(None, max_length=200)
     total_value: Optional[Decimal] = Field(None, ge=0)
     notes: Optional[str] = None
@@ -25,8 +27,9 @@ class ContractResponse(BaseModel):
     project_id: uuid.UUID
     unit_id: uuid.UUID
     unit_label: str
-    vendor_id: Optional[uuid.UUID] = None
-    vendor_name: Optional[str] = None
+    contractor_name: Optional[str] = None
+    pengawas: Optional[str] = None
+    vendor_name: Optional[str] = None   # legacy (kontrak lama)
     title: Optional[str] = None
     total_value: Decimal
     paid: Decimal

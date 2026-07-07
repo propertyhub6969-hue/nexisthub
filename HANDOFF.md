@@ -20,7 +20,7 @@ ERP multi-tenant untuk **developer properti** (rumah **subsidi + komersial**, ba
   - Container: `nexisthub_backend` (:8000, entrypoint jalankan `alembic upgrade` lalu uvicorn), `nexisthub_frontend` (nginx SPA + proxy `/api/`→backend, `client_max_body_size 12M`), `nexisthub_db` (Postgres, host :5434).
   - **Kode di-COPY ke image (bukan volume)** → WAJIB rebuild tiap perubahan.
 - **Lokasi**: `/opt/nexisthub` di VPS (IP 72.60.43.158, `vps.nadinata.org`). Disk 193GB (sisa ±91GB per 2026-07-03).
-- **Git**: remote SSH `git@github.com:propertyhub6969-hue/nexisthub.git`, push aktif via SSH deploy key. Alembic head saat ini: **`b0c1d2e3f4a5`** (±46 migrasi; terakhir: `units.price_breakdown` JSON = rincian harga unit). PPh punya 3 bukti terpisah: kolom **Bukti**=validasi pajak, kolom **Status**=bukti bayar, kolom **ID Billing**=bukti billing. ⚠️ Enum `userrole` pakai label = NAMA member UPPERCASE (OWNER/ADMIN/…); tambah value pakai uppercase (`ADD VALUE 'PRODUKSI'`) via `autocommit_block`. ⚠️ `frontend/src/lib/` di-gitignore — helper FE taruh di `frontend/src/utils/`. ⚠️ **HATI-HATI revision id**: pernah bentrok (id `e1f2a3b4c5d6` sudah dipakai `add_client_payment_type`) → backend crash-loop. Sebelum buat migrasi, cek `grep -rl <id> alembic/versions/`.
+- **Git**: remote SSH `git@github.com:propertyhub6969-hue/nexisthub.git`, push aktif via SSH deploy key. Alembic head saat ini: **`c1d2e3f4a5b6`** (±47 migrasi; terakhir: kontrak borongan `contractor_name`+`pengawas` isian bebas).
 
 ### Perintah operasional
 ```bash
