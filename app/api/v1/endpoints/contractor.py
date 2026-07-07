@@ -119,7 +119,8 @@ async def add_opname(cid: uuid.UUID, payload: OpnameCreate, ctx: AuthContext = D
     c = await _load(db, ctx.tenant_id, cid)
     e = Expense(
         tenant_id=ctx.tenant_id, project_id=c.project_id, unit_id=c.unit_id, contract_id=c.id,
-        category=ExpenseCategory.KONTRAKTOR, description=payload.description or "Opname borongan",
+        # Borongan = biaya tenaga/upah → realisasinya masuk kategori UPAH (samakan dgn cara developer menganggarkan)
+        category=ExpenseCategory.UPAH, description=payload.description or "Opname borongan",
         amount=payload.amount, expense_date=payload.expense_date, is_paid=True,
     )
     db.add(e); await db.flush()
