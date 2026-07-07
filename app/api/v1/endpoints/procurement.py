@@ -13,6 +13,7 @@ from app.core.database import get_db
 from app.core.audit import record_audit
 from app.api.deps import get_current_context, AuthContext
 from app.models.procurement import Vendor, PurchaseOrder, PurchaseOrderItem, VendorPayment, Material
+from app.models.stock import StockMovement, MovementType
 from app.schemas.marketing import Paginated
 from app.schemas.procurement import (
     VendorCreate, VendorUpdate, VendorResponse,
@@ -70,11 +71,14 @@ def _paginate(items, total, page, size):
 @router.get("/vendors", response_model=Paginated[VendorResponse])
 async def list_vendors(
     ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db),
-    search: Optional[str] = Query(None), page: int = Query(1, ge=1), size: int = Query(100, ge=1, le=500),
+    search: Optional[str] = Query(None), category: Optional[str] = Query(None),
+    page: int = Query(1, ge=1), size: int = Query(100, ge=1, le=500),
 ):
     conds = [Vendor.tenant_id == ctx.tenant_id, NOTDEL(Vendor)]
     if search:
         conds.append(or_(Vendor.name.ilike(f"%{search}%"), Vendor.category.ilike(f"%{search}%")))
+    if category:
+        conds.append(Vendor.category.ilike(category))
     total = await db.scalar(select(func.count()).select_from(Vendor).where(*conds))
     r = await db.execute(select(Vendor).where(*conds).order_by(Vendor.name).offset((page - 1) * size).limit(size))
     return _paginate(r.scalars().all(), total or 0, page, size)
@@ -128,6 +132,31 @@ def _sync_items(po: PurchaseOrder, items, tenant_id):
     po.total_amount = total
 
 
+async def _generate_po_number(db, tenant_id) -> str:
+    """Nomor PO otomatis PO-000001, dst. Hitung SEMUA PO (termasuk terhapus) agar nomor tak dipakai ulang."""
+    count = await db.scalar(select(func.count()).select_from(PurchaseOrder).where(PurchaseOrder.tenant_id == tenant_id))
+    return f"PO-{(count or 0) + 1:06d}"
+
+
+async def _attach_received(db, tenant_id, pos):
+    """Set received_qty & outstanding tiap item PO dari kartu stok (barang masuk / IN)."""
+    item_ids = [it.id for po in pos for it in po.items]
+    received: dict = {}
+    if item_ids:
+        rows = (await db.execute(
+            select(StockMovement.po_item_id, func.coalesce(func.sum(StockMovement.quantity), 0))
+            .where(StockMovement.tenant_id == tenant_id, StockMovement.po_item_id.in_(item_ids),
+                   StockMovement.movement_type == MovementType.IN, StockMovement.is_deleted == False)  # noqa: E712
+            .group_by(StockMovement.po_item_id)
+        )).all()
+        received = {r[0]: Decimal(r[1]) for r in rows}
+    for po in pos:
+        for it in po.items:
+            rq = received.get(it.id, Decimal(0))
+            it.received_qty = rq
+            it.outstanding = Decimal(it.quantity or 0) - rq
+
+
 async def _load_po(db, tenant_id, po_id) -> PurchaseOrder:
     po = (await db.execute(
         select(PurchaseOrder).options(
@@ -138,6 +167,7 @@ async def _load_po(db, tenant_id, po_id) -> PurchaseOrder:
     if po is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="PO tidak ditemukan")
     _attach_totals(po)
+    await _attach_received(db, tenant_id, [po])
     return po
 
 
@@ -164,12 +194,15 @@ async def list_pos(
     pos = r.scalars().all()
     for po in pos:
         _attach_totals(po)
+    await _attach_received(db, ctx.tenant_id, pos)
     return _paginate(pos, total or 0, page, size)
 
 
 @router.post("/purchase-orders", response_model=POResponse, status_code=status.HTTP_201_CREATED)
 async def create_po(payload: POCreate, ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db)):
     data = payload.model_dump(exclude={"items"})
+    if not data.get("po_number"):
+        data["po_number"] = await _generate_po_number(db, ctx.tenant_id)
     po = PurchaseOrder(tenant_id=ctx.tenant_id, **data)
     _sync_items(po, payload.items, ctx.tenant_id)
     db.add(po)

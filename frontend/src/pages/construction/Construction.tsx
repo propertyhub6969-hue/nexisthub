@@ -46,6 +46,8 @@ export default function Construction() {
   const [cModal, setCModal] = useState(false)
   const [cForm, setCForm] = useState<ContractCreate>({ unit_id: '', vendor_id: '', pengawas: '', title: '', total_value: 0 })
   const [cEditId, setCEditId] = useState<string | null>(null)
+  const [sisaUpah, setSisaUpah] = useState<number | null>(null)
+  const [sisaUpahLoading, setSisaUpahLoading] = useState(false)
   const [opModal, setOpModal] = useState(false)
   const [opContract, setOpContract] = useState<ContractorContract | null>(null)
   const [opList, setOpList] = useState<Opname[]>([])
@@ -66,12 +68,23 @@ export default function Construction() {
   const loadBorongan = useCallback(async (pid: string) => {
     if (!pid) { setContracts([]); return }
     const [c, u, v] = await Promise.all([
-      constructionService.listContracts(pid), propertyService.listUnits({ project_id: pid, size: 500 }), procurementService.listVendors(),
+      constructionService.listContracts(pid), propertyService.listUnits({ project_id: pid, size: 500 }), procurementService.listVendors(undefined, 'Kontraktor'),
     ])
     setContracts(c); setUnits(u.items); setVendors(v)
   }, [])
   useEffect(() => { if (project && tab === 'progres') loadProgres(project) }, [project, tab, loadProgres])
   useEffect(() => { if (project && tab === 'borongan') loadBorongan(project) }, [project, tab, loadBorongan])
+
+  // Sisa upah (RAB kebocoran unit, kategori upah) — hanya saat kategori RAB opname = upah
+  useEffect(() => {
+    if (!cModal || cForm.rab_category !== 'upah' || !cForm.unit_id) { setSisaUpah(null); return }
+    let active = true; setSisaUpahLoading(true)
+    procurementService.leakageDetail(cForm.unit_id)
+      .then((d) => { if (!active) return; const r = d.rows.find((x) => x.category === 'upah'); setSisaUpah(r ? Number(r.selisih) : 0) })
+      .catch(() => { if (active) setSisaUpah(null) })
+      .finally(() => { if (active) setSisaUpahLoading(false) })
+    return () => { active = false }
+  }, [cModal, cForm.unit_id, cForm.rab_category])
 
   // progres handlers
   function openEdit(r: UnitConstructionRow) {
@@ -251,6 +264,12 @@ export default function Construction() {
                 <option value="kontraktor">Kontraktor (borongan pihak ketiga)</option>
               </select></div>
           </div>
+          {cForm.rab_category === 'upah' && cForm.unit_id && (
+            <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-sm flex items-center justify-between">
+              <span className="text-amber-800">Sisa Upah <span className="text-xs text-amber-600">(RAB upah − realisasi)</span></span>
+              <span className="font-semibold text-amber-700">{sisaUpahLoading ? '…' : sisaUpah == null ? '—' : fmt(sisaUpah)}</span>
+            </div>
+          )}
           <div><label className="label">Judul</label><input className="input" placeholder="Borongan A-01" value={cForm.title} onChange={(e) => setCForm({ ...cForm, title: e.target.value })} /></div>
           <div><label className="label">Nilai Borongan (Rp) *</label><MoneyInput required value={cForm.total_value || undefined} onChange={(v) => setCForm({ ...cForm, total_value: v ?? 0 })} /></div>
           <div className="flex justify-end gap-2 pt-2">

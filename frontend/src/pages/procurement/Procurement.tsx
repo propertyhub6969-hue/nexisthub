@@ -16,9 +16,12 @@ const expCatLabel: Record<ExpenseCategory, string> = {
   material: 'Material', upah: 'Upah', kontraktor: 'Kontraktor', operasional: 'Operasional', perizinan: 'Perizinan', lain: 'Lain-lain',
 }
 
+const VENDOR_CATEGORIES = ['Material', 'Kontraktor', 'Jasa', 'Lainnya'] as const
+
 const fmt = (n?: number) => n == null ? 'Rp 0' : new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(Number(n))
-const poStatusCfg: Record<POStatus, { label: string; variant: 'gray' | 'blue' | 'green' | 'red' }> = {
+const poStatusCfg: Record<POStatus, { label: string; variant: 'gray' | 'blue' | 'green' | 'red' | 'yellow' }> = {
   draft: { label: 'Draft', variant: 'gray' }, ordered: { label: 'Dipesan', variant: 'blue' },
+  partial: { label: 'Sebagian', variant: 'yellow' },
   received: { label: 'Diterima', variant: 'green' }, cancelled: { label: 'Batal', variant: 'red' },
 }
 const emptyPO = (): POCreate => ({ vendor_id: '', project_id: '', unit_id: '', po_number: '', order_date: '', status: 'draft', items: [] })
@@ -53,6 +56,12 @@ export default function Procurement() {
   const [payments, setPayments] = useState<VendorPayment[]>([])
   const [payAmount, setPayAmount] = useState<number | undefined>(undefined)
   const [payDate, setPayDate] = useState('')
+  // Penerimaan PO modal
+  const [recvModal, setRecvModal] = useState(false)
+  const [recvPo, setRecvPo] = useState<PurchaseOrder | null>(null)
+  const [recvDo, setRecvDo] = useState('')
+  const [recvDate, setRecvDate] = useState('')
+  const [recvQty, setRecvQty] = useState<Record<string, number>>({})
   // Vendor modal
   const [vModal, setVModal] = useState(false)
   const [vForm, setVForm] = useState<VendorCreate>(emptyVendor)
@@ -128,11 +137,24 @@ export default function Procurement() {
       setError(d || 'Gagal distribusi material.')
     } finally { setSaving(false) }
   }
-  async function receivePO(po: PurchaseOrder) {
+  function openReceive(po: PurchaseOrder) {
     if (!po.project_id) { setError('PO belum punya proyek untuk lokasi stok.'); return }
-    if (!confirm(`Terima semua item PO ${po.po_number || ''} ke stok proyek?`)) return
-    try { await procurementService.receivePO(po.id); await reloadPO(); if (stockProject === po.project_id) await loadStock(stockProject) }
-    catch { setError('Gagal menerima PO ke stok.') }
+    setRecvPo(po); setRecvDo(''); setRecvDate('')
+    // default: terima sisa tiap item
+    setRecvQty(Object.fromEntries(po.items.map((it) => [it.id, Math.max(Number(it.outstanding) || 0, 0)])))
+    setRecvModal(true)
+  }
+  async function submitReceive(e: React.FormEvent) {
+    e.preventDefault(); if (!recvPo) return
+    const items = recvPo.items
+      .map((it) => ({ po_item_id: it.id, quantity: Number(recvQty[it.id]) || 0 }))
+      .filter((x) => x.quantity > 0)
+    if (items.length === 0) { setError('Isi minimal satu qty penerimaan.'); return }
+    setSaving(true)
+    try {
+      await procurementService.receivePO(recvPo.id, { do_number: recvDo || undefined, receive_date: recvDate || undefined, items })
+      setRecvModal(false); await reloadPO(); if (stockProject === recvPo.project_id) await loadStock(stockProject)
+    } catch { setError('Gagal menerima PO ke stok.') } finally { setSaving(false) }
   }
   async function delMovement(id: string) {
     if (!confirm('Hapus mutasi ini?')) return
@@ -355,9 +377,14 @@ export default function Procurement() {
                       <td className="px-4 py-3 text-slate-500">{projName(po.project_id) ?? '—'}</td>
                       <td className="px-4 py-3 text-slate-600">{fmt(po.total_amount)}</td>
                       <td className="px-4 py-3"><span className="text-emerald-600">{fmt(po.paid_amount)}</span> {Number(po.remaining) > 0 && <span className="text-xs text-amber-600">(sisa {fmt(po.remaining)})</span>}</td>
-                      <td className="px-4 py-3">{st && <Badge label={st.label} variant={st.variant} />}</td>
+                      <td className="px-4 py-3">
+                        {st && <Badge label={st.label} variant={st.variant} />}
+                        {po.items.length > 0 && (po.status === 'partial' || po.status === 'received') && (
+                          <div className="text-[11px] text-slate-400 mt-0.5">{po.items.filter((it) => Number(it.outstanding) <= 0).length}/{po.items.length} item</div>
+                        )}
+                      </td>
                       <td className="px-4 py-3"><div className="flex items-center justify-end gap-3">
-                        {po.status !== 'received' && <button onClick={() => receivePO(po)} className="text-slate-400 hover:text-emerald-600" title="Terima ke stok"><PackageCheck size={15} /></button>}
+                        {po.status !== 'received' && po.status !== 'cancelled' && po.items.length > 0 && <button onClick={() => openReceive(po)} className="text-slate-400 hover:text-emerald-600" title="Terima ke stok"><PackageCheck size={15} /></button>}
                         <button onClick={() => openPay(po)} className="text-slate-400 hover:text-brand-600" title="Pembayaran"><Wallet size={15} /></button>
                         <button onClick={() => openPoEdit(po)} className="text-slate-400 hover:text-brand-600" title="Edit"><Pencil size={15} /></button>
                         <button onClick={() => delPO(po.id)} className="text-slate-400 hover:text-red-600" title="Hapus"><Trash2 size={15} /></button>
@@ -416,7 +443,7 @@ export default function Procurement() {
                 ) : movements.map((m) => (
                   <tr key={m.id} className="hover:bg-slate-50">
                     <td className="px-4 py-2.5 text-slate-500 text-xs">{m.movement_date ? new Date(m.movement_date).toLocaleDateString('id-ID') : '—'}</td>
-                    <td className="px-4 py-2.5 font-medium text-slate-900">{m.material_name}</td>
+                    <td className="px-4 py-2.5 font-medium text-slate-900">{m.material_name}{m.do_number && <span className="block text-[11px] font-normal text-slate-400">DO: {m.do_number}</span>}</td>
                     <td className="px-4 py-2.5">{m.movement_type === 'in' ? <Badge label="Masuk" variant="green" /> : <Badge label="Keluar" variant="orange" />}</td>
                     <td className="px-4 py-2.5 text-slate-600">{Number(m.quantity)} {m.unit ?? ''}</td>
                     <td className="px-4 py-2.5 text-slate-500">{fmt(m.unit_price)}</td>
@@ -618,7 +645,7 @@ export default function Procurement() {
               <select className="input" value={poForm.vendor_id} onChange={(e) => setPoForm({ ...poForm, vendor_id: e.target.value })}>
                 <option value="">Pilih vendor...</option>{vendors.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
               </select></div>
-            <div><label className="label">No. PO</label><input className="input" value={poForm.po_number} onChange={(e) => setPoForm({ ...poForm, po_number: e.target.value })} /></div>
+            <div><label className="label">No. PO</label><input className="input" placeholder={poEditId ? '' : 'Otomatis (PO-000001) bila kosong'} value={poForm.po_number} onChange={(e) => setPoForm({ ...poForm, po_number: e.target.value })} /></div>
           </div>
           <div className="grid grid-cols-3 gap-3">
             <div><label className="label">Proyek</label>
@@ -690,6 +717,48 @@ export default function Procurement() {
             <button type="submit" className="btn-primary text-sm h-[38px]" disabled={saving}>Bayar</button>
           </form>
         </div>
+      </Modal>
+
+      {/* Modal Penerimaan PO (parsial + DO) */}
+      <Modal open={recvModal} onClose={() => setRecvModal(false)} title={`Penerimaan — ${recvPo?.po_number || 'PO'}`}>
+        {recvPo && (
+          <form onSubmit={submitReceive} className="space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div><label className="label">No. DO / Surat Jalan</label><input className="input" placeholder="dari vendor" value={recvDo} onChange={(e) => setRecvDo(e.target.value)} /></div>
+              <div><label className="label">Tanggal Terima</label><input className="input" type="date" value={recvDate} onChange={(e) => setRecvDate(e.target.value)} /></div>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-50 border-b border-slate-200"><tr>{['Item', 'Dipesan', 'Sudah', 'Sisa', 'Terima'].map((h, i) => (
+                  <th key={i} className={`px-2 py-2 text-xs font-semibold text-slate-500 uppercase ${i === 0 ? 'text-left' : 'text-right'}`}>{h}</th>))}</tr></thead>
+                <tbody className="divide-y divide-slate-100">
+                  {recvPo.items.map((it) => {
+                    const over = (Number(recvQty[it.id]) || 0) > (Number(it.outstanding) || 0)
+                    return (
+                      <tr key={it.id}>
+                        <td className="px-2 py-1.5 text-slate-800">{it.item_name}<span className="text-slate-400"> {it.unit}</span></td>
+                        <td className="px-2 py-1.5 text-right text-slate-500">{Number(it.quantity)}</td>
+                        <td className="px-2 py-1.5 text-right text-emerald-600">{Number(it.received_qty)}</td>
+                        <td className="px-2 py-1.5 text-right text-amber-600">{Number(it.outstanding)}</td>
+                        <td className="px-2 py-1.5 text-right">
+                          <input type="number" min={0} step="any" className={`input w-24 text-right ${over ? 'border-amber-400' : ''}`}
+                            value={recvQty[it.id] ?? 0} onChange={(e) => setRecvQty((q) => ({ ...q, [it.id]: Number(e.target.value) }))} />
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+            {recvPo.items.some((it) => (Number(recvQty[it.id]) || 0) > (Number(it.outstanding) || 0)) && (
+              <p className="text-xs text-amber-600">⚠ Ada qty terima melebihi sisa pesanan — tetap boleh disimpan bila kiriman memang lebih.</p>
+            )}
+            <div className="flex justify-end gap-2 pt-2">
+              <button type="button" className="btn-secondary text-sm" onClick={() => setRecvModal(false)}>Batal</button>
+              <button type="submit" className="btn-primary text-sm flex items-center gap-2" disabled={saving}>{saving && <Loader2 size={14} className="animate-spin" />}Terima ke Stok</button>
+            </div>
+          </form>
+        )}
       </Modal>
 
       {/* Modal Barang Masuk */}
@@ -877,7 +946,11 @@ export default function Procurement() {
         <form onSubmit={submitV} className="space-y-3">
           <div className="grid grid-cols-2 gap-3">
             <div><label className="label">Nama Vendor *</label><input className="input" required minLength={2} value={vForm.name} onChange={(e) => setVForm({ ...vForm, name: e.target.value })} /></div>
-            <div><label className="label">Kategori</label><input className="input" placeholder="Material / Kontraktor" value={vForm.category} onChange={(e) => setVForm({ ...vForm, category: e.target.value })} /></div>
+            <div><label className="label">Kategori</label>
+              <select className="input" value={vForm.category ?? ''} onChange={(e) => setVForm({ ...vForm, category: e.target.value })}>
+                {VENDOR_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                {vForm.category && !VENDOR_CATEGORIES.includes(vForm.category as typeof VENDOR_CATEGORIES[number]) && <option value={vForm.category}>{vForm.category}</option>}
+              </select></div>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div><label className="label">Nama Kontak</label><input className="input" value={vForm.contact_name} onChange={(e) => setVForm({ ...vForm, contact_name: e.target.value })} /></div>

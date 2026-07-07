@@ -70,7 +70,7 @@ const navItems = [
 ]
 
 const settingsItem = {
-  label: 'Pengaturan',
+  label: 'Role',
   icon: Settings,
   children: [
     { label: 'Tim', to: '/settings/team', icon: UsersRound },

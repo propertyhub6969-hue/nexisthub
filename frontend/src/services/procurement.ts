@@ -1,7 +1,7 @@
 import api from './api'
 import type {
   Vendor, VendorCreate, PurchaseOrder, POCreate, VendorPayment, VendorPaymentCreate, PaginatedResponse,
-  StockBalance, StockMovement, StockInCreate, StockOutCreate,
+  StockBalance, StockMovement, StockInCreate, StockOutCreate, ReceivePOPayload,
   Expense, ExpenseCreate, CostSummary, Material, MaterialCreate,
   RabTemplate, RabTemplateCreate, UnitRab, RabAdjustment, LeakageRow, LeakageDetail, ExpenseCategory,
 } from '../types'
@@ -25,8 +25,8 @@ export const procurementService = {
   },
 
   // ── Vendor ──
-  async listVendors(search?: string): Promise<Vendor[]> {
-    const { data } = await api.get<PaginatedResponse<Vendor>>('/procurement/vendors', { params: { search, size: 500 } })
+  async listVendors(search?: string, category?: string): Promise<Vendor[]> {
+    const { data } = await api.get<PaginatedResponse<Vendor>>('/procurement/vendors', { params: { search, category, size: 500 } })
     return data.items
   },
   async createVendor(payload: VendorCreate): Promise<Vendor> {
@@ -92,8 +92,8 @@ export const procurementService = {
     const { data } = await api.post<StockMovement>('/procurement/stock/out', payload)
     return data
   },
-  async receivePO(poId: string): Promise<StockMovement[]> {
-    const { data } = await api.post<StockMovement[]>(`/procurement/stock/receive-po/${poId}`)
+  async receivePO(poId: string, payload: ReceivePOPayload): Promise<StockMovement[]> {
+    const { data } = await api.post<StockMovement[]>(`/procurement/stock/receive-po/${poId}`, payload)
     return data
   },
   async deleteMovement(id: string): Promise<void> {

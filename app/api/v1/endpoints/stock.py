@@ -5,7 +5,7 @@ from collections import defaultdict
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,8 +13,9 @@ from app.core.database import get_db
 from app.core.audit import record_audit
 from app.api.deps import get_current_context, AuthContext
 from app.models.stock import StockMovement, MovementType, MovementSource
-from app.models.procurement import PurchaseOrder
+from app.models.procurement import PurchaseOrder, POStatus
 from app.schemas.stock import StockInCreate, StockOutCreate, MovementResponse, StockBalance
+from app.schemas.procurement import ReceivePO
 
 router = APIRouter()
 NOTDEL = StockMovement.is_deleted == False  # noqa: E712
@@ -91,9 +92,34 @@ async def stock_in(payload: StockInCreate, ctx: AuthContext = Depends(get_curren
     return m
 
 
+async def _recompute_po_status(db, tenant_id, po_id):
+    """Set status PO dari total penerimaan per item: penuh->RECEIVED, sebagian->PARTIAL, belum->ORDERED."""
+    po = (await db.execute(
+        select(PurchaseOrder).options(selectinload(PurchaseOrder.items))
+        .where(PurchaseOrder.id == po_id, PurchaseOrder.tenant_id == tenant_id)
+    )).scalar_one_or_none()
+    if po is None or po.status == POStatus.CANCELLED or not po.items:
+        return
+    rows = (await db.execute(
+        select(StockMovement.po_item_id, func.coalesce(func.sum(StockMovement.quantity), 0))
+        .where(StockMovement.tenant_id == tenant_id, StockMovement.po_id == po_id,
+               StockMovement.movement_type == MovementType.IN, StockMovement.is_deleted == False)  # noqa: E712
+        .group_by(StockMovement.po_item_id)
+    )).all()
+    recv = {r[0]: Decimal(r[1]) for r in rows}
+    total_recv = sum(recv.values(), Decimal(0))
+    all_full = all(recv.get(it.id, Decimal(0)) >= Decimal(it.quantity or 0) for it in po.items)
+    if total_recv > 0 and all_full:
+        po.status = POStatus.RECEIVED
+    elif total_recv > 0:
+        po.status = POStatus.PARTIAL
+    else:
+        po.status = POStatus.ORDERED
+
+
 @router.post("/stock/receive-po/{po_id}", response_model=list[MovementResponse])
-async def receive_po(po_id: uuid.UUID, ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db)):
-    """Terima seluruh item PO ke stok proyek (barang datang di lokasi)."""
+async def receive_po(po_id: uuid.UUID, payload: ReceivePO, ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db)):
+    """Terima item PO ke stok proyek (boleh sebagian). Tiap penerimaan = satu DO/surat jalan."""
     po = (await db.execute(
         select(PurchaseOrder).options(selectinload(PurchaseOrder.items))
         .where(PurchaseOrder.id == po_id, PurchaseOrder.tenant_id == ctx.tenant_id, PurchaseOrder.is_deleted == False)  # noqa: E712
@@ -102,21 +128,29 @@ async def receive_po(po_id: uuid.UUID, ctx: AuthContext = Depends(get_current_co
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="PO tidak ditemukan")
     if po.project_id is None:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="PO belum punya proyek untuk lokasi stok")
+    items_by_id = {it.id: it for it in po.items}
     created = []
-    for it in po.items:
+    for r in payload.items:
+        qty = Decimal(r.quantity or 0)
+        if qty <= 0:
+            continue
+        it = items_by_id.get(r.po_item_id)
+        if it is None:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Item PO tidak ditemukan")
         m = StockMovement(
             tenant_id=ctx.tenant_id, project_id=po.project_id, material_name=it.item_name, unit=it.unit,
-            movement_type=MovementType.IN, source=MovementSource.PO, quantity=it.quantity,
-            unit_price=it.unit_price, po_id=po.id, movement_date=date.today(),
+            movement_type=MovementType.IN, source=MovementSource.PO, quantity=qty,
+            unit_price=it.unit_price, po_id=po.id, po_item_id=it.id, do_number=payload.do_number,
+            movement_date=payload.receive_date or date.today(),
         )
         db.add(m); created.append(m)
-    from app.models.procurement import POStatus
-    po.status = POStatus.RECEIVED
+    await db.flush()
+    await _recompute_po_status(db, ctx.tenant_id, po.id)
     await db.flush()
     for m in created:
         await db.refresh(m)
     await record_audit(db, ctx.tenant_id, ctx.user_id, "RECEIVE", "stock_movements", po.id,
-                       new_data={"po": po.po_number, "items": len(created)})
+                       new_data={"po": po.po_number, "do": payload.do_number, "items": len(created)})
     return created
 
 
@@ -142,3 +176,6 @@ async def delete_movement(mid: uuid.UUID, ctx: AuthContext = Depends(get_current
     if m is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Mutasi tidak ditemukan")
     m.is_deleted = True; m.deleted_at = datetime.utcnow()
+    if m.po_id:  # penerimaan PO dibatalkan → status PO dihitung ulang
+        await db.flush()
+        await _recompute_po_status(db, ctx.tenant_id, m.po_id)

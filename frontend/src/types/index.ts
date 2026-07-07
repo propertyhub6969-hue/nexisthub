@@ -689,7 +689,7 @@ export interface KprCreate {
 
 // ── Procurement ───────────────────────────────────────────────────
 export type VendorStatus = 'active' | 'inactive' | 'blacklisted'
-export type POStatus = 'draft' | 'ordered' | 'received' | 'cancelled'
+export type POStatus = 'draft' | 'ordered' | 'partial' | 'received' | 'cancelled'
 export type VendorPayMethod = 'transfer' | 'tunai' | 'lainnya'
 
 export interface Material {
@@ -750,6 +750,18 @@ export interface POItemIn {
 export interface POItem extends POItemIn {
   id: string
   total_price: number
+  received_qty: number
+  outstanding: number
+}
+
+export interface ReceiveItem {
+  po_item_id: string
+  quantity: number
+}
+export interface ReceivePOPayload {
+  do_number?: string
+  receive_date?: string
+  items: ReceiveItem[]
 }
 export interface PurchaseOrder {
   id: string
@@ -822,6 +834,8 @@ export interface StockMovement {
   unit_price: number
   unit_id?: string
   po_id?: string
+  po_item_id?: string
+  do_number?: string
   movement_date?: string
   notes?: string
   created_at: string

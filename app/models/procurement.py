@@ -15,7 +15,8 @@ class VendorStatus(str, enum.Enum):
 class POStatus(str, enum.Enum):
     DRAFT = "draft"
     ORDERED = "ordered"       # dipesan
-    RECEIVED = "received"     # diterima di lokasi
+    PARTIAL = "partial"       # diterima sebagian
+    RECEIVED = "received"     # diterima penuh di lokasi
     CANCELLED = "cancelled"
 
 

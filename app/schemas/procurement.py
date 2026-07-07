@@ -61,9 +61,23 @@ class POItemIn(BaseModel):
 class POItemResponse(POItemIn):
     id: uuid.UUID
     total_price: Decimal
+    received_qty: Decimal = Decimal(0)   # sudah diterima (Σ stok masuk item ini)
+    outstanding: Decimal = Decimal(0)    # sisa = quantity - received_qty
 
     class Config:
         from_attributes = True
+
+
+# ── Penerimaan PO (parsial + DO) ──────────────────────────────────
+class ReceiveItem(BaseModel):
+    po_item_id: uuid.UUID
+    quantity: Decimal = Field(0, ge=0)   # qty diterima pada penerimaan ini (boleh 0 = dilewati)
+
+
+class ReceivePO(BaseModel):
+    do_number: Optional[str] = Field(None, max_length=50)
+    receive_date: Optional[date] = None
+    items: List[ReceiveItem] = []
 
 
 # ── Purchase Order ────────────────────────────────────────────────
