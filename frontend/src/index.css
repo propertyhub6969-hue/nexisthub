@@ -31,3 +31,16 @@
     @apply bg-white rounded-xl border border-slate-200 shadow-sm;
   }
 }
+
+/* Responsif tabel — di layar kecil (mobile/tablet) kartu berisi tabel bisa digeser horizontal,
+   dan tabel menyesuaikan lebar konten (tak dipadatkan). Aturan UNLAYERED agar menang atas
+   utility `overflow-hidden` pada pembungkus kartu. */
+@media (max-width: 1023px) {
+  .card:has(table) {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .card table {
+    min-width: max-content;
+  }
+}
