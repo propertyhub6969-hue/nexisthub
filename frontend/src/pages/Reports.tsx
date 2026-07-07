@@ -48,7 +48,7 @@ function CashflowTab() {
       <div>
         <h3 className="text-sm font-semibold text-slate-600 mb-2">Kas Masuk</h3>
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          <StatCard icon={<Building2 size={15} />} label="Nilai Kontrak" value={fmtRp(rep.total_contract)} hint="pembeli aktif" />
+          <StatCard icon={<Building2 size={15} />} label="Nilai Penjualan" value={fmtRp(rep.total_contract)} hint="pembeli aktif" />
           <StatCard icon={<Users size={15} />} label="Dari Pembeli" value={fmtRp(rep.from_buyer)} accent="text-brand-600" />
           <StatCard icon={<Landmark size={15} />} label="Dari Bank (KPR)" value={fmtRp(rep.from_bank)} accent="text-indigo-600" />
           <StatCard icon={<Wallet size={15} />} label="Total Kas Masuk" value={fmtRp(rep.total_in)} accent="text-emerald-600" />
@@ -224,7 +224,7 @@ function SalesRecapTab() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <StatCard icon={<Home size={15} />} label="Unit Terjual" value={`${rep.units_sold} / ${rep.units_total}`} hint="sold + serah terima" />
         <StatCard icon={<Users size={15} />} label="Pembeli" value={String(rep.buyers)} accent="text-brand-600" />
-        <StatCard icon={<Building2 size={15} />} label="Nilai Kontrak" value={fmtRp(rep.contract_value)} />
+        <StatCard icon={<Building2 size={15} />} label="Nilai Penjualan" value={fmtRp(rep.contract_value)} />
         <StatCard icon={<Wallet size={15} />} label="Kas Masuk" value={fmtRp(rep.cash_in)} hint={`sisa ${fmtRp(rep.remaining)}`} accent="text-emerald-600" />
       </div>
 
@@ -237,7 +237,7 @@ function SalesRecapTab() {
               <th className="px-4 py-3 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">Booking</th>
               <th className="px-4 py-3 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">Tersedia</th>
               <th className="px-4 py-3 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">Pembeli</th>
-              <th className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Nilai Kontrak</th>
+              <th className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Nilai Penjualan</th>
               <th className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Kas Masuk</th>
               <th className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Sisa</th>
             </tr>
