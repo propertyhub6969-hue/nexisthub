@@ -12,16 +12,53 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.audit import record_audit
 from app.api.deps import get_current_context, AuthContext
-from app.models.procurement import Vendor, PurchaseOrder, PurchaseOrderItem, VendorPayment
+from app.models.procurement import Vendor, PurchaseOrder, PurchaseOrderItem, VendorPayment, Material
 from app.schemas.marketing import Paginated
 from app.schemas.procurement import (
     VendorCreate, VendorUpdate, VendorResponse,
     POCreate, POUpdate, POResponse,
     VPCreate, VPResponse,
+    MaterialCreate, MaterialUpdate, MaterialResponse,
 )
 
 router = APIRouter()
 NOTDEL = lambda m: m.is_deleted == False  # noqa: E731, E712
+
+
+# ═══════════════════════ MASTER MATERIAL ═══════════════════════
+@router.get("/materials", response_model=list[MaterialResponse])
+async def list_materials(ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db)):
+    r = await db.execute(select(Material).where(Material.tenant_id == ctx.tenant_id, NOTDEL(Material)).order_by(Material.name))
+    return r.scalars().all()
+
+
+@router.post("/materials", response_model=MaterialResponse, status_code=status.HTTP_201_CREATED)
+async def create_material(payload: MaterialCreate, ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db)):
+    m = Material(tenant_id=ctx.tenant_id, **payload.model_dump())
+    db.add(m); await db.flush(); await db.refresh(m)
+    return m
+
+
+async def _get_material(db, tenant_id, mid) -> Material:
+    m = (await db.execute(select(Material).where(Material.id == mid, Material.tenant_id == tenant_id, NOTDEL(Material)))).scalar_one_or_none()
+    if m is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Material tidak ditemukan")
+    return m
+
+
+@router.patch("/materials/{mid}", response_model=MaterialResponse)
+async def update_material(mid: uuid.UUID, payload: MaterialUpdate, ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db)):
+    m = await _get_material(db, ctx.tenant_id, mid)
+    for f, v in payload.model_dump(exclude_unset=True).items():
+        setattr(m, f, v)
+    await db.flush(); await db.refresh(m)
+    return m
+
+
+@router.delete("/materials/{mid}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_material(mid: uuid.UUID, ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db)):
+    m = await _get_material(db, ctx.tenant_id, mid)
+    m.is_deleted = True; m.deleted_at = datetime.utcnow()
 
 
 def _paginate(items, total, page, size):

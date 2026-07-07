@@ -128,3 +128,33 @@ class VPResponse(VPBase):
 
     class Config:
         from_attributes = True
+
+
+# ── Master Material ───────────────────────────────────────────────
+class MaterialBase(BaseModel):
+    name: str = Field(..., min_length=1, max_length=200)
+    unit: Optional[str] = Field(None, max_length=50)
+    category: Optional[str] = Field(None, max_length=100)
+    last_price: Optional[Decimal] = Field(None, ge=0)
+    notes: Optional[str] = None
+
+
+class MaterialCreate(MaterialBase):
+    pass
+
+
+class MaterialUpdate(BaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=200)
+    unit: Optional[str] = Field(None, max_length=50)
+    category: Optional[str] = Field(None, max_length=100)
+    last_price: Optional[Decimal] = Field(None, ge=0)
+    notes: Optional[str] = None
+
+
+class MaterialResponse(MaterialBase):
+    id: uuid.UUID
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True

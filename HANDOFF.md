@@ -20,7 +20,7 @@ ERP multi-tenant untuk **developer properti** (rumah **subsidi + komersial**, ba
   - Container: `nexisthub_backend` (:8000, entrypoint jalankan `alembic upgrade` lalu uvicorn), `nexisthub_frontend` (nginx SPA + proxy `/api/`→backend, `client_max_body_size 12M`), `nexisthub_db` (Postgres, host :5434).
   - **Kode di-COPY ke image (bukan volume)** → WAJIB rebuild tiap perubahan.
 - **Lokasi**: `/opt/nexisthub` di VPS (IP 72.60.43.158, `vps.nadinata.org`). Disk 193GB (sisa ±91GB per 2026-07-03).
-- **Git**: remote SSH `git@github.com:propertyhub6969-hue/nexisthub.git`, push aktif via SSH deploy key. Alembic head saat ini: **`d2e3f4a5b6c7`** (±48 migrasi; terakhir: opname borongan → kategori UPAH + backfill).
+- **Git**: remote SSH `git@github.com:propertyhub6969-hue/nexisthub.git`, push aktif via SSH deploy key. Alembic head saat ini: **`f4a5b6c7d8e9`** (±50 migrasi; terakhir: master `materials` + kontrak `rab_category`).
 
 ### Perintah operasional
 ```bash

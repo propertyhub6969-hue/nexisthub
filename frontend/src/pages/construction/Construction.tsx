@@ -87,8 +87,8 @@ export default function Construction() {
   }
 
   // borongan handlers
-  function openCCreate() { setCEditId(null); setCForm({ unit_id: '', vendor_id: '', pengawas: '', title: '', total_value: 0 }); setCModal(true) }
-  function openCEdit(c: ContractorContract) { setCEditId(c.id); setCForm({ unit_id: c.unit_id, vendor_id: c.vendor_id ?? '', pengawas: c.pengawas ?? '', title: c.title ?? '', total_value: c.total_value, notes: c.notes }); setCModal(true) }
+  function openCCreate() { setCEditId(null); setCForm({ unit_id: '', vendor_id: '', pengawas: '', rab_category: 'upah', title: '', total_value: 0 }); setCModal(true) }
+  function openCEdit(c: ContractorContract) { setCEditId(c.id); setCForm({ unit_id: c.unit_id, vendor_id: c.vendor_id ?? '', pengawas: c.pengawas ?? '', rab_category: c.rab_category ?? 'upah', title: c.title ?? '', total_value: c.total_value, notes: c.notes }); setCModal(true) }
   async function submitContract(e: React.FormEvent) {
     e.preventDefault(); setSaving(true)
     try {
@@ -245,8 +245,13 @@ export default function Construction() {
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div><label className="label">Pengawas</label><input className="input" placeholder="Nama pengawas" value={cForm.pengawas} onChange={(e) => setCForm({ ...cForm, pengawas: e.target.value })} /></div>
-            <div><label className="label">Judul</label><input className="input" placeholder="Borongan A-01" value={cForm.title} onChange={(e) => setCForm({ ...cForm, title: e.target.value })} /></div>
+            <div><label className="label">Kategori RAB (opname)</label>
+              <select className="input" value={cForm.rab_category} onChange={(e) => setCForm({ ...cForm, rab_category: e.target.value as 'upah' | 'kontraktor' })}>
+                <option value="upah">Upah (tukang/borongan sendiri)</option>
+                <option value="kontraktor">Kontraktor (borongan pihak ketiga)</option>
+              </select></div>
           </div>
+          <div><label className="label">Judul</label><input className="input" placeholder="Borongan A-01" value={cForm.title} onChange={(e) => setCForm({ ...cForm, title: e.target.value })} /></div>
           <div><label className="label">Nilai Borongan (Rp) *</label><MoneyInput required value={cForm.total_value || undefined} onChange={(v) => setCForm({ ...cForm, total_value: v ?? 0 })} /></div>
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" className="btn-secondary text-sm" onClick={() => setCModal(false)}>Batal</button>

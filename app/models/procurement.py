@@ -141,3 +141,21 @@ class VendorPayment(BaseModel, SoftDeleteMixin):
 
     def __repr__(self) -> str:
         return f"<VendorPayment {self.amount}>"
+
+
+class Material(BaseModel, SoftDeleteMixin):
+    """Master material — untuk konsistensi nama + autofill satuan & harga di PO/stok."""
+    __tablename__ = "materials"
+
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"),
+        nullable=False, index=True
+    )
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    unit: Mapped[str] = mapped_column(String(50), nullable=True)          # satuan default: sak, m3, kg, batang
+    category: Mapped[str] = mapped_column(String(100), nullable=True)     # semen, besi, pasir, dll
+    last_price: Mapped[float] = mapped_column(Numeric(15, 2), nullable=True)  # harga terakhir/standar
+    notes: Mapped[str] = mapped_column(Text, nullable=True)
+
+    def __repr__(self) -> str:
+        return f"<Material {self.name}>"

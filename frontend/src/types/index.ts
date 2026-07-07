@@ -692,6 +692,24 @@ export type VendorStatus = 'active' | 'inactive' | 'blacklisted'
 export type POStatus = 'draft' | 'ordered' | 'received' | 'cancelled'
 export type VendorPayMethod = 'transfer' | 'tunai' | 'lainnya'
 
+export interface Material {
+  id: string
+  name: string
+  unit?: string
+  category?: string
+  last_price?: number
+  notes?: string
+  created_at: string
+  updated_at: string
+}
+export interface MaterialCreate {
+  name: string
+  unit?: string
+  category?: string
+  last_price?: number
+  notes?: string
+}
+
 export interface Vendor {
   id: string
   name: string
@@ -921,6 +939,7 @@ export interface ContractorContract {
   vendor_id?: string
   vendor_name?: string
   pengawas?: string
+  rab_category?: 'upah' | 'kontraktor'
   title?: string
   total_value: number
   paid: number
@@ -933,6 +952,7 @@ export interface ContractCreate {
   unit_id: string
   vendor_id?: string
   pengawas?: string
+  rab_category?: 'upah' | 'kontraktor'
   title?: string
   total_value: number
   notes?: string

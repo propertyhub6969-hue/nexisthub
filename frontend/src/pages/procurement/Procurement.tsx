@@ -8,7 +8,7 @@ import { propertyService } from '../../services/property'
 import type {
   Vendor, VendorCreate, PurchaseOrder, POCreate, POItemIn, VendorPayment,
   POStatus, Project, Unit, StockBalance, StockMovement, StockInCreate, StockOutCreate,
-  Expense, ExpenseCreate, ExpenseCategory, CostSummary,
+  Expense, ExpenseCreate, ExpenseCategory, CostSummary, Material, MaterialCreate,
   RabTemplate, RabTemplateCreate, UnitRab, LeakageRow, LeakageDetail,
 } from '../../types'
 
@@ -30,8 +30,12 @@ const emptyExpense = (pid: string): ExpenseCreate => ({ project_id: pid, unit_id
 const emptyTpl = (pid: string): RabTemplateCreate => ({ project_id: pid, name: '', lines: [] })
 
 export default function Procurement() {
-  const [tab, setTab] = useState<'po' | 'stock' | 'biaya' | 'rab' | 'vendor'>('po')
+  const [tab, setTab] = useState<'po' | 'stock' | 'biaya' | 'rab' | 'vendor' | 'material'>('po')
   const [vendors, setVendors] = useState<Vendor[]>([])
+  const [materials, setMaterials] = useState<Material[]>([])
+  const [mModal, setMModal] = useState(false)
+  const [mForm, setMForm] = useState<MaterialCreate>({ name: '', unit: '', category: '', last_price: undefined })
+  const [mEditId, setMEditId] = useState<string | null>(null)
   const [projects, setProjects] = useState<Project[]>([])
   const [units, setUnits] = useState<Unit[]>([])
   const [pos, setPos] = useState<PurchaseOrder[]>([])
@@ -81,17 +85,18 @@ export default function Procurement() {
   const load = useCallback(async () => {
     setLoading(true); setError('')
     try {
-      const [v, p, u, po] = await Promise.all([
+      const [v, p, u, po, mt] = await Promise.all([
         procurementService.listVendors(), propertyService.listProjects({ size: 500 }),
-        propertyService.listUnits({ size: 500 }), procurementService.listPOs(),
+        propertyService.listUnits({ size: 500 }), procurementService.listPOs(), procurementService.listMaterials(),
       ])
-      setVendors(v); setProjects(p.items); setUnits(u.items); setPos(po)
+      setVendors(v); setProjects(p.items); setUnits(u.items); setPos(po); setMaterials(mt)
     } catch { setError('Gagal memuat data procurement.') } finally { setLoading(false) }
   }, [])
   useEffect(() => { load() }, [load])
 
   const reloadPO = async () => setPos(await procurementService.listPOs())
   const reloadVendor = async () => setVendors(await procurementService.listVendors())
+  const reloadMaterial = async () => setMaterials(await procurementService.listMaterials())
 
   // default proyek stok saat data siap
   useEffect(() => { if (!stockProject && projects.length) setStockProject(projects[0].id) }, [projects, stockProject])
@@ -291,6 +296,25 @@ export default function Procurement() {
     try { await procurementService.deleteVendor(id); await reloadVendor() } catch { setError('Gagal menghapus vendor.') }
   }
 
+  // ── Master Material ──
+  function openMCreate() { setMEditId(null); setMForm({ name: '', unit: '', category: '', last_price: undefined }); setMModal(true) }
+  function openMEdit(m: Material) { setMEditId(m.id); setMForm({ name: m.name, unit: m.unit ?? '', category: m.category ?? '', last_price: m.last_price, notes: m.notes }); setMModal(true) }
+  async function submitM(e: React.FormEvent) {
+    e.preventDefault(); setSaving(true)
+    try {
+      const p = { ...mForm }; const rec = p as unknown as Record<string, unknown>
+      ;['unit', 'category', 'notes'].forEach((k) => { if (rec[k] === '') delete rec[k] })
+      if (mEditId) await procurementService.updateMaterial(mEditId, p); else await procurementService.createMaterial(p)
+      setMModal(false); await reloadMaterial()
+    } catch { setError('Gagal menyimpan material.') } finally { setSaving(false) }
+  }
+  async function delM(id: string) {
+    if (!confirm('Hapus material ini?')) return
+    try { await procurementService.deleteMaterial(id); await reloadMaterial() } catch { setError('Gagal menghapus material.') }
+  }
+  // autofill satuan & harga dari master saat nama material cocok
+  const findMaterial = (name: string) => materials.find((m) => m.name.trim().toLowerCase() === name.trim().toLowerCase())
+
   const projName = (id?: string) => projects.find((p) => p.id === id)?.name
   const unitLabel = (id?: string) => { const u = units.find((x) => x.id === id); return u ? [u.block, u.unit_number].filter(Boolean).join('-') : undefined }
   const formUnits = units.filter((u) => u.project_id === poForm.project_id)
@@ -300,10 +324,10 @@ export default function Procurement() {
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2 border-b border-slate-200">
-        {(['po', 'stock', 'biaya', 'rab', 'vendor'] as const).map((t) => (
+        {(['po', 'stock', 'biaya', 'rab', 'material', 'vendor'] as const).map((t) => (
           <button key={t} onClick={() => setTab(t)}
             className={`px-4 py-2 text-sm font-medium -mb-px border-b-2 ${tab === t ? 'border-brand-500 text-brand-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
-            {t === 'po' ? 'Purchase Order' : t === 'stock' ? 'Stok Material' : t === 'biaya' ? 'Biaya & Rollup' : t === 'rab' ? 'RAB & Kebocoran' : 'Vendor'}
+            {t === 'po' ? 'Purchase Order' : t === 'stock' ? 'Stok Material' : t === 'biaya' ? 'Biaya & Rollup' : t === 'rab' ? 'RAB & Kebocoran' : t === 'material' ? 'Master Material' : 'Vendor'}
           </button>
         ))}
       </div>
@@ -527,6 +551,35 @@ export default function Procurement() {
             </table>
           </div>
         </>
+      ) : tab === 'material' ? (
+        <>
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm text-slate-500">Katalog material: nama, satuan, & harga standar — dipakai untuk autofill di PO & Stok.</p>
+            <button className="btn-primary flex items-center gap-2 text-sm shrink-0" onClick={openMCreate}><Plus size={14} /> Tambah Material</button>
+          </div>
+          <div className="card overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 border-b border-slate-200"><tr>{['Nama Material', 'Satuan', 'Kategori', 'Harga Terakhir', ''].map((h, i) => (
+                <th key={i} className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">{h}</th>))}</tr></thead>
+              <tbody className="divide-y divide-slate-100">
+                {materials.length === 0 ? (
+                  <tr><td colSpan={5} className="px-4 py-8 text-center text-slate-400 text-sm">Belum ada material. Klik "Tambah Material".</td></tr>
+                ) : materials.map((m) => (
+                  <tr key={m.id} className="hover:bg-slate-50">
+                    <td className="px-4 py-2.5 font-medium text-slate-900">{m.name}</td>
+                    <td className="px-4 py-2.5 text-slate-500">{m.unit ?? '—'}</td>
+                    <td className="px-4 py-2.5 text-slate-500">{m.category ?? '—'}</td>
+                    <td className="px-4 py-2.5 text-slate-600">{m.last_price != null ? fmt(m.last_price) : '—'}</td>
+                    <td className="px-4 py-2.5"><div className="flex items-center justify-end gap-3">
+                      <button onClick={() => openMEdit(m)} className="text-slate-400 hover:text-brand-600" title="Edit"><Pencil size={15} /></button>
+                      <button onClick={() => delM(m.id)} className="text-slate-400 hover:text-red-600" title="Hapus"><Trash2 size={15} /></button>
+                    </div></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
       ) : (
         <>
           <div className="flex justify-end">
@@ -591,7 +644,11 @@ export default function Procurement() {
               {poForm.items.length === 0 && <p className="text-xs text-slate-400">Belum ada item.</p>}
               {poForm.items.map((it, idx) => (
                 <div key={idx} className="flex items-center gap-1.5">
-                  <input className="input flex-[3]" placeholder="Nama material" required value={it.item_name} onChange={(e) => setItem(idx, { item_name: e.target.value })} />
+                  <input className="input flex-[3]" placeholder="Nama material" required list="material-list" value={it.item_name}
+                    onChange={(e) => {
+                      const name = e.target.value; const mat = findMaterial(name)
+                      setItem(idx, { item_name: name, ...(mat ? { unit: mat.unit ?? it.unit, unit_price: mat.last_price != null ? Number(mat.last_price) : it.unit_price } : {}) })
+                    }} />
                   <input className="input flex-1" placeholder="sat." value={it.unit} onChange={(e) => setItem(idx, { unit: e.target.value })} />
                   <input className="input flex-1" type="number" min={0} placeholder="qty" value={it.quantity || ''} onChange={(e) => setItem(idx, { quantity: Number(e.target.value) })} />
                   <MoneyInput className="input flex-[2]" placeholder="harga" value={it.unit_price || undefined} onChange={(v) => setItem(idx, { unit_price: v ?? 0 })} />
@@ -638,7 +695,11 @@ export default function Procurement() {
       {/* Modal Barang Masuk */}
       <Modal open={inModal} onClose={() => setInModal(false)} title="Barang Masuk (Stok)">
         <form onSubmit={submitIn} className="space-y-3">
-          <div><label className="label">Nama Material *</label><input className="input" required value={inForm.material_name} onChange={(e) => setInForm({ ...inForm, material_name: e.target.value })} /></div>
+          <div><label className="label">Nama Material *</label><input className="input" required list="material-list" value={inForm.material_name}
+            onChange={(e) => {
+              const name = e.target.value; const mat = findMaterial(name)
+              setInForm({ ...inForm, material_name: name, ...(mat ? { unit: mat.unit ?? inForm.unit, unit_price: mat.last_price != null ? Number(mat.last_price) : inForm.unit_price } : {}) })
+            }} /></div>
           <div className="grid grid-cols-3 gap-3">
             <div><label className="label">Satuan</label><input className="input" placeholder="sak" value={inForm.unit} onChange={(e) => setInForm({ ...inForm, unit: e.target.value })} /></div>
             <div><label className="label">Qty *</label><input className="input" type="number" min={0} step="0.01" required value={inForm.quantity || ''} onChange={(e) => setInForm({ ...inForm, quantity: Number(e.target.value) })} /></div>
@@ -790,6 +851,25 @@ export default function Procurement() {
             </div>
           </div>
         )}
+      </Modal>
+
+      {/* Datalist material (untuk autofill di PO & Stok) */}
+      <datalist id="material-list">{materials.map((m) => <option key={m.id} value={m.name} />)}</datalist>
+
+      {/* Modal Material */}
+      <Modal open={mModal} onClose={() => setMModal(false)} title={mEditId ? 'Edit Material' : 'Tambah Material'}>
+        <form onSubmit={submitM} className="space-y-3">
+          <div><label className="label">Nama Material *</label><input className="input" required value={mForm.name} onChange={(e) => setMForm({ ...mForm, name: e.target.value })} placeholder="mis. Semen Tiga Roda 50kg" /></div>
+          <div className="grid grid-cols-2 gap-3">
+            <div><label className="label">Satuan</label><input className="input" value={mForm.unit} onChange={(e) => setMForm({ ...mForm, unit: e.target.value })} placeholder="sak / m³ / kg / batang" /></div>
+            <div><label className="label">Kategori</label><input className="input" value={mForm.category} onChange={(e) => setMForm({ ...mForm, category: e.target.value })} placeholder="semen / besi / pasir" /></div>
+          </div>
+          <div><label className="label">Harga Terakhir (Rp)</label><MoneyInput value={mForm.last_price} onChange={(v) => setMForm({ ...mForm, last_price: v })} /></div>
+          <div className="flex justify-end gap-2 pt-2">
+            <button type="button" className="btn-secondary text-sm" onClick={() => setMModal(false)}>Batal</button>
+            <button type="submit" className="btn-primary text-sm flex items-center gap-2" disabled={saving}>{saving && <Loader2 size={14} className="animate-spin" />}Simpan</button>
+          </div>
+        </form>
       </Modal>
 
       {/* Modal Vendor */}

@@ -35,7 +35,8 @@ async def _to_response(db, c: ContractorContract, unit: Unit) -> ContractRespons
     paid = await _paid(db, c.id)
     return ContractResponse(
         id=c.id, project_id=c.project_id, unit_id=c.unit_id, unit_label=_lbl(unit),
-        vendor_id=c.vendor_id, vendor_name=c.vendor_name, pengawas=c.pengawas, title=c.title,
+        vendor_id=c.vendor_id, vendor_name=c.vendor_name, pengawas=c.pengawas,
+        rab_category=c.rab_category or 'upah', title=c.title,
         total_value=Decimal(c.total_value or 0), paid=paid, remaining=Decimal(c.total_value or 0) - paid,
         notes=c.notes, created_at=c.created_at, updated_at=c.updated_at,
     )
@@ -119,8 +120,8 @@ async def add_opname(cid: uuid.UUID, payload: OpnameCreate, ctx: AuthContext = D
     c = await _load(db, ctx.tenant_id, cid)
     e = Expense(
         tenant_id=ctx.tenant_id, project_id=c.project_id, unit_id=c.unit_id, contract_id=c.id,
-        # Borongan = biaya tenaga/upah → realisasinya masuk kategori UPAH (samakan dgn cara developer menganggarkan)
-        category=ExpenseCategory.UPAH, description=payload.description or "Opname borongan",
+        # kategori RAB opname ikut pilihan kontrak (upah=tukang, kontraktor=borongan pihak ketiga)
+        category=ExpenseCategory(c.rab_category or "upah"), description=payload.description or "Opname borongan",
         amount=payload.amount, expense_date=payload.expense_date, is_paid=True,
     )
     db.add(e); await db.flush()

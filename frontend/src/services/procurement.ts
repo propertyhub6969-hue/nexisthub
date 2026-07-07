@@ -2,11 +2,28 @@ import api from './api'
 import type {
   Vendor, VendorCreate, PurchaseOrder, POCreate, VendorPayment, VendorPaymentCreate, PaginatedResponse,
   StockBalance, StockMovement, StockInCreate, StockOutCreate,
-  Expense, ExpenseCreate, CostSummary,
+  Expense, ExpenseCreate, CostSummary, Material, MaterialCreate,
   RabTemplate, RabTemplateCreate, UnitRab, RabAdjustment, LeakageRow, LeakageDetail, ExpenseCategory,
 } from '../types'
 
 export const procurementService = {
+  // ── Master Material ──
+  async listMaterials(): Promise<Material[]> {
+    const { data } = await api.get<Material[]>('/procurement/materials')
+    return data
+  },
+  async createMaterial(payload: MaterialCreate): Promise<Material> {
+    const { data } = await api.post<Material>('/procurement/materials', payload)
+    return data
+  },
+  async updateMaterial(id: string, payload: Partial<MaterialCreate>): Promise<Material> {
+    const { data } = await api.patch<Material>(`/procurement/materials/${id}`, payload)
+    return data
+  },
+  async deleteMaterial(id: string): Promise<void> {
+    await api.delete(`/procurement/materials/${id}`)
+  },
+
   // ── Vendor ──
   async listVendors(search?: string): Promise<Vendor[]> {
     const { data } = await api.get<PaginatedResponse<Vendor>>('/procurement/vendors', { params: { search, size: 500 } })
