@@ -19,10 +19,10 @@ function StatCard({ icon, label, value, hint, accent }: {
   icon: React.ReactNode; label: string; value: string; hint?: string; accent?: string
 }) {
   return (
-    <div className="card p-4">
-      <div className="flex items-center gap-2 text-slate-400">{icon}<span className="text-xs font-medium uppercase tracking-wider">{label}</span></div>
-      <div className={`mt-2 text-xl font-semibold ${accent ?? 'text-slate-900'}`}>{value}</div>
-      {hint && <div className="text-xs text-slate-400 mt-0.5">{hint}</div>}
+    <div className="card p-4 min-w-0">
+      <div className="flex items-center gap-2 text-slate-400">{icon}<span className="text-xs font-medium uppercase tracking-wider truncate">{label}</span></div>
+      <div className={`mt-2 text-base sm:text-xl font-semibold truncate ${accent ?? 'text-slate-900'}`} title={value}>{value}</div>
+      {hint && <div className="text-xs text-slate-400 mt-0.5 truncate">{hint}</div>}
     </div>
   )
 }

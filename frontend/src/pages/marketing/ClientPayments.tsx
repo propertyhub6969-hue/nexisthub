@@ -223,13 +223,13 @@ export default function ClientPayments() {
       {summary && (
         <>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <div className="card p-4"><p className="text-xs text-slate-500">Harga Jual</p><p className="text-lg font-semibold text-slate-900">{fmt(summary.price)}</p></div>
-            <div className="card p-4"><p className="text-xs text-slate-500">Kas Diterima</p><p className="text-lg font-semibold text-emerald-600">{fmt(summary.total_paid)}</p>
-              {summary.has_kpr && <p className="text-[11px] text-slate-400 mt-0.5">Pembeli {fmt(summary.from_buyer)} · Bank {fmt(summary.from_bank)}</p>}
+            <div className="card p-4 min-w-0"><p className="text-xs text-slate-500">Harga Jual</p><p className="text-base sm:text-lg font-semibold text-slate-900 truncate" title={fmt(summary.price)}>{fmt(summary.price)}</p></div>
+            <div className="card p-4 min-w-0"><p className="text-xs text-slate-500">Kas Diterima</p><p className="text-base sm:text-lg font-semibold text-emerald-600 truncate" title={fmt(summary.total_paid)}>{fmt(summary.total_paid)}</p>
+              {summary.has_kpr && <p className="text-[11px] text-slate-400 mt-0.5 truncate">Pembeli {fmt(summary.from_buyer)} · Bank {fmt(summary.from_bank)}</p>}
             </div>
-            <div className="card p-4">
+            <div className="card p-4 min-w-0">
               <p className="text-xs text-slate-500">Sisa Kewajiban Pembeli</p>
-              <p className="text-lg font-semibold text-amber-600">{fmt(summary.buyer_remaining)}</p>
+              <p className="text-base sm:text-lg font-semibold text-amber-600 truncate" title={fmt(summary.buyer_remaining)}>{fmt(summary.buyer_remaining)}</p>
               {summary.has_kpr && Number(summary.buyer_remaining) <= 0 && <p className="text-[11px] text-emerald-600 mt-0.5">Lunas (ditanggung KPR)</p>}
             </div>
             <div className="card p-4">
@@ -241,12 +241,12 @@ export default function ClientPayments() {
             </div>
           </div>
           {summary.has_kpr && (
-            <div className="card p-4 flex items-center justify-between bg-amber-50/50 border-amber-200">
-              <div>
+            <div className="card p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 bg-amber-50/50 border-amber-200">
+              <div className="min-w-0">
                 <p className="text-sm font-semibold text-amber-700">Retensi — menunggu pencairan bank</p>
                 <p className="text-xs text-slate-500 mt-0.5">Plafon KPR {fmt(summary.kpr_plafond)} − sudah cair {fmt(summary.from_bank)}. Ini piutang ke bank, bukan tunggakan pembeli.</p>
               </div>
-              <p className="text-xl font-bold text-amber-700">{fmt(summary.retention_remaining)}</p>
+              <p className="text-lg sm:text-xl font-bold text-amber-700 shrink-0">{fmt(summary.retention_remaining)}</p>
             </div>
           )}
         </>
