@@ -918,9 +918,9 @@ export interface ContractorContract {
   project_id: string
   unit_id: string
   unit_label: string
-  contractor_name?: string
-  pengawas?: string
+  vendor_id?: string
   vendor_name?: string
+  pengawas?: string
   title?: string
   total_value: number
   paid: number
@@ -931,7 +931,7 @@ export interface ContractorContract {
 }
 export interface ContractCreate {
   unit_id: string
-  contractor_name?: string
+  vendor_id?: string
   pengawas?: string
   title?: string
   total_value: number
