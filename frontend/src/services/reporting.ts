@@ -27,8 +27,10 @@ export const reportingService = {
     return data
   },
 
-  async salesMonthly(): Promise<SalesMonthly[]> {
-    const { data } = await api.get<SalesMonthly[]>('/reporting/sales-monthly')
+  async salesMonthly(projectId?: string): Promise<SalesMonthly[]> {
+    const { data } = await api.get<SalesMonthly[]>('/reporting/sales-monthly', {
+      params: projectId ? { project_id: projectId } : {},
+    })
     return data
   },
 }

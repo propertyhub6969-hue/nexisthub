@@ -2,22 +2,36 @@ import { useEffect, useState } from 'react'
 import { Users, UserCheck, Handshake, Home, KeyRound, CheckCircle2, Wallet, TrendingUp, AlertTriangle, Loader2, BarChart3 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { reportingService } from '../services/reporting'
-import type { DashboardStats, SalesMonthly } from '../types'
+import { propertyService } from '../services/property'
+import type { DashboardStats, SalesMonthly, Project } from '../types'
 
 const fmt = (n?: number) =>
   n == null ? '—' : new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(Number(n))
 const monthLabels = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des']
 const monShort = (ym: string) => { const [y, m] = ym.split('-'); return `${monthLabels[Number(m) - 1] ?? m} '${y.slice(2)}` }
 
-function SalesChart({ data }: { data: SalesMonthly[] }) {
+function SalesChart() {
+  const [projects, setProjects] = useState<Project[]>([])
+  const [projectId, setProjectId] = useState('')
+  const [data, setData] = useState<SalesMonthly[]>([])
+
+  useEffect(() => { propertyService.listProjects({ size: 500 }).then((r) => setProjects(r.items)).catch(() => {}) }, [])
+  useEffect(() => { reportingService.salesMonthly(projectId || undefined).then(setData).catch(() => {}) }, [projectId])
+
   const max = Math.max(1, ...data.map((d) => d.value))
   const totalUnit = data.reduce((a, d) => a + d.count, 0)
   const totalVal = data.reduce((a, d) => a + d.value, 0)
   return (
     <div className="card p-4 sm:p-5">
-      <div className="flex items-center justify-between gap-2 mb-4">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
         <h3 className="text-sm font-semibold text-slate-800 flex items-center gap-2"><BarChart3 size={15} /> Penjualan 12 Bulan Terakhir</h3>
-        <span className="text-xs text-slate-400 text-right">{totalUnit} unit · {fmt(totalVal)}</span>
+        <div className="flex items-center gap-2">
+          <select className="input h-8 py-0 text-xs w-44" value={projectId} onChange={(e) => setProjectId(e.target.value)}>
+            <option value="">Semua proyek</option>
+            {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+          <span className="text-xs text-slate-400 whitespace-nowrap">{totalUnit} unit · {fmt(totalVal)}</span>
+        </div>
       </div>
       {data.length === 0 ? (
         <p className="py-10 text-center text-sm text-slate-400">Belum ada penjualan.</p>
@@ -59,12 +73,10 @@ function StatCard({ icon: Icon, label, value, color, bg, sub }: {
 
 export default function Dashboard() {
   const [stats, setStats] = useState<DashboardStats | null>(null)
-  const [sales, setSales] = useState<SalesMonthly[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     reportingService.dashboard().then(setStats).catch(() => {}).finally(() => setLoading(false))
-    reportingService.salesMonthly().then(setSales).catch(() => {})
   }, [])
 
   if (loading) return <div className="py-16 text-center text-slate-400"><Loader2 size={20} className="inline animate-spin" /></div>
@@ -93,7 +105,7 @@ export default function Dashboard() {
       </div>
 
       {/* Grafik Penjualan */}
-      <SalesChart data={sales} />
+      <SalesChart />
 
       {/* Keuangan */}
       <div>

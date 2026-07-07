@@ -3,7 +3,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Optional
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
@@ -507,17 +507,20 @@ class SalesMonthly(BaseModel):
 
 @router.get("/sales-monthly", response_model=list[SalesMonthly])
 async def sales_monthly(
+    project_id: Optional[uuid.UUID] = Query(None),
     ctx: AuthContext = Depends(get_current_context),
     db: AsyncSession = Depends(get_db),
 ):
     """Penjualan per bulan (unit terjual + nilai) berdasarkan tanggal kontrak pembeli
-    (fallback tanggal entri). Untuk grafik dashboard — maks 12 bulan terakhir yang ada penjualan."""
+    (fallback tanggal entri). Opsional filter per proyek. Maks 12 bulan terakhir yang ada penjualan."""
     t = ctx.tenant_id
     ym = func.to_char(func.coalesce(Client.contract_date, func.date(Client.created_at)), "YYYY-MM")
+    conds = [Client.tenant_id == t, Client.is_deleted == False,  # noqa: E712
+             Client.status != ClientStatus.INACTIVE]
+    if project_id:
+        conds.append(Client.project_id == project_id)
     rows = (await db.execute(
         select(ym.label("ym"), func.count(), func.coalesce(func.sum(Client.contract_value), 0))
-        .where(Client.tenant_id == t, Client.is_deleted == False,  # noqa: E712
-               Client.status != ClientStatus.INACTIVE)
-        .group_by(ym).order_by(ym)
+        .where(*conds).group_by(ym).order_by(ym)
     )).all()
     return [SalesMonthly(month=m, count=c, value=Decimal(v)) for m, c, v in rows][-12:]
