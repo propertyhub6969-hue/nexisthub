@@ -27,6 +27,7 @@ export interface UserResponse {
   role: UserRole
   is_platform_admin?: boolean
   tenant_name?: string | null
+  tenant_slug?: string | null
   tenant_status?: string | null
   feature_flags?: string[] | null  // null = semua modul aktif
 }

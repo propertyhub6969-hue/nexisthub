@@ -183,6 +183,7 @@ async def get_me(
     resp = UserResponse.model_validate(user)
     if tenant is not None:
         resp.tenant_name = tenant.name
+        resp.tenant_slug = tenant.slug
         resp.tenant_status = tenant.status.value
         resp.feature_flags = tenant.feature_flags
     return resp

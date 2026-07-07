@@ -40,6 +40,7 @@ class UserResponse(BaseModel):
     is_platform_admin: bool = False
     # Konteks tenant (untuk gating FE) — None feature_flags = semua modul aktif
     tenant_name: Optional[str] = None
+    tenant_slug: Optional[str] = None
     tenant_status: Optional[str] = None
     feature_flags: Optional[List[str]] = None
 

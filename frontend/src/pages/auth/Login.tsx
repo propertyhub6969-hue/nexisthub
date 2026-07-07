@@ -1,14 +1,25 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { Loader2 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
+import { authService } from '../../services/auth'
+import { publicService } from '../../services/public'
+import { currentTenantSlug } from '../../utils/tenant'
 import type { LoginPayload } from '../../types'
 
 export default function Login() {
   const { login } = useAuth()
   const navigate = useNavigate()
   const [error, setError] = useState('')
+
+  const slug = currentTenantSlug()
+  const [brand, setBrand] = useState<string | null>(null)
+
+  // Branding per subdomain: ambil nama outlet dari slug
+  useEffect(() => {
+    if (slug) publicService.tenantBySlug(slug).then((t) => setBrand(t?.name ?? null))
+  }, [slug])
 
   const {
     register,
@@ -19,7 +30,13 @@ export default function Login() {
   const onSubmit = async (data: LoginPayload) => {
     setError('')
     try {
-      await login(data)
+      const me = await login(data)
+      // Scoping subdomain: user harus milik outlet yg sesuai (super-admin dikecualikan)
+      if (slug && !me.is_platform_admin && me.tenant_slug !== slug) {
+        authService.clearTokens()
+        setError(`Akun ini bukan milik outlet "${slug}". Masuk lewat app.nexisthub.id atau subdomain outlet Anda.`)
+        return
+      }
       navigate('/dashboard')
     } catch (err: any) {
       setError(err.response?.data?.detail ?? 'Login gagal. Coba lagi.')
@@ -39,9 +56,11 @@ export default function Login() {
         </div>
 
         <div className="card p-6">
-          <h2 className="text-lg font-semibold text-slate-900 mb-1">Masuk</h2>
+          <h2 className="text-lg font-semibold text-slate-900 mb-1">Masuk{brand ? ` — ${brand}` : ''}</h2>
           <p className="text-sm text-slate-500 mb-6">
-            Selamat datang kembali di NexistHub
+            {slug
+              ? (brand ? `Portal ${brand}` : `Outlet "${slug}"`)
+              : 'Selamat datang kembali di NexistHub'}
           </p>
 
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">

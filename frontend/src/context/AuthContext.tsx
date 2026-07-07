@@ -5,7 +5,7 @@ import type { LoginPayload, RegisterPayload, UserResponse } from '../types'
 interface AuthContextValue {
   user: UserResponse | null
   isAuthenticated: boolean
-  login: (payload: LoginPayload) => Promise<void>
+  login: (payload: LoginPayload) => Promise<UserResponse>
   register: (payload: RegisterPayload) => Promise<UserResponse>
   logout: () => void
 }
@@ -28,6 +28,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     authService.setTokens(token)
     const me = await authService.me()
     setUser(me)
+    return me
   }, [])
 
   const register = useCallback(async (payload: RegisterPayload) => {
