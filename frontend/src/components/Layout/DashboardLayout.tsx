@@ -3,7 +3,7 @@ import { Outlet, useLocation, Navigate } from 'react-router-dom'
 import Sidebar from './Sidebar'
 import Header from './Header'
 import { useAuth } from '../../context/AuthContext'
-import { canAccessPath, defaultPathFor } from '../../utils/access'
+import { canAccessPath, canAccessFeature, defaultPathFor } from '../../utils/access'
 
 const pageTitles: Record<string, string> = {
   '/dashboard': 'Dashboard',
@@ -19,6 +19,7 @@ const pageTitles: Record<string, string> = {
   '/pemberkasan': 'Pemberkasan',
   '/settings/team': 'Tim & Peran',
   '/reports': 'Reports',
+  '/platform/tenants': 'Control Plane — Pelanggan',
 }
 
 export default function DashboardLayout() {
@@ -29,6 +30,8 @@ export default function DashboardLayout() {
   useEffect(() => { setSidebarOpen(false) }, [pathname])
   // cegah role terbatas (produksi/marketing) buka menu di luar haknya → redirect ke halaman default role-nya
   if (user && !canAccessPath(user.role, pathname)) return <Navigate to={defaultPathFor(user.role)} replace />
+  // modul dimatikan paket langganan → tendang ke dashboard
+  if (user && !canAccessFeature(user.feature_flags, pathname)) return <Navigate to="/dashboard" replace />
   const title = pageTitles[pathname]
     ?? (pathname.includes('/siteplan') ? 'Siteplan Interaktif'
       : pathname.includes('/units') ? 'Kelola Unit'

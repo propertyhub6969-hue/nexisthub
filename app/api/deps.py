@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.security import decode_token
 from app.models.user import User, UserRole
+from app.models.tenant import Tenant
 
 security = HTTPBearer()
 
@@ -100,6 +101,46 @@ def require_role(*roles: UserRole):
             )
         return user
     return checker
+
+
+def require_feature(*modules: str):
+    """Dependency factory: tolak bila TIDAK ada satu pun `modules` di feature_flags tenant.
+
+    `feature_flags = None` artinya SEMUA modul aktif (default tenant lama) → selalu lolos.
+    """
+    async def checker(
+        ctx: AuthContext = Depends(get_current_context),
+        db: AsyncSession = Depends(get_db),
+    ) -> None:
+        tenant = (await db.execute(select(Tenant).where(Tenant.id == ctx.tenant_id))).scalar_one_or_none()
+        if tenant is None:
+            raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="Tenant tidak ditemukan")
+        flags = tenant.feature_flags
+        if flags is None:
+            return  # semua modul aktif
+        if not any(m in flags for m in modules):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Modul '{modules[0]}' tidak termasuk paket langganan Anda",
+            )
+    return checker
+
+
+async def require_platform_admin(
+    ctx: AuthContext = Depends(get_current_context),
+    db: AsyncSession = Depends(get_db),
+) -> User:
+    """Control Plane: hanya super-admin platform (lintas-tenant). SENGAJA tak scope tenant_id.
+
+    Ini satu-satunya jalur yang boleh melihat/mengubah data lintas tenant — dijaga ketat.
+    """
+    user = (await db.execute(select(User).where(User.id == ctx.user_id))).scalar_one_or_none()
+    if user is None or not user.is_active or not user.is_platform_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Khusus super-admin platform",
+        )
+    return user
 
 
 # Reusable dependency tuple

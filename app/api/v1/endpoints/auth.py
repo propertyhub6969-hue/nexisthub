@@ -10,9 +10,23 @@ from app.schemas.auth import UserRegister, UserLogin, Token, TokenRefresh, UserR
 from app.models.tenant import Tenant, TenantStatus
 from app.models.user import User, UserRole
 from app.api.deps import get_current_context, AuthContext
+from datetime import date
 import re
 
 router = APIRouter()
+
+
+def _tenant_block_reason(tenant: Tenant | None) -> str | None:
+    """Alasan tenant tak boleh login (langganan). None = boleh."""
+    if tenant is None:
+        return "Tenant tidak ditemukan"
+    if not tenant.is_active:
+        return "Langganan dinonaktifkan. Hubungi admin."
+    if tenant.status == TenantStatus.SUSPENDED:
+        return "Akun disuspend. Hubungi admin."
+    if tenant.expires_at and tenant.expires_at < date.today():
+        return "Masa langganan telah berakhir. Hubungi admin untuk perpanjangan."
+    return None
 
 
 def slugify(name: str) -> str:
@@ -98,6 +112,12 @@ async def login(
             detail="Akun tidak aktif"
         )
 
+    # Gate langganan tenant (super-admin platform lolos: tenant 'platform' selalu aktif)
+    tenant = (await db.execute(select(Tenant).where(Tenant.id == user.tenant_id))).scalar_one_or_none()
+    reason = _tenant_block_reason(tenant)
+    if reason and not user.is_platform_admin:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=reason)
+
     access_token = create_access_token({"sub": str(user.id), "tenant_id": str(user.tenant_id)})
     refresh_token = create_refresh_token({"sub": str(user.id), "tenant_id": str(user.tenant_id)})
 
@@ -130,6 +150,12 @@ async def refresh_token(
             detail="User tidak ditemukan"
         )
 
+    # Gate langganan juga saat refresh → suspend berlaku dalam ≤ masa access token
+    tenant = (await db.execute(select(Tenant).where(Tenant.id == user.tenant_id))).scalar_one_or_none()
+    reason = _tenant_block_reason(tenant)
+    if reason and not user.is_platform_admin:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=reason)
+
     access_token = create_access_token({"sub": str(user.id), "tenant_id": str(user.tenant_id)})
     refresh_token = create_refresh_token({"sub": str(user.id), "tenant_id": str(user.tenant_id)})
 
@@ -153,4 +179,10 @@ async def get_me(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User tidak ditemukan",
         )
-    return user
+    tenant = (await db.execute(select(Tenant).where(Tenant.id == user.tenant_id))).scalar_one_or_none()
+    resp = UserResponse.model_validate(user)
+    if tenant is not None:
+        resp.tenant_name = tenant.name
+        resp.tenant_status = tenant.status.value
+        resp.feature_flags = tenant.feature_flags
+    return resp

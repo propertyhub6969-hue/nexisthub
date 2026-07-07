@@ -14,11 +14,12 @@ import {
   Settings,
   UsersRound,
   Factory,
+  Server,
   X,
 } from 'lucide-react'
 import { clsx } from 'clsx'
 import { useAuth } from '../../context/AuthContext'
-import { canAccessPath } from '../../utils/access'
+import { canAccessPath, canAccessFeature } from '../../utils/access'
 import NexistLogo from '../ui/NexistLogo'
 
 const navItems = [
@@ -77,16 +78,29 @@ const settingsItem = {
   ],
 }
 
+// Control Plane — hanya super-admin platform (vendor)
+const platformItem = {
+  label: 'Platform',
+  icon: Server,
+  children: [
+    { label: 'Pelanggan', to: '/platform/tenants', icon: Building2 },
+  ],
+}
+
 export default function Sidebar({ open = false, onClose }: { open?: boolean; onClose?: () => void }) {
   const { user } = useAuth()
 
   const canManageTeam = user?.role === 'owner' || user?.role === 'admin'
-  const allItems = canManageTeam ? [...navItems, settingsItem] : navItems
+  const allItems = [
+    ...navItems,
+    ...(canManageTeam ? [settingsItem] : []),
+    ...(user?.is_platform_admin ? [platformItem] : []),
+  ]
+  // gabungan gating: akses role + feature-flag paket tenant
+  const allow = (to: string) => canAccessPath(user?.role, to) && canAccessFeature(user?.feature_flags, to)
   // saring menu sesuai akses role (produksi = Dashboard/Konstruksi/Procurement; role lain penuh)
   const items = allItems.filter((it) =>
-    'to' in it
-      ? canAccessPath(user?.role, it.to)
-      : it.children.some((c) => canAccessPath(user?.role, c.to))
+    'to' in it ? allow(it.to) : it.children.some((c) => allow(c.to))
   )
 
   return (
@@ -117,7 +131,7 @@ export default function Sidebar({ open = false, onClose }: { open?: boolean; onC
               <p className="px-3 py-1.5 text-xs font-semibold text-slate-400 uppercase tracking-wider mt-3 mb-1">
                 {item.label}
               </p>
-              {item.children.filter((child) => canAccessPath(user?.role, child.to)).map((child) => (
+              {item.children.filter((child) => allow(child.to)).map((child) => (
                 <NavLink
                   key={child.to}
                   to={child.to}

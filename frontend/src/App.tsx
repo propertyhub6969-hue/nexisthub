@@ -21,6 +21,7 @@ import Procurement from './pages/procurement/Procurement'
 import Construction from './pages/construction/Construction'
 import Team from './pages/settings/Team'
 import Reports from './pages/Reports'
+import Platform from './pages/platform/Platform'
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   return authService.isAuthenticated() ? <>{children}</> : <Navigate to="/login" replace />
@@ -63,6 +64,7 @@ export default function App() {
           <Route path="/pemberkasan"         element={<Pemberkasan />} />
           <Route path="/settings/team"       element={<Team />} />
           <Route path="/reports"             element={<Reports />} />
+          <Route path="/platform/tenants"    element={<Platform />} />
         </Route>
 
         {/* Fallback */}

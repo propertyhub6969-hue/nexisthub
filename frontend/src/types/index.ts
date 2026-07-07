@@ -25,6 +25,49 @@ export interface UserResponse {
   full_name: string
   is_active: boolean
   role: UserRole
+  is_platform_admin?: boolean
+  tenant_name?: string | null
+  tenant_status?: string | null
+  feature_flags?: string[] | null  // null = semua modul aktif
+}
+
+// ── Control Plane / Platform ──────────────────────────────────────
+export type TenantStatus = 'active' | 'suspended' | 'trial'
+export interface TenantAdmin {
+  id: string
+  name: string
+  slug: string
+  status: TenantStatus
+  is_active: boolean
+  subscription_plan: string
+  expires_at?: string | null
+  feature_flags?: string[] | null
+  user_count: number
+  owner_email?: string | null
+  company_name?: string | null
+  phone?: string | null
+  city?: string | null
+  province?: string | null
+  created_at: string
+}
+export interface TenantProvision {
+  name: string
+  slug?: string
+  owner_full_name: string
+  owner_email: string
+  owner_password: string
+  subscription_plan?: string
+  status?: TenantStatus
+  expires_at?: string | null
+  feature_flags?: string[] | null
+}
+export interface TenantAdminUpdate {
+  name?: string
+  status?: TenantStatus
+  is_active?: boolean
+  subscription_plan?: string
+  expires_at?: string | null
+  feature_flags?: string[] | null
 }
 
 // ── Team / Roles ──────────────────────────────────────────────────

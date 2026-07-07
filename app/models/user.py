@@ -31,6 +31,8 @@ class User(BaseModel):
     # Status
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     is_verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # Platform super-admin (vendor-side Control Plane) — lintas-tenant, BUKAN role tenant biasa
+    is_platform_admin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     # Role
     role: Mapped[UserRole] = mapped_column(

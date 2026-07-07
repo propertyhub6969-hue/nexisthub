@@ -28,3 +28,28 @@ export function defaultPathFor(role: UserRole | undefined): string {
   if (role === 'marketing') return '/marketing/leads'
   return '/dashboard'
 }
+
+// ── Feature-flag (Control Plane) — modul on/off per tenant ─────────
+// Peta path → modul. Yang lebih spesifik didahulukan. Path tanpa entri = core (selalu boleh).
+const PATH_FEATURE: [string, string][] = [
+  ['/marketing', 'marketing'],
+  ['/pemberkasan', 'dokumen'],
+  ['/property/legal-docs', 'dokumen'],
+  ['/property', 'properti'],
+  ['/construction', 'konstruksi'],
+  ['/procurement', 'procurement'],
+  ['/reports', 'laporan'],
+]
+
+export function featureForPath(path: string): string | null {
+  const hit = PATH_FEATURE.find(([p]) => path.startsWith(p))
+  return hit ? hit[1] : null
+}
+
+// flags null/undefined = semua modul aktif (tenant lama / super-admin).
+export function canAccessFeature(flags: string[] | null | undefined, path: string): boolean {
+  if (flags == null) return true
+  const mod = featureForPath(path)
+  if (!mod) return true
+  return flags.includes(mod)
+}

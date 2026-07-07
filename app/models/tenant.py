@@ -1,7 +1,8 @@
 import uuid
-from sqlalchemy import String, Boolean, Text, Enum as SAEnum
+from datetime import date
+from sqlalchemy import String, Boolean, Text, Enum as SAEnum, Date
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import UUID, JSONB
 from app.models.base import BaseModel
 import enum
 
@@ -37,6 +38,9 @@ class Tenant(BaseModel):
     subscription_plan: Mapped[str] = mapped_column(
         String(50), default="trial", nullable=False
     )
+    expires_at: Mapped[date] = mapped_column(Date, nullable=True)  # akhir masa aktif langganan
+    # Modul aktif per tenant (Control Plane feature-flag). None = semua aktif (default).
+    feature_flags: Mapped[list] = mapped_column(JSONB, nullable=True)
 
     # Relationships
     users: Mapped[list["User"]] = relationship(

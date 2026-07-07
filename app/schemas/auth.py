@@ -1,5 +1,5 @@
 from pydantic import BaseModel, EmailStr, Field
-from typing import Optional
+from typing import Optional, List
 import uuid
 from app.models.user import UserRole
 
@@ -37,6 +37,11 @@ class UserResponse(BaseModel):
     full_name: str
     is_active: bool
     role: UserRole
+    is_platform_admin: bool = False
+    # Konteks tenant (untuk gating FE) — None feature_flags = semua modul aktif
+    tenant_name: Optional[str] = None
+    tenant_status: Optional[str] = None
+    feature_flags: Optional[List[str]] = None
 
     class Config:
         from_attributes = True
