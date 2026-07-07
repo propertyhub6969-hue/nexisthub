@@ -16,7 +16,7 @@ const expCatLabel: Record<ExpenseCategory, string> = {
   material: 'Material', upah: 'Upah', kontraktor: 'Kontraktor', operasional: 'Operasional', perizinan: 'Perizinan', lain: 'Lain-lain',
 }
 
-const VENDOR_CATEGORIES = ['Material', 'Kontraktor', 'Jasa', 'Lainnya'] as const
+const VENDOR_CATEGORIES = ['Material', 'Kontraktor', 'Jasa', 'PLN', 'PDAM', 'Lainnya'] as const
 
 const fmt = (n?: number) => n == null ? 'Rp 0' : new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(Number(n))
 const poStatusCfg: Record<POStatus, { label: string; variant: 'gray' | 'blue' | 'green' | 'red' | 'yellow' }> = {
@@ -50,6 +50,7 @@ export default function Procurement() {
   const [poModal, setPoModal] = useState(false)
   const [poForm, setPoForm] = useState<POCreate>(emptyPO())
   const [poEditId, setPoEditId] = useState<string | null>(null)
+  const [poProject, setPoProject] = useState('')  // filter proyek tab PO ('' = semua)
   // Payment modal
   const [payModal, setPayModal] = useState(false)
   const [payPo, setPayPo] = useState<PurchaseOrder | null>(null)
@@ -341,6 +342,29 @@ export default function Procurement() {
   const unitLabel = (id?: string) => { const u = units.find((x) => x.id === id); return u ? [u.block, u.unit_number].filter(Boolean).join('-') : undefined }
   const formUnits = units.filter((u) => u.project_id === poForm.project_id)
 
+  // Tab PO: filter proyek + ringkasan
+  const poFiltered = poProject ? pos.filter((p) => p.project_id === poProject) : pos
+  const poSum = {
+    count: poFiltered.length,
+    total: poFiltered.reduce((s, p) => s + Number(p.total_amount || 0), 0),
+    paid: poFiltered.reduce((s, p) => s + Number(p.paid_amount || 0), 0),
+    remaining: poFiltered.reduce((s, p) => s + Number(p.remaining || 0), 0),
+  }
+  // Tab Stok: status penerimaan PO proyek terpilih
+  const stockPos = pos.filter((p) => p.project_id === stockProject)
+  const stockPoSum = {
+    received: stockPos.filter((p) => p.status === 'received').length,
+    partial: stockPos.filter((p) => p.status === 'partial').length,
+    belum: stockPos.filter((p) => p.status === 'ordered').length,
+  }
+  // Tab RAB: ringkasan kebocoran 1 proyek
+  const rabSum = {
+    rab: leakRows.reduce((s, r) => s + Number(r.rab_total || 0), 0),
+    real: leakRows.reduce((s, r) => s + Number(r.realisasi_total || 0), 0),
+    selisih: leakRows.reduce((s, r) => s + Number(r.selisih || 0), 0),
+    over: leakRows.filter((r) => Number(r.selisih) < 0).length,
+  }
+
   if (loading) return <div className="py-16 text-center text-slate-400"><Loader2 size={20} className="inline animate-spin" /></div>
 
   return (
@@ -358,17 +382,27 @@ export default function Procurement() {
 
       {tab === 'po' ? (
         <>
-          <div className="flex justify-end">
-            <button className="btn-primary flex items-center gap-2 text-sm" onClick={openPoCreate}><Plus size={14} /> Buat PO</button>
+          <div className="flex items-center justify-between gap-3">
+            <select className="input max-w-xs" value={poProject} onChange={(e) => setPoProject(e.target.value)}>
+              <option value="">Semua proyek</option>
+              {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+            <button className="btn-primary flex items-center gap-2 text-sm shrink-0" onClick={openPoCreate}><Plus size={14} /> Buat PO</button>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="card p-4"><p className="text-xs text-slate-500">Jumlah PO</p><p className="text-lg font-semibold text-slate-900">{poSum.count}</p></div>
+            <div className="card p-4"><p className="text-xs text-slate-500">Total Nilai PO</p><p className="text-lg font-semibold text-slate-900">{fmt(poSum.total)}</p></div>
+            <div className="card p-4"><p className="text-xs text-slate-500">Terbayar</p><p className="text-lg font-semibold text-emerald-600">{fmt(poSum.paid)}</p></div>
+            <div className="card p-4"><p className="text-xs text-slate-500">Sisa Bayar</p><p className="text-lg font-semibold text-amber-600">{fmt(poSum.remaining)}</p></div>
           </div>
           <div className="card overflow-hidden">
             <table className="w-full text-sm">
               <thead className="bg-slate-50 border-b border-slate-200"><tr>{['No. PO', 'Vendor', 'Proyek', 'Total', 'Terbayar', 'Status', ''].map((h, i) => (
                 <th key={i} className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">{h}</th>))}</tr></thead>
               <tbody className="divide-y divide-slate-100">
-                {pos.length === 0 ? (
-                  <tr><td colSpan={7} className="px-4 py-8 text-center text-slate-400 text-sm">Belum ada PO. Klik "Buat PO".</td></tr>
-                ) : pos.map((po) => {
+                {poFiltered.length === 0 ? (
+                  <tr><td colSpan={7} className="px-4 py-8 text-center text-slate-400 text-sm">{poProject ? 'Belum ada PO untuk proyek ini.' : 'Belum ada PO. Klik "Buat PO".'}</td></tr>
+                ) : poFiltered.map((po) => {
                   const st = poStatusCfg[po.status]
                   return (
                     <tr key={po.id} className="hover:bg-slate-50">
@@ -409,6 +443,14 @@ export default function Procurement() {
             </div>
           </div>
 
+          {stockProject && (
+            <div className="grid grid-cols-3 gap-3">
+              <div className="card p-4"><p className="text-xs text-slate-500">PO Diterima Penuh</p><p className="text-lg font-semibold text-emerald-600">{stockPoSum.received}</p></div>
+              <div className="card p-4"><p className="text-xs text-slate-500">PO Diterima Sebagian</p><p className="text-lg font-semibold text-amber-600">{stockPoSum.partial}</p></div>
+              <div className="card p-4"><p className="text-xs text-slate-500">PO Belum Diterima</p><p className="text-lg font-semibold text-slate-900">{stockPoSum.belum}</p></div>
+            </div>
+          )}
+
           <div className="card overflow-hidden">
             <div className="px-4 py-2.5 border-b border-slate-100 text-sm font-semibold text-slate-900">Saldo Stok Material</div>
             <table className="w-full text-sm">
@@ -435,11 +477,11 @@ export default function Procurement() {
           <div className="card overflow-hidden">
             <div className="px-4 py-2.5 border-b border-slate-100 text-sm font-semibold text-slate-900">Riwayat Mutasi</div>
             <table className="w-full text-sm">
-              <thead className="bg-slate-50 border-b border-slate-200"><tr>{['Tanggal', 'Material', 'Tipe', 'Qty', 'Harga', 'Ke Unit', ''].map((h, i) => (
+              <thead className="bg-slate-50 border-b border-slate-200"><tr>{['Tanggal', 'Material', 'Tipe', 'Qty', 'Harga', 'Ke Unit', 'PIC', ''].map((h, i) => (
                 <th key={i} className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">{h}</th>))}</tr></thead>
               <tbody className="divide-y divide-slate-100">
                 {movements.length === 0 ? (
-                  <tr><td colSpan={7} className="px-4 py-6 text-center text-slate-400 text-sm">Belum ada mutasi.</td></tr>
+                  <tr><td colSpan={8} className="px-4 py-6 text-center text-slate-400 text-sm">Belum ada mutasi.</td></tr>
                 ) : movements.map((m) => (
                   <tr key={m.id} className="hover:bg-slate-50">
                     <td className="px-4 py-2.5 text-slate-500 text-xs">{m.movement_date ? new Date(m.movement_date).toLocaleDateString('id-ID') : '—'}</td>
@@ -448,6 +490,7 @@ export default function Procurement() {
                     <td className="px-4 py-2.5 text-slate-600">{Number(m.quantity)} {m.unit ?? ''}</td>
                     <td className="px-4 py-2.5 text-slate-500">{fmt(m.unit_price)}</td>
                     <td className="px-4 py-2.5 text-slate-500">{m.movement_type === 'out' ? (unitLabel(m.unit_id) ?? 'Umum') : '—'}</td>
+                    <td className="px-4 py-2.5 text-slate-500 text-xs">{m.received_by_name ?? '—'}</td>
                     <td className="px-4 py-2.5"><button onClick={() => delMovement(m.id)} className="text-slate-400 hover:text-red-600"><Trash2 size={13} /></button></td>
                   </tr>
                 ))}
@@ -529,6 +572,32 @@ export default function Procurement() {
             </select>
             <button className="btn-secondary text-sm flex items-center gap-1" onClick={openTplCreate} disabled={!stockProject}><Plus size={14} /> Template RAB</button>
           </div>
+
+          {/* Ringkasan kebocoran 1 proyek */}
+          {stockProject && leakRows.length > 0 && (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div className="card p-4"><p className="text-xs text-slate-500">Total RAB</p><p className="text-lg font-semibold text-slate-900">{fmt(rabSum.rab)}</p></div>
+              <div className="card p-4"><p className="text-xs text-slate-500">Total Realisasi</p><p className="text-lg font-semibold text-slate-900">{fmt(rabSum.real)}</p></div>
+              <div className="card p-4"><p className="text-xs text-slate-500">{rabSum.selisih < 0 ? 'Over Budget' : 'Sisa Anggaran'}</p><p className={`text-lg font-semibold ${rabSum.selisih < 0 ? 'text-red-600' : 'text-emerald-600'}`}>{fmt(Math.abs(rabSum.selisih))}</p></div>
+              <div className="card p-4"><p className="text-xs text-slate-500">Unit Over-budget</p><p className={`text-lg font-semibold ${rabSum.over > 0 ? 'text-red-600' : 'text-slate-900'}`}>{rabSum.over} / {leakRows.length}</p></div>
+            </div>
+          )}
+
+          {/* Peringatan unit over-budget */}
+          {stockProject && rabSum.over > 0 && (
+            <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3">
+              <p className="text-sm font-semibold text-red-700 flex items-center gap-1.5"><ClipboardList size={14} /> {rabSum.over} unit melebihi anggaran RAB (over-budget)</p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {leakRows.filter((r) => Number(r.selisih) < 0).map((r) => (
+                  <button key={r.unit_id} onClick={() => openUnitRab(r)} title="Kelola RAB unit"
+                    className="inline-flex items-center gap-1.5 rounded-md border border-red-200 bg-white px-2 py-1 text-xs text-red-700 hover:bg-red-100">
+                    <span className="font-medium">{r.unit_label}</span>
+                    <span className="text-red-500">over {fmt(Math.abs(Number(r.selisih)))}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Templates */}
           <div className="card overflow-hidden">
@@ -914,7 +983,7 @@ export default function Procurement() {
                     {(Object.keys(expCatLabel) as ExpenseCategory[]).map((k) => <option key={k} value={k}>{expCatLabel[k]}</option>)}
                   </select></div>
                 <div className="flex-[3]"><label className="label">Uraian</label><input className="input" placeholder="Upgrade granit" value={adjForm.description} onChange={(e) => setAdjForm({ ...adjForm, description: e.target.value })} /></div>
-                <div className="flex-[2]"><label className="label">Nilai (±)</label><input className="input" type="number" required value={adjForm.amount || ''} onChange={(e) => setAdjForm({ ...adjForm, amount: Number(e.target.value) })} /></div>
+                <div className="flex-[2]"><label className="label">Nilai (±)</label><MoneyInput required allowNegative value={adjForm.amount || undefined} onChange={(v) => setAdjForm({ ...adjForm, amount: v ?? 0 })} /></div>
                 <button type="submit" className="btn-primary text-sm h-[38px]">+</button>
               </form>
             </div>

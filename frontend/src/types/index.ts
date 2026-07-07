@@ -836,6 +836,8 @@ export interface StockMovement {
   po_id?: string
   po_item_id?: string
   do_number?: string
+  received_by_id?: string
+  received_by_name?: string
   movement_date?: string
   notes?: string
   created_at: string

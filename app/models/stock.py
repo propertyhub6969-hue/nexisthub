@@ -49,6 +49,9 @@ class StockMovement(BaseModel, SoftDeleteMixin):
         UUID(as_uuid=True), ForeignKey("purchase_order_items.id", ondelete="SET NULL"), nullable=True, index=True
     )  # item PO yang diterima (untuk hitung sisa penerimaan per item)
     do_number: Mapped[str] = mapped_column(String(50), nullable=True)  # no. surat jalan / DO dari vendor
+    received_by_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )  # PIC penerima (user login saat terima PO)
     movement_date: Mapped[Date] = mapped_column(Date, nullable=True)
     notes: Mapped[str] = mapped_column(Text, nullable=True)
 

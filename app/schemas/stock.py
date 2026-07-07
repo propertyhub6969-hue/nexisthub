@@ -41,6 +41,8 @@ class MovementResponse(BaseModel):
     po_id: Optional[uuid.UUID] = None
     po_item_id: Optional[uuid.UUID] = None
     do_number: Optional[str] = None
+    received_by_id: Optional[uuid.UUID] = None
+    received_by_name: Optional[str] = None
     movement_date: Optional[date] = None
     notes: Optional[str] = None
     created_at: datetime

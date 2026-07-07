@@ -14,6 +14,7 @@ from app.core.audit import record_audit
 from app.api.deps import get_current_context, AuthContext
 from app.models.stock import StockMovement, MovementType, MovementSource
 from app.models.procurement import PurchaseOrder, POStatus
+from app.models.user import User
 from app.schemas.stock import StockInCreate, StockOutCreate, MovementResponse, StockBalance
 from app.schemas.procurement import ReceivePO
 
@@ -78,6 +79,14 @@ async def list_movements(
     movs = await _movements(db, ctx.tenant_id, project_id)
     if material:
         movs = [m for m in movs if m.material_name == material]
+    # resolve nama PIC penerima (transien)
+    uids = list({m.received_by_id for m in movs if m.received_by_id})
+    names = {}
+    if uids:
+        rows = (await db.execute(select(User.id, User.full_name).where(User.id.in_(uids)))).all()
+        names = {r[0]: r[1] for r in rows}
+    for m in movs:
+        m.received_by_name = names.get(m.received_by_id)
     return movs
 
 
@@ -141,7 +150,7 @@ async def receive_po(po_id: uuid.UUID, payload: ReceivePO, ctx: AuthContext = De
             tenant_id=ctx.tenant_id, project_id=po.project_id, material_name=it.item_name, unit=it.unit,
             movement_type=MovementType.IN, source=MovementSource.PO, quantity=qty,
             unit_price=it.unit_price, po_id=po.id, po_item_id=it.id, do_number=payload.do_number,
-            movement_date=payload.receive_date or date.today(),
+            received_by_id=ctx.user_id, movement_date=payload.receive_date or date.today(),
         )
         db.add(m); created.append(m)
     await db.flush()
