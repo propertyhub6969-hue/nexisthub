@@ -1,17 +1,17 @@
 # NexistHub — Summary Handoff
 
-_Diperbarui: 2026-07-04_
+_Diperbarui: 2026-07-08_
 
 ERP multi-tenant untuk **developer properti** (rumah **subsidi + komersial**, bangun sendiri) — Kalimantan & Sulawesi. Dikembangkan bertahap per "Session/Fase" via cowork.
 
 ---
 
 ## 1. Visi & Arsitektur Target
-- **SaaS SILO multi-tenant**: satu codebase, tiap pelanggan (perusahaan developer) punya **database sendiri**, diakses lewat **domain/subdomain sendiri** (custom domain via CNAME + auto-SSL). "Fondasi sendiri" walau semua kita yang kelola.
+- **Strategi go-to-market = POOL-FIRST** (keputusan 2026-07-07, untuk **jual ke banyak developer** secepatnya): semua pelanggan berbagi 1 DB, diisolasi `tenant_id` + **feature-flag per tenant**. Tiap tenant dapat **subdomain gratis** (`{slug}.nexisthub.id`) otomatis; custom domain = opsional nanti. **SILO (DB per pelanggan) = tier PREMIUM belakangan**, bukan jalur awal.
 - **Kustomisasi per klien = feature-flag/modul on-off**, BUKAN kode bercabang.
-- **Langganan** bulanan/tahunan (dikelola dari Control Plane — belum dibuat).
-- Prinsip: **produk dulu, platform menyusul**. 5–10 pelanggan pertama = provisioning manual.
-- **`tenant_id` DIPERTAHANKAN** (keputusan final): bukan kolom mati — dipakai sebagai filter isolasi di hampir semua query (dari JWT via `AuthContext`). Dalam shared-DB sekarang inilah satu-satunya boundary antar-pelanggan; nanti tetap sebagai defense-in-depth di mode silo. Jangan dicabut.
+- **Langganan** bulanan/tahunan dikelola dari **Control Plane (SUDAH DIBANGUN, Fase 1–4 live)** — lihat §3a.
+- Prinsip: **produk dulu, platform menyusul**. Provisioning kini **self-serve** (register → trial) + kelola manual dari cockpit super-admin.
+- **`tenant_id` DIPERTAHANKAN** (keputusan final): bukan kolom mati — dipakai sebagai filter isolasi di hampir semua query (dari JWT via `AuthContext`). Dalam pool-DB inilah boundary utama antar-pelanggan; nanti tetap sebagai defense-in-depth di mode silo. Jangan dicabut.
 
 ## 2. Tech Stack & Infra
 - **Backend**: FastAPI + SQLAlchemy 2 (async) + PostgreSQL + Alembic. Auth JWT (token bawa `sub`+`tenant_id`; dependency `get_current_context` → `AuthContext`; `get_current_user`/`require_role(...)` muat user dari DB untuk cek role live).
