@@ -271,6 +271,25 @@ async def list_units(
     return _paginate(items, total or 0, page, size)
 
 
+@router.get("/units/stats")
+async def unit_stats(
+    project_id: uuid.UUID = Query(...),
+    ctx: AuthContext = Depends(get_current_context),
+    db: AsyncSession = Depends(get_db),
+):
+    """Hitung unit per status untuk 1 proyek (ringkasan; tak terpengaruh paginasi tabel)."""
+    rows = (await db.execute(
+        select(Unit.status, func.count())
+        .where(Unit.tenant_id == ctx.tenant_id, Unit.project_id == project_id)
+        .group_by(Unit.status)
+    )).all()
+    by: dict = {}
+    for st, cnt in rows:
+        key = st.value if hasattr(st, "value") else str(st).lower()
+        by[key] = cnt
+    return {"total": sum(by.values()), "by_status": by}
+
+
 def _apply_price_breakdown(data: dict) -> None:
     """Bila `price_breakdown` diisi → simpan sbg JSON [{label, amount}] & set price = totalnya.
     Bila kosong/None (dan key ada) → kosongkan rincian (harga pakai field manual)."""

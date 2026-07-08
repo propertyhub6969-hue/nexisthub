@@ -43,6 +43,10 @@ export const propertyService = {
     const { data } = await api.get<PaginatedResponse<Unit>>('/property/units', { params })
     return data
   },
+  async unitStats(projectId: string): Promise<{ total: number; by_status: Record<string, number> }> {
+    const { data } = await api.get('/property/units/stats', { params: { project_id: projectId } })
+    return data
+  },
   async createUnit(payload: UnitCreate): Promise<Unit> {
     const { data } = await api.post<Unit>('/property/units', payload)
     return data

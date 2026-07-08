@@ -4,6 +4,7 @@ import { Plus, Trash2, Pencil, Loader2, ArrowLeft, Map, FileSignature, Printer, 
 import Badge from '../../components/ui/Badge'
 import MoneyInput from '../../components/ui/MoneyInput'
 import Modal from '../../components/ui/Modal'
+import Pagination from '../../components/ui/Pagination'
 import { propertyService } from '../../services/property'
 import { useAuth } from '../../context/AuthContext'
 import { printBast } from '../../utils/bast'
@@ -55,16 +56,23 @@ export default function ProjectUnits() {
   const [genSaving, setGenSaving] = useState(false)
   const [genMsg, setGenMsg] = useState('')
 
-  const load = useCallback(async () => {
+  const [page, setPage] = useState(1)
+  const [total, setTotal] = useState(0)
+  const [pages, setPages] = useState(1)
+  const [counts, setCounts] = useState<Record<string, number>>({})
+
+  const load = useCallback(async (pg: number, status: string) => {
     setLoading(true)
     setError('')
     try {
-      const [proj, res] = await Promise.all([
+      const [proj, res, stats] = await Promise.all([
         propertyService.getProject(projectId),
-        propertyService.listUnits({ project_id: projectId, size: 500 }),
+        propertyService.listUnits({ project_id: projectId, status: status || undefined, page: pg, size: 25 }),
+        propertyService.unitStats(projectId),
       ])
       setProject(proj)
-      setUnits(res.items)
+      setUnits(res.items); setTotal(res.total); setPages(res.pages)
+      setCounts(stats.by_status)
     } catch {
       setError('Gagal memuat data unit.')
     } finally {
@@ -72,10 +80,7 @@ export default function ProjectUnits() {
     }
   }, [projectId])
 
-  useEffect(() => { load() }, [load])
-
-  const counts = units.reduce((acc, u) => { acc[u.status] = (acc[u.status] || 0) + 1; return acc }, {} as Record<string, number>)
-  const shown = statusFilter ? units.filter((u) => u.status === statusFilter) : units
+  useEffect(() => { load(page, statusFilter) }, [load, page, statusFilter])
 
   function openCreate() {
     setEditingId(null)
@@ -129,7 +134,7 @@ export default function ProjectUnits() {
         await propertyService.createUnit(payload)
       }
       closeModal()
-      await load()
+      await load(page, statusFilter)
     } catch {
       setError('Gagal menyimpan unit.')
     } finally {
@@ -141,7 +146,7 @@ export default function ProjectUnits() {
     if (!confirm('Hapus unit ini?')) return
     try {
       await propertyService.deleteUnit(id)
-      setUnits((prev) => prev.filter((u) => u.id !== id))
+      await load(page, statusFilter)
     } catch {
       setError('Gagal menghapus unit.')
     }
@@ -167,7 +172,7 @@ export default function ProjectUnits() {
       const rec = payload as unknown as Record<string, unknown>
       ;['unit_type', 'land_area', 'building_area', 'price'].forEach((k) => { if (!rec[k]) delete rec[k] })
       const res = await propertyService.bulkGenerateUnits(payload)
-      await load()
+      await load(page, statusFilter)
       setGenMsg(`${res.created} unit dibuat${res.skipped ? `, ${res.skipped} dilewati (nomor sudah ada)` : ''}.`)
       // reset jumlah agar tidak sengaja generate ganda; biarkan modal terbuka menampilkan hasil
       setGenForm((f) => ({ ...f, start_number: f.start_number + f.count }))
@@ -187,9 +192,9 @@ export default function ProjectUnits() {
     if (!bastUnit) return
     setSavingBast(true); setError('')
     try {
-      const updated = await propertyService.createBast(bastUnit.id, { bast_date: bastDate || undefined })
-      setUnits((prev) => prev.map((u) => (u.id === updated.id ? updated : u)))
+      await propertyService.createBast(bastUnit.id, { bast_date: bastDate || undefined })
       setBastModal(false)
+      await load(page, statusFilter)
     } catch { setError('Gagal membuat BAST.') } finally { setSavingBast(false) }
   }
   function doPrintBast(u: Unit) {
@@ -228,12 +233,12 @@ export default function ProjectUnits() {
 
       {/* Ringkasan status (klik untuk filter) */}
       <div className="flex flex-wrap gap-2">
-        <button onClick={() => setStatusFilter('')}
+        <button onClick={() => { setStatusFilter(''); setPage(1) }}
           className={`card px-3 py-2 text-sm ${statusFilter === '' ? 'ring-2 ring-brand-500' : ''}`}>
-          Semua <span className="font-semibold">{units.length}</span>
+          Semua <span className="font-semibold">{Object.values(counts).reduce((a, b) => a + b, 0)}</span>
         </button>
         {(Object.keys(statusConfig) as UnitStatus[]).map((k) => (
-          <button key={k} onClick={() => setStatusFilter(statusFilter === k ? '' : k)}
+          <button key={k} onClick={() => { setStatusFilter(statusFilter === k ? '' : k); setPage(1) }}
             className={`card px-3 py-2 text-sm flex items-center gap-2 ${statusFilter === k ? 'ring-2 ring-brand-500' : ''}`}>
             <Badge label={statusConfig[k].label} variant={statusConfig[k].variant} />
             <span className="font-semibold">{counts[k] || 0}</span>
@@ -255,10 +260,10 @@ export default function ProjectUnits() {
           <tbody className="divide-y divide-slate-100">
             {loading ? (
               <tr><td colSpan={8} className="px-4 py-10 text-center text-slate-400"><Loader2 size={18} className="inline animate-spin" /></td></tr>
-            ) : shown.length === 0 ? (
-              <tr><td colSpan={8} className="px-4 py-8 text-center text-slate-400 text-sm">{units.length === 0 ? 'Belum ada unit. Klik "Tambah Unit".' : 'Tidak ada unit dengan status ini.'}</td></tr>
+            ) : units.length === 0 ? (
+              <tr><td colSpan={8} className="px-4 py-8 text-center text-slate-400 text-sm">{statusFilter ? 'Tidak ada unit dengan status ini.' : 'Belum ada unit. Klik "Tambah Unit".'}</td></tr>
             ) : (
-              shown.map((u) => {
+              units.map((u) => {
                 const s = statusConfig[u.status]
                 return (
                   <tr key={u.id} className="hover:bg-slate-50 transition-colors">
@@ -297,6 +302,7 @@ export default function ProjectUnits() {
             )}
           </tbody>
         </table>
+        <Pagination page={page} pages={pages} total={total} onPage={setPage} />
       </div>
 
       <Modal open={modalOpen} onClose={closeModal} title={editingId ? 'Edit Unit' : 'Tambah Unit'}>
