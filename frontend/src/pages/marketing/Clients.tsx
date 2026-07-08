@@ -69,7 +69,7 @@ const emptyForm: ClientCreate = {
 export default function Clients() {
   const [clients, setClients] = useState<Client[]>([])
   const [projects, setProjects] = useState<Project[]>([])
-  const [units, setUnits] = useState<Unit[]>([])
+  const [unitsByProject, setUnitsByProject] = useState<Record<string, Unit[]>>({})  // lazy per-proyek
   const [me, setMe] = useState<UserResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -91,7 +91,8 @@ export default function Clients() {
 
   const projectName = (id?: string) => projects.find((p) => p.id === id)?.name
   const unitLabel = (u?: Unit) => u ? [u.block, u.unit_number].filter(Boolean).join('-') : undefined
-  const unitNumberById = (id?: string) => unitLabel(units.find((u) => u.id === id))
+  const unitsFor = (pid?: string) => (pid && unitsByProject[pid]) || []
+  const unitNumberById = (id?: string) => unitLabel(Object.values(unitsByProject).flat().find((u) => u.id === id))
 
   useEffect(() => {
     localStorage.setItem(COLS_STORAGE_KEY, JSON.stringify(visibleCols))
@@ -123,9 +124,22 @@ export default function Clients() {
 
   useEffect(() => {
     propertyService.listProjects({ size: 500 }).then((r) => setProjects(r.items)).catch(() => {})
-    propertyService.listUnits({ size: 500 }).then((r) => setUnits(r.items)).catch(() => {})
     authService.me().then(setMe).catch(() => {})
   }, [])
+
+  // Lazy: muat unit hanya untuk proyek yang dipilih (filter & form), di-cache per proyek
+  useEffect(() => {
+    const pid = projectFilter
+    if (!pid || unitsByProject[pid]) return
+    propertyService.listUnits({ project_id: pid, size: 500 }).then((r) => setUnitsByProject((p) => ({ ...p, [pid]: r.items }))).catch(() => {})
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectFilter])
+  useEffect(() => {
+    const pid = form.project_id
+    if (!pid || unitsByProject[pid]) return
+    propertyService.listUnits({ project_id: pid, size: 500 }).then((r) => setUnitsByProject((p) => ({ ...p, [pid]: r.items }))).catch(() => {})
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.project_id])
 
   const firstLoad = useRef(true)
   useEffect(() => {
@@ -154,7 +168,7 @@ export default function Clients() {
 
   // pilih unit → harga otomatis dari data unit
   function onSelectUnit(unitId: string) {
-    const u = units.find((x) => x.id === unitId)
+    const u = unitsFor(form.project_id).find((x) => x.id === unitId)
     setForm((f) => ({ ...f, unit_id: unitId, contract_value: u?.price != null ? Number(u.price) : f.contract_value }))
   }
 
@@ -182,9 +196,9 @@ export default function Clients() {
     catch { setError('Gagal menghapus pembeli.') }
   }
 
-  const formUnits = units.filter((u) => u.project_id === form.project_id)
+  const formUnits = unitsFor(form.project_id)
 
-  const filterUnits = units.filter((u) => !projectFilter || u.project_id === projectFilter)
+  const filterUnits = unitsFor(projectFilter)
   const visibleColumns = ALL_COLUMNS.filter((c) => !c.toggleable || visibleCols[c.key as ToggleColKey])
 
   function renderCell(c: Client, key: ColDef['key']) {

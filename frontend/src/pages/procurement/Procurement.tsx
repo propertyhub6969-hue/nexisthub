@@ -40,7 +40,7 @@ export default function Procurement() {
   const [mForm, setMForm] = useState<MaterialCreate>({ name: '', unit: '', category: '', last_price: undefined })
   const [mEditId, setMEditId] = useState<string | null>(null)
   const [projects, setProjects] = useState<Project[]>([])
-  const [units, setUnits] = useState<Unit[]>([])
+  const [unitsByProject, setUnitsByProject] = useState<Record<string, Unit[]>>({})  // lazy per-proyek
   const [pos, setPos] = useState<PurchaseOrder[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -95,14 +95,25 @@ export default function Procurement() {
   const load = useCallback(async () => {
     setLoading(true); setError('')
     try {
-      const [v, p, u, po, mt] = await Promise.all([
+      const [v, p, po, mt] = await Promise.all([
         procurementService.listVendors(), propertyService.listProjects({ size: 500 }),
-        propertyService.listUnits({ size: 500 }), procurementService.listPOs(), procurementService.listMaterials(),
+        procurementService.listPOs(), procurementService.listMaterials(),
       ])
-      setVendors(v); setProjects(p.items); setUnits(u.items); setPos(po); setMaterials(mt)
+      setVendors(v); setProjects(p.items); setPos(po); setMaterials(mt)
     } catch { setError('Gagal memuat data procurement.') } finally { setLoading(false) }
   }, [])
   useEffect(() => { load() }, [load])
+
+  // Lazy: muat unit per-proyek on-demand (stok pakai stockProject, form PO pakai poForm.project_id)
+  const unitsFor = (pid?: string) => (pid && unitsByProject[pid]) || []
+  const ensureUnits = (pid?: string) => {
+    if (!pid || unitsByProject[pid]) return
+    propertyService.listUnits({ project_id: pid, size: 500 }).then((r) => setUnitsByProject((prev) => ({ ...prev, [pid]: r.items }))).catch(() => {})
+  }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { ensureUnits(stockProject) }, [stockProject])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { ensureUnits(poForm.project_id) }, [poForm.project_id])
 
   const reloadPO = async () => setPos(await procurementService.listPOs())
   const reloadVendor = async () => setVendors(await procurementService.listVendors())
@@ -161,7 +172,7 @@ export default function Procurement() {
     if (!confirm('Hapus mutasi ini?')) return
     try { await procurementService.deleteMovement(id); await loadStock(stockProject) } catch { /* noop */ }
   }
-  const stockUnits = units.filter((u) => u.project_id === stockProject)
+  const stockUnits = unitsFor(stockProject)
 
   const loadCost = useCallback(async (pid: string) => {
     if (!pid) { setExpenses([]); setCost(null); return }
@@ -339,8 +350,8 @@ export default function Procurement() {
   const findMaterial = (name: string) => materials.find((m) => m.name.trim().toLowerCase() === name.trim().toLowerCase())
 
   const projName = (id?: string) => projects.find((p) => p.id === id)?.name
-  const unitLabel = (id?: string) => { const u = units.find((x) => x.id === id); return u ? [u.block, u.unit_number].filter(Boolean).join('-') : undefined }
-  const formUnits = units.filter((u) => u.project_id === poForm.project_id)
+  const unitLabel = (id?: string) => { const u = Object.values(unitsByProject).flat().find((x) => x.id === id); return u ? [u.block, u.unit_number].filter(Boolean).join('-') : undefined }
+  const formUnits = unitsFor(poForm.project_id)
 
   // Tab PO: filter proyek + ringkasan
   const poFiltered = poProject ? pos.filter((p) => p.project_id === poProject) : pos
