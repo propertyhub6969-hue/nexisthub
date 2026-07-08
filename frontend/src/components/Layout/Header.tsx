@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
-import { Bell, ChevronDown, LogOut, Menu } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { Bell, ChevronDown, LogOut, Menu, CreditCard } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 
 interface HeaderProps {
@@ -50,7 +51,7 @@ export default function Header({ title, onMenuClick }: HeaderProps) {
             onClick={() => setOpen((v) => !v)}
             className="flex items-center gap-2 cursor-pointer hover:bg-slate-50 rounded-lg px-2 py-1 transition-colors"
           >
-            <div className="w-7 h-7 rounded-full bg-accent-500 flex items-center justify-center">
+            <div className="w-7 h-7 rounded-full bg-brand-500 ring-1 ring-brass-500/40 flex items-center justify-center">
               <span className="text-white text-xs font-semibold">{initial}</span>
             </div>
             <ChevronDown size={14} className={`text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`} />
@@ -67,9 +68,19 @@ export default function Header({ title, onMenuClick }: HeaderProps) {
                   </span>
                 )}
               </div>
+              {(user?.role === 'owner' || user?.role === 'admin') && !user?.is_platform_admin && (
+                <Link
+                  to="/settings/langganan"
+                  onClick={() => setOpen(false)}
+                  className="flex items-center gap-2 w-full px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
+                >
+                  <CreditCard size={15} className="text-slate-400" />
+                  Langganan
+                </Link>
+              )}
               <button
                 onClick={logout}
-                className="flex items-center gap-2 w-full px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 transition-colors"
+                className="flex items-center gap-2 w-full px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 transition-colors border-t border-slate-100"
               >
                 <LogOut size={15} />
                 Logout

@@ -15,7 +15,6 @@ import {
   UsersRound,
   Factory,
   Server,
-  CreditCard,
   X,
 } from 'lucide-react'
 import { clsx } from 'clsx'
@@ -76,7 +75,6 @@ const settingsItem = {
   icon: Settings,
   children: [
     { label: 'Tim', to: '/settings/team', icon: UsersRound },
-    { label: 'Langganan', to: '/settings/langganan', icon: CreditCard },
   ],
 }
 
@@ -118,7 +116,7 @@ export default function Sidebar({ open = false, onClose }: { open?: boolean; onC
         )}
       >
         {/* Logo */}
-        <div className="px-5 py-5 border-b border-blue-900 flex items-center justify-between">
+        <div className="px-5 py-5 border-b border-white/10 flex items-center justify-between">
           <NexistLogo size={32} showText={true} textColor="white" />
           <button onClick={onClose} className="lg:hidden text-slate-300 hover:text-white" aria-label="Tutup menu">
             <X size={20} />
@@ -161,8 +159,8 @@ export default function Sidebar({ open = false, onClose }: { open?: boolean; onC
                 clsx(
                   'flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors',
                   isActive
-                    ? 'bg-brand-500 text-white'
-                    : 'text-slate-300 hover:bg-blue-900 hover:text-white'
+                    ? 'bg-white/[0.07] text-white border-l-2 border-brass-500'
+                    : 'text-slate-300 border-l-2 border-transparent hover:bg-white/5 hover:text-white'
                 )
               }
             >

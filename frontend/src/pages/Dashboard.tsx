@@ -58,13 +58,13 @@ function StatCard({ icon: Icon, label, value, color, bg, sub }: {
   label: string; value: string; color: string; bg: string; sub?: string
 }) {
   return (
-    <div className="card p-4 sm:p-5 flex items-center gap-3 sm:gap-4">
-      <div className={`w-10 h-10 rounded-lg ${bg} flex items-center justify-center shrink-0`}>
+    <div className="card p-4 sm:p-5 flex items-center gap-3 sm:gap-4 hover:shadow-soft transition-shadow">
+      <div className={`w-11 h-11 rounded-xl ${bg} flex items-center justify-center shrink-0`}>
         <Icon size={18} className={color} />
       </div>
       <div className="min-w-0">
-        <p className="text-base sm:text-xl font-bold text-slate-900 truncate">{value}</p>
-        <p className="text-xs text-slate-500">{label}</p>
+        <p className="font-display text-lg sm:text-xl font-bold text-slate-900 truncate tracking-tight">{value}</p>
+        <p className="text-xs text-slate-500 mt-0.5">{label}</p>
         {sub && <p className="text-xs text-slate-400">{sub}</p>}
       </div>
     </div>

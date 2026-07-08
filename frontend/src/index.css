@@ -9,26 +9,37 @@
   body {
     @apply bg-slate-50 text-slate-900 font-sans antialiased;
   }
+  /* Judul pakai Plus Jakarta Sans (display); data/isi tetap Inter */
+  h1, h2, h3 {
+    @apply font-display tracking-tight;
+  }
 }
 
 @layer components {
   .btn-primary {
-    @apply bg-brand-500 hover:bg-brand-600 text-white font-medium px-4 py-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply bg-brand-500 hover:bg-brand-600 text-white font-medium px-4 py-2 rounded-lg shadow-sm hover:shadow transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none;
   }
   .btn-accent {
     @apply bg-accent-500 hover:bg-accent-600 text-white font-medium px-4 py-2 rounded-lg transition-colors;
   }
   .btn-secondary {
-    @apply bg-white hover:bg-slate-50 text-slate-700 font-medium px-4 py-2 rounded-lg border border-slate-200 transition-colors;
+    @apply bg-white hover:bg-slate-50 text-slate-700 font-medium px-4 py-2 rounded-lg border border-slate-200 hover:border-slate-300 transition-colors;
   }
   .input {
-    @apply w-full px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-all text-sm;
+    @apply w-full px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500/60 focus:border-brand-500 transition-all text-sm;
   }
   .label {
     @apply block text-sm font-medium text-slate-700 mb-1;
   }
   .card {
-    @apply bg-white rounded-xl border border-slate-200 shadow-sm;
+    @apply bg-white rounded-xl border border-slate-200/80 shadow-card;
+  }
+  /* Grid blueprint halus untuk panel brand (login/register) */
+  .bp-grid {
+    background-image:
+      linear-gradient(rgba(197, 154, 82, 0.10) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(197, 154, 82, 0.10) 1px, transparent 1px);
+    background-size: 28px 28px;
   }
 }
 
