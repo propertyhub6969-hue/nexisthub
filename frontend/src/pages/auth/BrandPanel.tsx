@@ -1,5 +1,15 @@
+import { Check } from 'lucide-react'
+
 // Panel kiri halaman auth (login/register): ink navy + grid blueprint + wordmark & tagline.
 // Signature identitas NexistHub — disembunyikan di layar kecil.
+const FEATURES = [
+  'Marketing terintegrasi — Pembeli, KPR & follow-up otomatis',
+  'Procurement real-time. Finance & legalitas terpadu.',
+  'Laporan & analitik penjualan real-time',
+  'Deteksi kebocoran biaya per unit',
+  'AI-powered insights untuk keputusan lebih cepat',
+]
+
 export default function BrandPanel() {
   return (
     <div className="relative hidden lg:flex flex-col justify-between bg-sidebar text-white p-12 overflow-hidden">
@@ -15,13 +25,20 @@ export default function BrandPanel() {
       <div className="relative">
         <div className="h-px w-14 bg-brass-500 mb-6" />
         <h2 className="font-display text-3xl sm:text-4xl font-bold leading-[1.15] text-white">
-          Membangun rumah,<br />bukan mengejar berkas.
+          Ribuan unit,<br />satu dashboard.
         </h2>
-        <p className="mt-4 text-slate-300 text-sm max-w-sm leading-relaxed">
-          Rumah subsidi menuntut volume besar dengan margin tipis — KPR FLPP,
-          pencairan bank bertahap, legalitas &amp; pajak yang tak boleh keliru.
-          NexistHub merapikan semuanya dalam satu sistem, agar tim Anda fokus
-          menyelesaikan unit dan menyerahkan kunci tepat waktu.
+
+        <ul className="mt-5 space-y-2 max-w-sm">
+          {FEATURES.map((f) => (
+            <li key={f} className="flex items-start gap-2.5 text-sm text-slate-300 leading-snug">
+              <Check size={15} className="text-brass-500 mt-0.5 shrink-0" />
+              <span>{f}</span>
+            </li>
+          ))}
+        </ul>
+
+        <p className="mt-6 font-display text-base font-semibold text-white">
+          Efisiensi developer rumah subsidi, <span className="text-brass-400">dimulai.</span>
         </p>
       </div>
 
