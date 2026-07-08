@@ -46,16 +46,22 @@ async def list_leads(
     db: AsyncSession = Depends(get_db),
     search: Optional[str] = Query(None),
     status_filter: Optional[str] = Query(None, alias="status"),
+    project_id: Optional[uuid.UUID] = Query(None),
+    temperature: Optional[str] = Query(None),
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=500),
 ):
-    """List leads for the current tenant (paginated, searchable)."""
+    """List leads for the current tenant (paginated, searchable, filterable)."""
     conditions = [Lead.tenant_id == ctx.tenant_id]
     if search:
         term = f"%{search}%"
         conditions.append(or_(Lead.full_name.ilike(term), Lead.phone.ilike(term)))
     if status_filter:
         conditions.append(Lead.status == status_filter)
+    if project_id:
+        conditions.append(Lead.interested_project_id == project_id)
+    if temperature:
+        conditions.append(Lead.temperature == temperature)
 
     total = await db.scalar(select(func.count()).select_from(Lead).where(*conditions))
     result = await db.execute(
@@ -304,6 +310,8 @@ async def list_clients(
     db: AsyncSession = Depends(get_db),
     search: Optional[str] = Query(None),
     status_filter: Optional[str] = Query(None, alias="status"),
+    project_id: Optional[uuid.UUID] = Query(None),
+    unit_id: Optional[uuid.UUID] = Query(None),
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=500),
 ):
@@ -317,6 +325,10 @@ async def list_clients(
         ))
     if status_filter:
         conditions.append(Client.status == status_filter)
+    if project_id:
+        conditions.append(Client.project_id == project_id)
+    if unit_id:
+        conditions.append(Client.unit_id == unit_id)
 
     total = await db.scalar(select(func.count()).select_from(Client).where(*conditions))
     result = await db.execute(

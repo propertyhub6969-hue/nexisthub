@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { Plus, Search, Trash2, Pencil, Loader2, MessageCircle, ArrowRightCircle } from 'lucide-react'
 import Badge from '../../components/ui/Badge'
 import Modal from '../../components/ui/Modal'
+import Pagination from '../../components/ui/Pagination'
 import { marketingService } from '../../services/marketing'
 import { propertyService } from '../../services/property'
 import { waLink } from '../../utils/phone'
@@ -47,6 +48,9 @@ export default function Leads() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [projectFilter, setProjectFilter] = useState('')
   const [temperatureFilter, setTemperatureFilter] = useState('')
+  const [page, setPage] = useState(1)
+  const [total, setTotal] = useState(0)
+  const [pages, setPages] = useState(1)
 
   const projectName = (id?: string) => projects.find((p) => p.id === id)?.name
 
@@ -54,12 +58,15 @@ export default function Leads() {
     propertyService.listProjects({ size: 500 }).then((r) => setProjects(r.items)).catch(() => {})
   }, [])
 
-  const load = useCallback(async (term: string) => {
+  const load = useCallback(async (term: string, pg: number, proj: string, temp: string) => {
     setLoading(true)
     setError('')
     try {
-      const res = await marketingService.listLeads({ search: term || undefined, size: 100 })
-      setLeads(res.items)
+      const res = await marketingService.listLeads({
+        search: term || undefined, project_id: proj || undefined,
+        temperature: temp || undefined, page: pg, size: 25,
+      })
+      setLeads(res.items); setTotal(res.total); setPages(res.pages)
     } catch {
       setError('Gagal memuat data lead.')
     } finally {
@@ -71,12 +78,12 @@ export default function Leads() {
   useEffect(() => {
     if (firstLoad.current) {
       firstLoad.current = false
-      load(search)          // load pertama langsung, tanpa jeda
+      load(search, page, projectFilter, temperatureFilter)   // load pertama langsung
       return
     }
-    const t = setTimeout(() => load(search), 300)  // debounce hanya untuk pencarian
+    const t = setTimeout(() => load(search, page, projectFilter, temperatureFilter), 300)  // debounce
     return () => clearTimeout(t)
-  }, [search, load])
+  }, [search, projectFilter, temperatureFilter, page, load])
 
   function openCreate() {
     setEditingId(null)
@@ -118,7 +125,7 @@ export default function Leads() {
         await marketingService.createLead(payload)
       }
       closeModal()
-      await load(search)
+      await load(search, page, projectFilter, temperatureFilter)
     } catch {
       setError('Gagal menyimpan lead. Periksa isian Anda.')
     } finally {
@@ -147,11 +154,6 @@ export default function Leads() {
     }
   }
 
-  const filteredLeads = leads.filter((l) =>
-    (!projectFilter || l.interested_project_id === projectFilter) &&
-    (!temperatureFilter || l.temperature === temperatureFilter)
-  )
-
   return (
     <div className="space-y-4">
       {/* Toolbar */}
@@ -163,14 +165,14 @@ export default function Leads() {
               className="input pl-8 w-56"
               placeholder="Cari nama atau nomor HP..."
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => { setSearch(e.target.value); setPage(1) }}
             />
           </div>
-          <select className="input w-44" value={projectFilter} onChange={(e) => setProjectFilter(e.target.value)}>
+          <select className="input w-44" value={projectFilter} onChange={(e) => { setProjectFilter(e.target.value); setPage(1) }}>
             <option value="">Semua Properti</option>
             {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
           </select>
-          <select className="input w-40" value={temperatureFilter} onChange={(e) => setTemperatureFilter(e.target.value)}>
+          <select className="input w-40" value={temperatureFilter} onChange={(e) => { setTemperatureFilter(e.target.value); setPage(1) }}>
             <option value="">Semua Kategori</option>
             {(Object.keys(temperatureConfig) as LeadTemperature[]).map((k) => (
               <option key={k} value={k}>{temperatureConfig[k].label}</option>
@@ -204,14 +206,14 @@ export default function Leads() {
                   <Loader2 size={18} className="inline animate-spin" />
                 </td>
               </tr>
-            ) : filteredLeads.length === 0 ? (
+            ) : leads.length === 0 ? (
               <tr>
                 <td colSpan={9} className="px-4 py-8 text-center text-slate-400 text-sm">
-                  {leads.length === 0 ? 'Belum ada lead. Klik "Tambah Lead" untuk mulai.' : 'Tidak ada lead sesuai filter.'}
+                  Belum ada lead sesuai kriteria.
                 </td>
               </tr>
             ) : (
-              filteredLeads.map((lead) => {
+              leads.map((lead) => {
                 const s = statusConfig[lead.status]
                 return (
                   <tr key={lead.id} className="hover:bg-slate-50 transition-colors">
@@ -273,6 +275,7 @@ export default function Leads() {
             )}
           </tbody>
         </table>
+        <Pagination page={page} pages={pages} total={total} onPage={setPage} />
       </div>
 
       {/* Create / Edit modal */}

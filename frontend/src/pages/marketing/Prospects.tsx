@@ -4,6 +4,7 @@ import { Plus, Search, Trash2, Pencil, Loader2, MessageCircle, ArrowRightCircle 
 import Badge from '../../components/ui/Badge'
 import MoneyInput from '../../components/ui/MoneyInput'
 import Modal from '../../components/ui/Modal'
+import Pagination from '../../components/ui/Pagination'
 import { marketingService } from '../../services/marketing'
 import { propertyService } from '../../services/property'
 import { waLink } from '../../utils/phone'
@@ -33,18 +34,22 @@ export default function Prospects() {
   const [saving, setSaving] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
 
+  const [page, setPage] = useState(1)
+  const [total, setTotal] = useState(0)
+  const [pages, setPages] = useState(1)
+
   const projectName = (id?: string) => projects.find((p) => p.id === id)?.name
 
   useEffect(() => {
     propertyService.listProjects({ size: 500 }).then((r) => setProjects(r.items)).catch(() => {})
   }, [])
 
-  const load = useCallback(async (term: string) => {
+  const load = useCallback(async (term: string, pg: number) => {
     setLoading(true)
     setError('')
     try {
-      const res = await marketingService.listProspects({ search: term || undefined, size: 100 })
-      setProspects(res.items)
+      const res = await marketingService.listProspects({ search: term || undefined, page: pg, size: 25 })
+      setProspects(res.items); setTotal(res.total); setPages(res.pages)
     } catch {
       setError('Gagal memuat data prospek.')
     } finally {
@@ -56,12 +61,12 @@ export default function Prospects() {
   useEffect(() => {
     if (firstLoad.current) {
       firstLoad.current = false
-      load(search)          // load pertama langsung, tanpa jeda
+      load(search, page)
       return
     }
-    const t = setTimeout(() => load(search), 300)  // debounce hanya untuk pencarian
+    const t = setTimeout(() => load(search, page), 300)
     return () => clearTimeout(t)
-  }, [search, load])
+  }, [search, page, load])
 
   function openCreate() {
     setEditingId(null)
@@ -103,7 +108,7 @@ export default function Prospects() {
         await marketingService.createProspect(payload)
       }
       closeModal()
-      await load(search)
+      await load(search, page)
     } catch {
       setError('Gagal menyimpan prospek.')
     } finally {
@@ -141,7 +146,7 @@ export default function Prospects() {
             className="input pl-8"
             placeholder="Cari nama..."
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => { setSearch(e.target.value); setPage(1) }}
           />
         </div>
         <button className="btn-primary flex items-center gap-2 text-sm" onClick={openCreate}>
@@ -206,6 +211,7 @@ export default function Prospects() {
             )}
           </tbody>
         </table>
+        <Pagination page={page} pages={pages} total={total} onPage={setPage} />
       </div>
 
       <Modal open={modalOpen} onClose={closeModal} title={editingId ? 'Edit Prospek' : 'Tambah Prospek'}>

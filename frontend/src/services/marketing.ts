@@ -9,6 +9,9 @@ import type {
 interface ListParams {
   search?: string
   status?: string
+  project_id?: string
+  unit_id?: string
+  temperature?: string
   page?: number
   size?: number
 }

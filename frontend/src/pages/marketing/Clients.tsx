@@ -5,6 +5,7 @@ import Badge from '../../components/ui/Badge'
 import MoneyInput from '../../components/ui/MoneyInput'
 import Modal from '../../components/ui/Modal'
 import SignaturePad from '../../components/ui/SignaturePad'
+import Pagination from '../../components/ui/Pagination'
 import { marketingService } from '../../services/marketing'
 import { propertyService } from '../../services/property'
 import { authService } from '../../services/auth'
@@ -83,6 +84,9 @@ export default function Clients() {
   const colMenuRef = useRef<HTMLDivElement>(null)
   const [projectFilter, setProjectFilter] = useState('')
   const [unitFilter, setUnitFilter] = useState('')
+  const [page, setPage] = useState(1)
+  const [total, setTotal] = useState(0)
+  const [pages, setPages] = useState(1)
   const [actionMenuId, setActionMenuId] = useState<string | null>(null)
 
   const projectName = (id?: string) => projects.find((p) => p.id === id)?.name
@@ -106,11 +110,14 @@ export default function Clients() {
     setVisibleCols((prev) => ({ ...prev, [key]: !prev[key] }))
   }
 
-  const load = useCallback(async (term: string) => {
+  const load = useCallback(async (term: string, pg: number, proj: string, unit: string) => {
     setLoading(true); setError('')
     try {
-      const res = await marketingService.listClients({ search: term || undefined, size: 500 })
-      setClients(res.items)
+      const res = await marketingService.listClients({
+        search: term || undefined, project_id: proj || undefined, unit_id: unit || undefined,
+        page: pg, size: 25,
+      })
+      setClients(res.items); setTotal(res.total); setPages(res.pages)
     } catch { setError('Gagal memuat data pembeli.') } finally { setLoading(false) }
   }, [])
 
@@ -124,12 +131,12 @@ export default function Clients() {
   useEffect(() => {
     if (firstLoad.current) {
       firstLoad.current = false
-      load(search)          // load pertama langsung, tanpa jeda
+      load(search, page, projectFilter, unitFilter)
       return
     }
-    const t = setTimeout(() => load(search), 300)  // debounce hanya untuk pencarian
+    const t = setTimeout(() => load(search, page, projectFilter, unitFilter), 300)
     return () => clearTimeout(t)
-  }, [search, load])
+  }, [search, projectFilter, unitFilter, page, load])
 
   function openCreate() { setEditingId(null); setForm(emptyForm); setModalOpen(true) }
   function openEdit(c: Client) {
@@ -162,7 +169,7 @@ export default function Clients() {
       })
       if (editingId) await marketingService.updateClient(editingId, payload)
       else await marketingService.createClient(payload)
-      closeModal(); await load(search)
+      closeModal(); await load(search, page, projectFilter, unitFilter)
     } catch (err: unknown) {
       const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
       setError(detail || 'Gagal menyimpan pembeli.')
@@ -178,9 +185,6 @@ export default function Clients() {
   const formUnits = units.filter((u) => u.project_id === form.project_id)
 
   const filterUnits = units.filter((u) => !projectFilter || u.project_id === projectFilter)
-  const filteredClients = clients.filter((c) =>
-    (!projectFilter || c.project_id === projectFilter) && (!unitFilter || c.unit_id === unitFilter)
-  )
   const visibleColumns = ALL_COLUMNS.filter((c) => !c.toggleable || visibleCols[c.key as ToggleColKey])
 
   function renderCell(c: Client, key: ColDef['key']) {
@@ -256,13 +260,13 @@ export default function Clients() {
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative">
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input className="input pl-8 w-56" placeholder="Cari nama atau unit..." value={search} onChange={(e) => setSearch(e.target.value)} />
+            <input className="input pl-8 w-56" placeholder="Cari nama atau unit..." value={search} onChange={(e) => { setSearch(e.target.value); setPage(1) }} />
           </div>
-          <select className="input w-40" value={projectFilter} onChange={(e) => { setProjectFilter(e.target.value); setUnitFilter('') }}>
+          <select className="input w-40" value={projectFilter} onChange={(e) => { setProjectFilter(e.target.value); setUnitFilter(''); setPage(1) }}>
             <option value="">Semua Proyek</option>
             {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
           </select>
-          <select className="input w-40" value={unitFilter} onChange={(e) => setUnitFilter(e.target.value)}>
+          <select className="input w-40" value={unitFilter} onChange={(e) => { setUnitFilter(e.target.value); setPage(1) }}>
             <option value="">Semua Unit</option>
             {filterUnits.map((u) => <option key={u.id} value={u.id}>{unitLabel(u)}</option>)}
           </select>
@@ -307,12 +311,12 @@ export default function Clients() {
           <tbody className="divide-y divide-slate-100">
             {loading ? (
               <tr><td colSpan={visibleColumns.length} className="px-4 py-10 text-center text-slate-400"><Loader2 size={18} className="inline animate-spin" /></td></tr>
-            ) : filteredClients.length === 0 ? (
+            ) : clients.length === 0 ? (
               <tr><td colSpan={visibleColumns.length} className="px-4 py-8 text-center text-slate-400 text-sm">
-                {clients.length === 0 ? 'Belum ada pembeli.' : 'Tidak ada pembeli sesuai filter.'}
+                Belum ada pembeli sesuai kriteria.
               </td></tr>
             ) : (
-              filteredClients.map((c) => (
+              clients.map((c) => (
                 <tr key={c.id} className="hover:bg-slate-50 transition-colors">
                   {visibleColumns.map((col) => (
                     <td key={col.key} className="px-4 py-3">{renderCell(c, col.key)}</td>
@@ -322,6 +326,7 @@ export default function Clients() {
             )}
           </tbody>
         </table>
+        <Pagination page={page} pages={pages} total={total} onPage={setPage} />
       </div>
 
       <Modal open={modalOpen} onClose={closeModal} title={editingId ? 'Edit Pembeli' : 'Tambah Pembeli'}>
