@@ -248,29 +248,30 @@ async def cashflow(
     buyer_by_client = {cid: Decimal(v) for cid, v in buyer_rows}
     bank_by_client = {cid: Decimal(v) for cid, v in bank_rows}
 
-    # plafon KPR terbaru per pembeli
+    # plafon KPR terbaru per pembeli — hanya DIHITUNG sbg komitmen bila stage ≥ Akad Kredit
+    # (sebelum akad pinjaman belum final → plafon belum menutup kewajiban pembeli / belum retensi).
     kpr_rows = (await db.execute(
-        select(KprApplication.client_id, KprApplication.plafond)
+        select(KprApplication.client_id, KprApplication.plafond, KprApplication.stage)
         .where(KprApplication.tenant_id == t, KprApplication.is_deleted == False)  # noqa: E712
         .order_by(KprApplication.client_id, KprApplication.created_at.desc())
     )).all()
-    plafond_by_client: dict = {}
-    for cid, plaf in kpr_rows:
-        if cid not in plafond_by_client:   # baris pertama per client = terbaru (created_at desc)
-            plafond_by_client[cid] = Decimal(plaf or 0)
+    committed_by_client: dict = {}
+    for cid, plaf, stage in kpr_rows:
+        if cid not in committed_by_client:   # baris pertama per client = terbaru (created_at desc)
+            committed_by_client[cid] = Decimal(plaf or 0) if stage in (KprStage.AKAD_KREDIT, KprStage.PENCAIRAN) else Decimal(0)
 
     kpr_plafond_total = Decimal(0)
     buyer_remaining = Decimal(0)
     retention_remaining = Decimal(0)
     for cid, price in clients:
         price = Decimal(price or 0)
-        plafond = plafond_by_client.get(cid, Decimal(0))
+        committed = committed_by_client.get(cid, Decimal(0))
         b_paid = buyer_by_client.get(cid, Decimal(0))
         bank_paid = bank_by_client.get(cid, Decimal(0))
-        kpr_plafond_total += plafond
-        buyer_remaining += max(price - b_paid - plafond, Decimal(0))
-        if plafond > 0:
-            retention_remaining += max(plafond - bank_paid, Decimal(0))
+        kpr_plafond_total += committed
+        buyer_remaining += max(price - b_paid - committed, Decimal(0))
+        if committed > 0:
+            retention_remaining += max(committed - bank_paid, Decimal(0))
 
     # Tren bulanan (kas masuk per bulan, pisah sumber)
     ym = func.to_char(Payment.payment_date, "YYYY-MM")

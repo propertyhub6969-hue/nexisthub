@@ -14,7 +14,7 @@ from app.api.deps import get_current_context, AuthContext
 from app.core.audit import record_audit
 from app.models.marketing import Client
 from app.models.payment import PaymentSchedule, Payment, ScheduleStatus, PaymentSource
-from app.models.kpr import KprApplication
+from app.models.kpr import KprApplication, KprStage
 from app.schemas.payment import (
     ScheduleCreate, ScheduleUpdate, ScheduleResponse,
     PaymentCreate, PaymentUpdate, PaymentResponse, PaymentSummary,
@@ -72,18 +72,23 @@ async def payment_summary(
     remaining = price - total_paid
     progress = float(total_paid / price * 100) if price > 0 else 0.0
 
-    # Plafon KPR (komitmen) = KPR terbaru pembeli ini. Kalau cash → 0.
-    kpr_plafond = Decimal(await db.scalar(
-        select(func.coalesce(KprApplication.plafond, 0)).where(
+    # Plafon KPR = KPR terbaru pembeli ini (kalau cash → 0). Ambil plafon + tahapnya.
+    kpr_row = (await db.execute(
+        select(KprApplication.plafond, KprApplication.stage).where(
             KprApplication.client_id == client_id, KprApplication.tenant_id == ctx.tenant_id,
             KprApplication.is_deleted == False)  # noqa: E712
         .order_by(KprApplication.created_at.desc()).limit(1)
-    ) or 0)
+    )).first()
+    kpr_plafond = Decimal(kpr_row[0] or 0) if kpr_row else Decimal(0)
+    kpr_stage = kpr_row[1] if kpr_row else None
     has_kpr = kpr_plafond > 0
-    # Sisa kewajiban PEMBELI: harga − uang dari pembeli − komitmen KPR (bank menanggung sisanya)
-    buyer_remaining = price - from_buyer - kpr_plafond
-    # RETENSI: plafon − yang sudah cair dari bank
-    retention_remaining = (kpr_plafond - from_bank) if has_kpr else Decimal(0)
+    # Plafon baru MENUTUP kewajiban pembeli SETELAH akad kredit (sebelum akad pinjaman belum final —
+    # kalau KPR gagal sebelum akad, pembeli tetap menanggung penuh). SP3K/berkas belum menghitung.
+    committed = kpr_plafond if kpr_stage in (KprStage.AKAD_KREDIT, KprStage.PENCAIRAN) else Decimal(0)
+    # Sisa kewajiban PEMBELI: harga − uang dari pembeli − komitmen KPR (yang sudah akad)
+    buyer_remaining = price - from_buyer - committed
+    # RETENSI: plafon (yang sudah akad) − yang sudah cair dari bank
+    retention_remaining = (committed - from_bank) if committed > 0 else Decimal(0)
 
     _sch = [PaymentSchedule.client_id == client_id, PaymentSchedule.is_deleted == False]  # noqa: E712
     sch_total = await db.scalar(select(func.count()).select_from(PaymentSchedule).where(*_sch))

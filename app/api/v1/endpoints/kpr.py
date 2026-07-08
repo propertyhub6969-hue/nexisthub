@@ -116,15 +116,20 @@ async def list_kpr(client_id: uuid.UUID = Query(...), ctx: AuthContext = Depends
 @router.post("/applications", response_model=KprResponse, status_code=status.HTTP_201_CREATED)
 async def create_kpr(payload: KprCreate, ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db)):
     data = payload.model_dump()
+    client = (await db.execute(
+        select(Client).where(Client.id == payload.client_id, Client.tenant_id == ctx.tenant_id)
+    )).scalar_one_or_none()
     # Tgl Collect Berkas default = tanggal pembeli pertama kali dientri (bila tak diisi manual)
-    if data.get("submitted_date") is None:
-        client = (await db.execute(
-            select(Client).where(Client.id == payload.client_id, Client.tenant_id == ctx.tenant_id)
-        )).scalar_one_or_none()
-        if client is not None:
-            data["submitted_date"] = client.created_at.date()
+    if data.get("submitted_date") is None and client is not None:
+        data["submitted_date"] = client.created_at.date()
     k = KprApplication(tenant_id=ctx.tenant_id, **data)
     db.add(k); await db.flush()
+    # AJUKAN ULANG bank lain setelah KPR ditolak: pembeli yang sebelumnya Batal (INACTIVE)
+    # diaktifkan kembali + unit di-book ulang — deal kembali berjalan.
+    if client is not None and client.status == ClientStatus.INACTIVE:
+        client.status = ClientStatus.ACTIVE
+        await set_unit_status(db, ctx.tenant_id, client.unit_id, unit_status_for_client(client))
+        await db.flush()
     await record_audit(db, ctx.tenant_id, ctx.user_id, "CREATE", "kpr_applications", k.id, new_data=payload)
     return await _load_kpr(db, ctx.tenant_id, k.id)
 
