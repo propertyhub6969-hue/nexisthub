@@ -41,7 +41,8 @@ class Project(BaseModel):
     # Gambar siteplan disimpan di DB (belum ada MinIO); siteplan_data deferred agar tak ikut di query list
     siteplan_type: Mapped[str] = mapped_column(String(100), nullable=True)
     siteplan_size: Mapped[int] = mapped_column(Integer, nullable=True)
-    siteplan_data: Mapped[bytes] = mapped_column(LargeBinary, nullable=True, deferred=True)
+    siteplan_data: Mapped[bytes] = mapped_column(LargeBinary, nullable=True, deferred=True)  # LEGACY
+    siteplan_key: Mapped[str] = mapped_column(String(600), nullable=True)
 
     units: Mapped[list["Unit"]] = relationship(
         "Unit", back_populates="project", cascade="all, delete-orphan"

@@ -12,6 +12,7 @@ from datetime import date
 
 from app.core.database import get_db
 from app.core.audit import record_audit
+from app.core import storage
 from app.api.deps import get_current_context, AuthContext
 from app.models.property import Project, Unit, UnitStatus
 from app.models.marketing import Client, ClientStatus
@@ -137,7 +138,9 @@ async def upload_siteplan(
     data = await file.read()
     if len(data) > MAX_SITEPLAN_BYTES:
         raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Ukuran gambar maksimal 8 MB")
-    project.siteplan_data = data
+    project.siteplan_key = storage.build_key(ctx.tenant_id, "siteplan", project.id, file.filename)
+    await storage.put(project.siteplan_key, data, ctype)
+    project.siteplan_data = None
     project.siteplan_type = ctype
     project.siteplan_size = len(data)
     await db.flush()
@@ -155,20 +158,23 @@ async def get_siteplan(
     """Ambil gambar siteplan proyek (dengan ETag agar kunjungan berikutnya cepat/304)."""
     # Ambil metadata dulu (tanpa blob) untuk hitung ETag & cek If-None-Match
     meta = (await db.execute(
-        select(Project.siteplan_size, Project.siteplan_type, Project.updated_at).where(
+        select(Project.siteplan_size, Project.siteplan_type, Project.updated_at, Project.siteplan_key).where(
             Project.id == project_id, Project.tenant_id == ctx.tenant_id)
     )).first()
     if meta is None or meta[0] is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Siteplan belum ada")
-    size, ctype, updated = meta
+    size, ctype, updated, fkey = meta
     etag = f'"sp-{size}-{int(updated.timestamp())}"'
     cache_headers = {"ETag": etag, "Cache-Control": "private, max-age=60, must-revalidate"}
     if request.headers.get("if-none-match") == etag:
         return Response(status_code=status.HTTP_304_NOT_MODIFIED, headers=cache_headers)
-    data = (await db.execute(
-        select(Project.siteplan_data).where(
-            Project.id == project_id, Project.tenant_id == ctx.tenant_id)
-    )).scalar_one_or_none()
+    if fkey:
+        data = await storage.get(fkey)
+    else:
+        data = (await db.execute(
+            select(Project.siteplan_data).where(
+                Project.id == project_id, Project.tenant_id == ctx.tenant_id)
+        )).scalar_one_or_none()
     if data is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Siteplan belum ada")
     return Response(content=data, media_type=ctype or "image/png", headers=cache_headers)

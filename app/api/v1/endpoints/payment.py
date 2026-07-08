@@ -5,6 +5,7 @@ from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException, Query, status, UploadFile, File, Request
 from fastapi.responses import Response
 from app.core.files import file_etag, not_modified_response, cached_file_response
+from app.core import storage
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -302,7 +303,9 @@ async def upload_payment_file(
     data = await file.read()
     if len(data) > MAX_FILE_BYTES:
         raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Ukuran file maksimal 10 MB")
-    pay.file_data = data
+    pay.file_key = storage.build_key(ctx.tenant_id, "payments", pay.id, file.filename)
+    await storage.put(pay.file_key, data, file.content_type)
+    pay.file_data = None
     pay.file_name = file.filename
     pay.file_type = file.content_type or "application/octet-stream"
     pay.file_size = len(data)
@@ -321,19 +324,22 @@ async def download_payment_file(
     db: AsyncSession = Depends(get_db),
 ):
     meta = (await db.execute(
-        select(Payment.file_size, Payment.file_type, Payment.file_name, Payment.updated_at).where(
+        select(Payment.file_size, Payment.file_type, Payment.file_name, Payment.updated_at, Payment.file_key).where(
             Payment.id == payment_id, Payment.tenant_id == ctx.tenant_id, Payment.is_deleted == False)  # noqa: E712
     )).first()
     if meta is None or meta[0] is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="File tidak ditemukan")
-    size, ctype, fname, updated = meta
+    size, ctype, fname, updated, fkey = meta
     etag = file_etag(size, updated)
     nm = not_modified_response(request, etag)
     if nm is not None:
         return nm
-    data = (await db.execute(
-        select(Payment.file_data).where(Payment.id == payment_id, Payment.tenant_id == ctx.tenant_id)
-    )).scalar_one_or_none()
+    if fkey:
+        data = await storage.get(fkey)
+    else:
+        data = (await db.execute(
+            select(Payment.file_data).where(Payment.id == payment_id, Payment.tenant_id == ctx.tenant_id)
+        )).scalar_one_or_none()
     if data is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="File tidak ditemukan")
     return cached_file_response(data, ctype, fname, etag)

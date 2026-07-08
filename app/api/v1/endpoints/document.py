@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.audit import record_audit
 from app.core.files import file_etag, not_modified_response, cached_file_response
+from app.core import storage
 from app.api.deps import get_current_context, AuthContext
 from app.models.document import Document
 from app.models.property import Unit
@@ -172,7 +173,9 @@ async def upload_file(
     data = await file.read()
     if len(data) > MAX_FILE_BYTES:
         raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Ukuran file maksimal 10 MB")
-    d.file_data = data
+    d.file_key = storage.build_key(ctx.tenant_id, "documents", d.id, file.filename)
+    await storage.put(d.file_key, data, file.content_type)
+    d.file_data = None  # file baru → MinIO
     d.file_name = file.filename
     d.file_type = file.content_type or "application/octet-stream"
     d.file_size = len(data)
@@ -191,19 +194,22 @@ async def download_file(
     db: AsyncSession = Depends(get_db),
 ):
     meta = (await db.execute(
-        select(Document.file_size, Document.file_type, Document.file_name, Document.updated_at).where(
+        select(Document.file_size, Document.file_type, Document.file_name, Document.updated_at, Document.file_key).where(
             Document.id == doc_id, Document.tenant_id == ctx.tenant_id, Document.is_deleted == False)  # noqa: E712
     )).first()
     if meta is None or meta[0] is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="File tidak ditemukan")
-    size, ctype, fname, updated = meta
+    size, ctype, fname, updated, fkey = meta
     etag = file_etag(size, updated)
     nm = not_modified_response(request, etag)
     if nm is not None:
         return nm
-    data = (await db.execute(
-        select(Document.file_data).where(Document.id == doc_id, Document.tenant_id == ctx.tenant_id)
-    )).scalar_one_or_none()
+    if fkey:
+        data = await storage.get(fkey)
+    else:
+        data = (await db.execute(
+            select(Document.file_data).where(Document.id == doc_id, Document.tenant_id == ctx.tenant_id)
+        )).scalar_one_or_none()
     if data is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="File tidak ditemukan")
     return cached_file_response(data, ctype, fname, etag)

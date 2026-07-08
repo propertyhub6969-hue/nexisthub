@@ -49,6 +49,7 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         case_sensitive = True
+        extra = "ignore"  # abaikan env var lain (mis. MINIO_*, POSTGRES_HOST) — dibaca langsung via os.getenv
 
 
 settings = Settings()

@@ -4,6 +4,7 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Query, status, UploadFile, File, Request
 from fastapi.responses import Response
 from app.core.files import file_etag, not_modified_response, cached_file_response
+from app.core import storage
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -125,7 +126,9 @@ async def upload_tax_file(
     data = await file.read()
     if len(data) > MAX_FILE_BYTES:
         raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Ukuran file maksimal 10 MB")
-    t.file_data = data
+    t.file_key = storage.build_key(ctx.tenant_id, "tax", t.id, file.filename)
+    await storage.put(t.file_key, data, file.content_type)
+    t.file_data = None
     t.file_name = file.filename
     t.file_type = file.content_type or "application/octet-stream"
     t.file_size = len(data)
@@ -143,19 +146,22 @@ async def download_tax_file(
     db: AsyncSession = Depends(get_db),
 ):
     meta = (await db.execute(
-        select(TaxRecord.file_size, TaxRecord.file_type, TaxRecord.file_name, TaxRecord.updated_at).where(
+        select(TaxRecord.file_size, TaxRecord.file_type, TaxRecord.file_name, TaxRecord.updated_at, TaxRecord.file_key).where(
             TaxRecord.id == tax_id, TaxRecord.tenant_id == ctx.tenant_id, NOTDEL(TaxRecord))
     )).first()
     if meta is None or meta[0] is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="File tidak ditemukan")
-    size, ctype, fname, updated = meta
+    size, ctype, fname, updated, fkey = meta
     etag = file_etag(size, updated)
     nm = not_modified_response(request, etag)
     if nm is not None:
         return nm
-    data = (await db.execute(
-        select(TaxRecord.file_data).where(TaxRecord.id == tax_id, TaxRecord.tenant_id == ctx.tenant_id)
-    )).scalar_one_or_none()
+    if fkey:
+        data = await storage.get(fkey)
+    else:
+        data = (await db.execute(
+            select(TaxRecord.file_data).where(TaxRecord.id == tax_id, TaxRecord.tenant_id == ctx.tenant_id)
+        )).scalar_one_or_none()
     if data is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="File tidak ditemukan")
     return cached_file_response(data, ctype, fname, etag)
@@ -173,7 +179,9 @@ async def upload_tax_id_billing_file(
     data = await file.read()
     if len(data) > MAX_FILE_BYTES:
         raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Ukuran file maksimal 10 MB")
-    t.id_billing_file_data = data
+    t.id_billing_file_key = storage.build_key(ctx.tenant_id, "tax", t.id, file.filename)
+    await storage.put(t.id_billing_file_key, data, file.content_type)
+    t.id_billing_file_data = None
     t.id_billing_file_name = file.filename
     t.id_billing_file_type = file.content_type or "application/octet-stream"
     t.id_billing_file_size = len(data)
@@ -192,19 +200,22 @@ async def download_tax_id_billing_file(
 ):
     meta = (await db.execute(
         select(TaxRecord.id_billing_file_size, TaxRecord.id_billing_file_type,
-               TaxRecord.id_billing_file_name, TaxRecord.updated_at).where(
+               TaxRecord.id_billing_file_name, TaxRecord.updated_at, TaxRecord.id_billing_file_key).where(
             TaxRecord.id == tax_id, TaxRecord.tenant_id == ctx.tenant_id, NOTDEL(TaxRecord))
     )).first()
     if meta is None or meta[0] is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="File tidak ditemukan")
-    size, ctype, fname, updated = meta
+    size, ctype, fname, updated, fkey = meta
     etag = file_etag(size, updated)
     nm = not_modified_response(request, etag)
     if nm is not None:
         return nm
-    data = (await db.execute(
-        select(TaxRecord.id_billing_file_data).where(TaxRecord.id == tax_id, TaxRecord.tenant_id == ctx.tenant_id)
-    )).scalar_one_or_none()
+    if fkey:
+        data = await storage.get(fkey)
+    else:
+        data = (await db.execute(
+            select(TaxRecord.id_billing_file_data).where(TaxRecord.id == tax_id, TaxRecord.tenant_id == ctx.tenant_id)
+        )).scalar_one_or_none()
     if data is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="File tidak ditemukan")
     return cached_file_response(data, ctype, fname, etag)
@@ -222,7 +233,9 @@ async def upload_tax_validation_file(
     data = await file.read()
     if len(data) > MAX_FILE_BYTES:
         raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Ukuran file maksimal 10 MB")
-    t.validation_file_data = data
+    t.validation_file_key = storage.build_key(ctx.tenant_id, "tax", t.id, file.filename)
+    await storage.put(t.validation_file_key, data, file.content_type)
+    t.validation_file_data = None
     t.validation_file_name = file.filename
     t.validation_file_type = file.content_type or "application/octet-stream"
     t.validation_file_size = len(data)
@@ -241,19 +254,22 @@ async def download_tax_validation_file(
 ):
     meta = (await db.execute(
         select(TaxRecord.validation_file_size, TaxRecord.validation_file_type,
-               TaxRecord.validation_file_name, TaxRecord.updated_at).where(
+               TaxRecord.validation_file_name, TaxRecord.updated_at, TaxRecord.validation_file_key).where(
             TaxRecord.id == tax_id, TaxRecord.tenant_id == ctx.tenant_id, NOTDEL(TaxRecord))
     )).first()
     if meta is None or meta[0] is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="File tidak ditemukan")
-    size, ctype, fname, updated = meta
+    size, ctype, fname, updated, fkey = meta
     etag = file_etag(size, updated)
     nm = not_modified_response(request, etag)
     if nm is not None:
         return nm
-    data = (await db.execute(
-        select(TaxRecord.validation_file_data).where(TaxRecord.id == tax_id, TaxRecord.tenant_id == ctx.tenant_id)
-    )).scalar_one_or_none()
+    if fkey:
+        data = await storage.get(fkey)
+    else:
+        data = (await db.execute(
+            select(TaxRecord.validation_file_data).where(TaxRecord.id == tax_id, TaxRecord.tenant_id == ctx.tenant_id)
+        )).scalar_one_or_none()
     if data is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="File tidak ditemukan")
     return cached_file_response(data, ctype, fname, etag)

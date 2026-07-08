@@ -153,12 +153,14 @@ class Client(BaseModel, SoftDeleteMixin):
     ppjb_file_name: Mapped[str] = mapped_column(String(255), nullable=True)
     ppjb_file_type: Mapped[str] = mapped_column(String(100), nullable=True)
     ppjb_file_size: Mapped[int] = mapped_column(Integer, nullable=True)
-    ppjb_file_data: Mapped[bytes] = mapped_column(LargeBinary, nullable=True, deferred=True)
+    ppjb_file_data: Mapped[bytes] = mapped_column(LargeBinary, nullable=True, deferred=True)  # LEGACY
+    ppjb_file_key: Mapped[str] = mapped_column(String(600), nullable=True)
     ajb_number: Mapped[str] = mapped_column(String(100), nullable=True)
     ajb_file_name: Mapped[str] = mapped_column(String(255), nullable=True)
     ajb_file_type: Mapped[str] = mapped_column(String(100), nullable=True)
     ajb_file_size: Mapped[int] = mapped_column(Integer, nullable=True)
-    ajb_file_data: Mapped[bytes] = mapped_column(LargeBinary, nullable=True, deferred=True)
+    ajb_file_data: Mapped[bytes] = mapped_column(LargeBinary, nullable=True, deferred=True)  # LEGACY
+    ajb_file_key: Mapped[str] = mapped_column(String(600), nullable=True)
 
     marketing_user: Mapped["User"] = relationship("User", foreign_keys=[marketing_user_id])
 

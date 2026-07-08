@@ -106,7 +106,8 @@ class Payment(BaseModel, SoftDeleteMixin):
     file_name: Mapped[str] = mapped_column(String(255), nullable=True)
     file_type: Mapped[str] = mapped_column(String(100), nullable=True)
     file_size: Mapped[int] = mapped_column(Integer, nullable=True)
-    file_data: Mapped[bytes] = mapped_column(LargeBinary, nullable=True, deferred=True)
+    file_data: Mapped[bytes] = mapped_column(LargeBinary, nullable=True, deferred=True)  # LEGACY (pra-MinIO)
+    file_key: Mapped[str] = mapped_column(String(600), nullable=True)  # key objek MinIO
 
     @property
     def has_file(self) -> bool:

@@ -70,17 +70,20 @@ class TaxRecord(BaseModel, SoftDeleteMixin):
     file_name: Mapped[str] = mapped_column(String(255), nullable=True)
     file_type: Mapped[str] = mapped_column(String(100), nullable=True)
     file_size: Mapped[int] = mapped_column(Integer, nullable=True)
-    file_data: Mapped[bytes] = mapped_column(LargeBinary, nullable=True, deferred=True)
+    file_data: Mapped[bytes] = mapped_column(LargeBinary, nullable=True, deferred=True)  # LEGACY
+    file_key: Mapped[str] = mapped_column(String(600), nullable=True)
     # Bukti ID Billing (kode billing DJP sebelum bayar) — terpisah dari bukti bayar; dipakai utk PPh
     id_billing_file_name: Mapped[str] = mapped_column(String(255), nullable=True)
     id_billing_file_type: Mapped[str] = mapped_column(String(100), nullable=True)
     id_billing_file_size: Mapped[int] = mapped_column(Integer, nullable=True)
-    id_billing_file_data: Mapped[bytes] = mapped_column(LargeBinary, nullable=True, deferred=True)
+    id_billing_file_data: Mapped[bytes] = mapped_column(LargeBinary, nullable=True, deferred=True)  # LEGACY
+    id_billing_file_key: Mapped[str] = mapped_column(String(600), nullable=True)
     # Bukti validasi pajak (dari kantor pajak) — terpisah; dipakai utk PPh
     validation_file_name: Mapped[str] = mapped_column(String(255), nullable=True)
     validation_file_type: Mapped[str] = mapped_column(String(100), nullable=True)
     validation_file_size: Mapped[int] = mapped_column(Integer, nullable=True)
-    validation_file_data: Mapped[bytes] = mapped_column(LargeBinary, nullable=True, deferred=True)
+    validation_file_data: Mapped[bytes] = mapped_column(LargeBinary, nullable=True, deferred=True)  # LEGACY
+    validation_file_key: Mapped[str] = mapped_column(String(600), nullable=True)
 
     notary: Mapped["Notary"] = relationship("Notary")
 

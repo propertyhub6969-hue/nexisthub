@@ -10,6 +10,7 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core import storage
 from app.api.deps import get_current_context, AuthContext
 from app.models.marketing import Lead, Prospect, Client, LeadStatus, ProspectStatus, ClientStatus
 from app.models.property import Unit, UnitStatus
@@ -422,7 +423,10 @@ async def _upload_client_file(db, ctx, client_id, file, field_prefix: str, resou
     data = await file.read()
     if len(data) > MAX_FILE_BYTES:
         raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Ukuran file maksimal 10 MB")
-    setattr(client, f"{field_prefix}_file_data", data)
+    key = storage.build_key(ctx.tenant_id, "clients", client.id, file.filename)
+    await storage.put(key, data, file.content_type)
+    setattr(client, f"{field_prefix}_file_key", key)
+    setattr(client, f"{field_prefix}_file_data", None)
     setattr(client, f"{field_prefix}_file_name", file.filename)
     setattr(client, f"{field_prefix}_file_type", file.content_type or "application/octet-stream")
     setattr(client, f"{field_prefix}_file_size", len(data))
@@ -433,16 +437,25 @@ async def _upload_client_file(db, ctx, client_id, file, field_prefix: str, resou
 
 
 async def _download_client_file(db, tenant_id, client_id, field_prefix: str):
-    data_col = getattr(Client, f"{field_prefix}_file_data")
     type_col = getattr(Client, f"{field_prefix}_file_type")
     name_col = getattr(Client, f"{field_prefix}_file_name")
+    key_col = getattr(Client, f"{field_prefix}_file_key")
     row = (await db.execute(
-        select(data_col, type_col, name_col).where(
+        select(type_col, name_col, key_col).where(
             Client.id == client_id, Client.tenant_id == tenant_id, Client.is_deleted == False)  # noqa: E712
     )).first()
-    if row is None or row[0] is None:
+    if row is None or row[1] is None:  # row[1] = file_name → tak ada file
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="File tidak ditemukan")
-    data, ctype, fname = row
+    ctype, fname, fkey = row
+    if fkey:
+        data = await storage.get(fkey)
+    else:
+        data = (await db.execute(
+            select(getattr(Client, f"{field_prefix}_file_data")).where(
+                Client.id == client_id, Client.tenant_id == tenant_id)
+        )).scalar_one_or_none()
+    if data is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="File tidak ditemukan")
     return Response(
         content=data, media_type=ctype or "application/octet-stream",
         headers={"Content-Disposition": f'inline; filename="{fname or "file"}"'},

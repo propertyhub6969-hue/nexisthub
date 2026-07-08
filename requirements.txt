@@ -21,3 +21,6 @@ python-multipart==0.0.9
 # Utils
 python-dotenv==1.0.1
 httpx==0.27.0
+
+# Object storage (MinIO)
+minio==7.2.7
