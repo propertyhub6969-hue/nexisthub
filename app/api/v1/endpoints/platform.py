@@ -1,18 +1,22 @@
 import re
 import uuid
+from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.security import get_password_hash
+from app.core.proxy_routes import regenerate_tenant_routes
 from app.api.deps import require_platform_admin
 from app.models.tenant import Tenant, TenantStatus
 from app.models.user import User, UserRole
+from app.models.billing import Invoice, InvoiceStatus
 from app.schemas.platform import (
     FEATURE_MODULES, TenantAdminResponse, TenantProvision, TenantAdminUpdate,
     ResetOwnerPassword, TenantUserRow,
 )
+from app.schemas.billing import InvoiceCreate, MarkPaid, InvoiceResponse
 
 router = APIRouter()
 
@@ -77,6 +81,10 @@ async def provision_tenant(payload: TenantProvision, _: User = Depends(require_p
         full_name=payload.owner_full_name, role=UserRole.OWNER, tenant_id=tenant.id, is_active=True,
     )
     db.add(owner); await db.flush()
+    try:
+        await regenerate_tenant_routes(db)  # subdomain otomatis; gagal regen tak membatalkan provisioning
+    except Exception:
+        pass
     return await _to_resp(db, tenant)
 
 
@@ -119,3 +127,49 @@ async def reset_owner_password(tid: uuid.UUID, payload: ResetOwnerPassword, _: U
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Owner tenant tidak ditemukan")
     owner.hashed_password = get_password_hash(payload.new_password)
     await db.flush()
+
+
+# ── Invoice / Billing (manual) ──
+@router.get("/tenants/{tid}/invoices", response_model=list[InvoiceResponse])
+async def list_invoices(tid: uuid.UUID, _: User = Depends(require_platform_admin), db: AsyncSession = Depends(get_db)):
+    r = await db.execute(select(Invoice).where(Invoice.tenant_id == tid).order_by(Invoice.created_at.desc()))
+    return r.scalars().all()
+
+
+@router.post("/tenants/{tid}/invoices", response_model=InvoiceResponse, status_code=status.HTTP_201_CREATED)
+async def create_invoice(tid: uuid.UUID, payload: InvoiceCreate, _: User = Depends(require_platform_admin), db: AsyncSession = Depends(get_db)):
+    t = (await db.execute(select(Tenant).where(Tenant.id == tid))).scalar_one_or_none()
+    if t is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Tenant tidak ditemukan")
+    inv = Invoice(tenant_id=tid, **payload.model_dump())
+    db.add(inv); await db.flush(); await db.refresh(inv)
+    return inv
+
+
+@router.post("/invoices/{iid}/mark-paid", response_model=InvoiceResponse)
+async def mark_invoice_paid(iid: uuid.UUID, payload: MarkPaid, _: User = Depends(require_platform_admin), db: AsyncSession = Depends(get_db)):
+    inv = (await db.execute(select(Invoice).where(Invoice.id == iid))).scalar_one_or_none()
+    if inv is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Invoice tidak ditemukan")
+    inv.status = InvoiceStatus.PAID
+    inv.paid_at = payload.paid_at or date.today()
+    if payload.method:
+        inv.method = payload.method
+    # Perpanjang masa aktif tenant + aktifkan
+    t = (await db.execute(select(Tenant).where(Tenant.id == inv.tenant_id))).scalar_one_or_none()
+    if t is not None:
+        if t.expires_at is None or inv.period_end > t.expires_at:
+            t.expires_at = inv.period_end
+        t.status = TenantStatus.ACTIVE
+        if inv.plan:
+            t.subscription_plan = inv.plan
+    await db.flush(); await db.refresh(inv)
+    return inv
+
+
+@router.delete("/invoices/{iid}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_invoice(iid: uuid.UUID, _: User = Depends(require_platform_admin), db: AsyncSession = Depends(get_db)):
+    inv = (await db.execute(select(Invoice).where(Invoice.id == iid))).scalar_one_or_none()
+    if inv is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Invoice tidak ditemukan")
+    await db.delete(inv)

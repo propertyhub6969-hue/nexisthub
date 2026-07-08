@@ -1,11 +1,14 @@
 import { useEffect, useState } from 'react'
-import { Loader2, Plus, Pencil, KeyRound, Building2 } from 'lucide-react'
+import { Loader2, Plus, Pencil, KeyRound, Building2, Receipt, Trash2, CheckCircle2 } from 'lucide-react'
 import { Navigate } from 'react-router-dom'
 import Modal from '../../components/ui/Modal'
 import Badge from '../../components/ui/Badge'
+import MoneyInput from '../../components/ui/MoneyInput'
 import { useAuth } from '../../context/AuthContext'
 import { platformService } from '../../services/platform'
-import type { TenantAdmin, TenantProvision, TenantAdminUpdate, TenantStatus } from '../../types'
+import type { TenantAdmin, TenantProvision, TenantAdminUpdate, TenantStatus, Invoice, InvoiceCreate } from '../../types'
+
+const fmtRp = (n?: number) => n == null ? 'Rp 0' : new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(Number(n))
 
 const statusCfg: Record<TenantStatus, { label: string; variant: 'green' | 'yellow' | 'red' }> = {
   active: { label: 'Aktif', variant: 'green' },
@@ -36,6 +39,12 @@ export default function Platform() {
   // reset pw
   const [pwTenant, setPwTenant] = useState<TenantAdmin | null>(null)
   const [newPw, setNewPw] = useState('')
+
+  // invoices
+  const [invTenant, setInvTenant] = useState<TenantAdmin | null>(null)
+  const [invoices, setInvoices] = useState<Invoice[]>([])
+  const emptyInv = (): InvoiceCreate => ({ period_start: '', period_end: '', plan: '', amount: 0, method: 'transfer', notes: '' })
+  const [invForm, setInvForm] = useState<InvoiceCreate>(emptyInv())
 
   const load = async () => {
     setLoading(true)
@@ -89,6 +98,31 @@ export default function Platform() {
     catch (e: any) { setError(e?.response?.data?.detail || 'Gagal reset password.') } finally { setSaving(false) }
   }
 
+  async function openInvoices(t: TenantAdmin) {
+    setInvTenant(t); setInvForm({ ...emptyInv(), plan: t.subscription_plan })
+    try { setInvoices(await platformService.listInvoices(t.id)) } catch { setInvoices([]) }
+  }
+  async function submitInvoice(e: React.FormEvent) {
+    e.preventDefault(); if (!invTenant || !invForm.period_start || !invForm.period_end) { setError('Periode wajib diisi.'); return }
+    setSaving(true); setError('')
+    try {
+      await platformService.createInvoice(invTenant.id, invForm)
+      setInvoices(await platformService.listInvoices(invTenant.id)); setInvForm({ ...emptyInv(), plan: invTenant.subscription_plan })
+    } catch (e: any) { setError(e?.response?.data?.detail || 'Gagal buat invoice.') } finally { setSaving(false) }
+  }
+  async function markPaid(inv: Invoice) {
+    try {
+      await platformService.markInvoicePaid(inv.id)
+      if (invTenant) setInvoices(await platformService.listInvoices(invTenant.id))
+      await load()  // masa aktif tenant diperpanjang
+    } catch (e: any) { setError(e?.response?.data?.detail || 'Gagal tandai lunas.') }
+  }
+  async function delInvoice(inv: Invoice) {
+    if (!confirm('Hapus invoice ini?')) return
+    try { await platformService.deleteInvoice(inv.id); if (invTenant) setInvoices(await platformService.listInvoices(invTenant.id)) }
+    catch { setError('Gagal hapus invoice.') }
+  }
+
   if (loading) return <div className="py-16 text-center text-slate-400"><Loader2 size={20} className="inline animate-spin" /></div>
 
   const summary = {
@@ -135,6 +169,7 @@ export default function Platform() {
                   <td className="px-4 py-2.5 text-slate-500 text-xs">{t.feature_flags == null ? 'Semua' : `${t.feature_flags.length} modul`}</td>
                   <td className="px-4 py-2.5"><div className="flex items-center justify-end gap-3">
                     <button onClick={() => openEdit(t)} className="text-slate-400 hover:text-brand-600" title="Kelola"><Pencil size={15} /></button>
+                    <button onClick={() => openInvoices(t)} className="text-slate-400 hover:text-brand-600" title="Tagihan / Langganan"><Receipt size={15} /></button>
                     <button onClick={() => { setPwTenant(t); setNewPw('') }} className="text-slate-400 hover:text-brand-600" title="Reset password owner"><KeyRound size={15} /></button>
                   </div></td>
                 </tr>
@@ -194,6 +229,50 @@ export default function Platform() {
               <button type="submit" className="btn-primary text-sm flex items-center gap-2" disabled={saving}>{saving && <Loader2 size={14} className="animate-spin" />}Simpan</button>
             </div>
           </form>
+        )}
+      </Modal>
+
+      {/* Invoices / Tagihan */}
+      <Modal open={!!invTenant} onClose={() => setInvTenant(null)} title={`Tagihan — ${invTenant?.name ?? ''}`}>
+        {invTenant && (
+          <div className="space-y-3">
+            <div className="text-sm text-slate-500">Aktif s/d: <span className="font-medium text-slate-800">{fmtDate(invTenant.expires_at)}</span> · Status: {invTenant.status}</div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-50 border-b border-slate-200"><tr>{['Periode', 'Paket', 'Nominal', 'Status', ''].map((h, i) => (
+                  <th key={i} className="px-2 py-2 text-left text-xs font-semibold text-slate-500 uppercase">{h}</th>))}</tr></thead>
+                <tbody className="divide-y divide-slate-100">
+                  {invoices.length === 0 ? (
+                    <tr><td colSpan={5} className="px-2 py-4 text-center text-slate-400 text-sm">Belum ada tagihan.</td></tr>
+                  ) : invoices.map((inv) => (
+                    <tr key={inv.id}>
+                      <td className="px-2 py-1.5 text-slate-600 text-xs">{fmtDate(inv.period_start)} → {fmtDate(inv.period_end)}</td>
+                      <td className="px-2 py-1.5 text-slate-500">{inv.plan || '—'}</td>
+                      <td className="px-2 py-1.5 text-slate-700">{fmtRp(inv.amount)}</td>
+                      <td className="px-2 py-1.5">{inv.status === 'paid' ? <Badge label="Lunas" variant="green" /> : inv.status === 'void' ? <Badge label="Batal" variant="gray" /> : <Badge label="Belum" variant="yellow" />}</td>
+                      <td className="px-2 py-1.5 text-right"><div className="flex items-center justify-end gap-2">
+                        {inv.status !== 'paid' && <button onClick={() => markPaid(inv)} className="text-slate-400 hover:text-emerald-600" title="Tandai lunas (perpanjang masa aktif)"><CheckCircle2 size={15} /></button>}
+                        <button onClick={() => delInvoice(inv)} className="text-slate-300 hover:text-red-600" title="Hapus"><Trash2 size={14} /></button>
+                      </div></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <form onSubmit={submitInvoice} className="border-t border-slate-100 pt-3 space-y-2">
+              <p className="text-sm font-medium text-slate-700">Buat Tagihan Baru</p>
+              <div className="grid grid-cols-2 gap-2">
+                <div><label className="label">Periode Mulai *</label><input className="input" type="date" value={invForm.period_start} onChange={(e) => setInvForm({ ...invForm, period_start: e.target.value })} /></div>
+                <div><label className="label">Periode Akhir *</label><input className="input" type="date" value={invForm.period_end} onChange={(e) => setInvForm({ ...invForm, period_end: e.target.value })} /></div>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div><label className="label">Paket</label><input className="input" value={invForm.plan} onChange={(e) => setInvForm({ ...invForm, plan: e.target.value })} /></div>
+                <div><label className="label">Nominal (Rp)</label><MoneyInput value={invForm.amount || undefined} onChange={(v) => setInvForm({ ...invForm, amount: v ?? 0 })} /></div>
+              </div>
+              <p className="text-xs text-slate-400">Saat ditandai lunas, masa aktif tenant otomatis diperpanjang ke Periode Akhir & status jadi Aktif.</p>
+              <div className="flex justify-end"><button type="submit" className="btn-primary text-sm flex items-center gap-2" disabled={saving}>{saving && <Loader2 size={14} className="animate-spin" />}Buat Tagihan</button></div>
+            </form>
+          </div>
         )}
       </Modal>
 

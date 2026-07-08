@@ -71,6 +71,38 @@ export interface TenantAdminUpdate {
   feature_flags?: string[] | null
 }
 
+export type InvoiceStatus = 'unpaid' | 'paid' | 'void'
+export interface Invoice {
+  id: string
+  tenant_id: string
+  period_start: string
+  period_end: string
+  plan?: string
+  amount: number
+  status: InvoiceStatus
+  method?: string
+  paid_at?: string
+  notes?: string
+  created_at: string
+}
+export interface InvoiceCreate {
+  period_start: string
+  period_end: string
+  plan?: string
+  amount: number
+  method?: string
+  notes?: string
+}
+export interface Subscription {
+  tenant_name: string
+  slug: string
+  plan: string
+  status: string
+  is_active: boolean
+  expires_at?: string | null
+  days_left?: number | null
+}
+
 // ── Team / Roles ──────────────────────────────────────────────────
 export interface TeamMember {
   id: string

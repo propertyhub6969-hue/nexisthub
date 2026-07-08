@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
-import { Loader2 } from 'lucide-react'
+import { Loader2, CheckCircle2 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import type { RegisterPayload } from '../../types'
 
@@ -9,6 +9,7 @@ export default function Register() {
   const { register: registerUser } = useAuth()
   const navigate = useNavigate()
   const [error, setError] = useState('')
+  const [doneSlug, setDoneSlug] = useState<string | null | undefined>(undefined)
 
   const {
     register,
@@ -19,11 +20,31 @@ export default function Register() {
   const onSubmit = async (data: RegisterPayload) => {
     setError('')
     try {
-      await registerUser(data)
-      navigate('/login?registered=1')
+      const me = await registerUser(data)
+      setDoneSlug(me.tenant_slug ?? null)
     } catch (err: any) {
       setError(err.response?.data?.detail ?? 'Pendaftaran gagal. Coba lagi.')
     }
+  }
+
+  if (doneSlug !== undefined) {
+    const url = doneSlug ? `${doneSlug}.nexisthub.id` : null
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+        <div className="w-full max-w-sm card p-6 text-center">
+          <CheckCircle2 size={40} className="mx-auto text-emerald-500 mb-3" />
+          <h2 className="text-lg font-semibold text-slate-900 mb-1">Outlet siap! 🎉</h2>
+          <p className="text-sm text-slate-500 mb-4">Trial gratis 14 hari sudah aktif.</p>
+          {url && (
+            <div className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 mb-4">
+              <p className="text-xs text-slate-500">Alamat khusus Anda</p>
+              <p className="font-semibold text-brand-600 break-all">{url}</p>
+            </div>
+          )}
+          <button onClick={() => navigate('/login')} className="btn-primary w-full">Lanjut Masuk</button>
+        </div>
+      </div>
+    )
   }
 
   return (

@@ -29,6 +29,7 @@ from app.models.contractor import ContractorContract
 from app.models.legal import DocumentTemplate, LegalDocument
 from app.models.reporting import ReportConfig
 from app.models.audit import AuditLog
+from app.models.billing import Invoice
 
 config = context.config
 

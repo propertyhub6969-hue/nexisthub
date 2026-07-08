@@ -28,6 +28,10 @@ services:
     env_file: .env
     environment:
       POSTGRES_HOST: db
+      PROXY_DYNAMIC_DIR: /proxy-dynamic
+    volumes:
+      # Otomasi subdomain: backend menulis router Traefik per-tenant (Control Plane)
+      - /data/coolify/proxy/dynamic:/proxy-dynamic
     depends_on:
       db:
         condition: service_healthy

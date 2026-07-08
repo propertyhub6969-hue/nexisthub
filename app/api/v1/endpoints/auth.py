@@ -10,10 +10,12 @@ from app.schemas.auth import UserRegister, UserLogin, Token, TokenRefresh, UserR
 from app.models.tenant import Tenant, TenantStatus
 from app.models.user import User, UserRole
 from app.api.deps import get_current_context, AuthContext
-from datetime import date
+from app.core.proxy_routes import regenerate_tenant_routes
+from datetime import date, timedelta
 import re
 
 router = APIRouter()
+TRIAL_DAYS = 14
 
 
 def _tenant_block_reason(tenant: Tenant | None) -> str | None:
@@ -71,6 +73,7 @@ async def register(
         slug=slug,
         status=TenantStatus.TRIAL,
         company_name=company,
+        expires_at=date.today() + timedelta(days=TRIAL_DAYS),  # trial 14 hari
     )
     db.add(tenant)
     await db.flush()  # get tenant.id
@@ -88,7 +91,17 @@ async def register(
     await db.commit()
     await db.refresh(user)
 
-    return user
+    # Subdomain otomatis (gagal regen tak membatalkan pendaftaran)
+    try:
+        await regenerate_tenant_routes(db)
+    except Exception:
+        pass
+
+    resp = UserResponse.model_validate(user)
+    resp.tenant_name = tenant.name
+    resp.tenant_slug = tenant.slug
+    resp.tenant_status = tenant.status.value
+    return resp
 
 
 @router.post("/login", response_model=Token)

@@ -15,6 +15,7 @@ import {
   UsersRound,
   Factory,
   Server,
+  CreditCard,
   X,
 } from 'lucide-react'
 import { clsx } from 'clsx'
@@ -75,6 +76,7 @@ const settingsItem = {
   icon: Settings,
   children: [
     { label: 'Tim', to: '/settings/team', icon: UsersRound },
+    { label: 'Langganan', to: '/settings/langganan', icon: CreditCard },
   ],
 }
 

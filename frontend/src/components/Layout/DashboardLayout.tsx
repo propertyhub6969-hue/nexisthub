@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react'
-import { Outlet, useLocation, Navigate } from 'react-router-dom'
+import { Outlet, useLocation, Navigate, Link } from 'react-router-dom'
+import { AlertTriangle } from 'lucide-react'
 import Sidebar from './Sidebar'
 import Header from './Header'
 import { useAuth } from '../../context/AuthContext'
+import { billingService } from '../../services/billing'
 import { canAccessPath, canAccessFeature, defaultPathFor } from '../../utils/access'
 
 const pageTitles: Record<string, string> = {
@@ -18,6 +20,7 @@ const pageTitles: Record<string, string> = {
   '/legal': 'Master Data',
   '/pemberkasan': 'Pemberkasan',
   '/settings/team': 'Tim & Peran',
+  '/settings/langganan': 'Langganan',
   '/reports': 'Reports',
   '/platform/tenants': 'Control Plane — Pelanggan',
 }
@@ -26,8 +29,13 @@ export default function DashboardLayout() {
   const { pathname } = useLocation()
   const { user } = useAuth()
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [daysLeft, setDaysLeft] = useState<number | null>(null)
   // tutup drawer sidebar tiap pindah halaman (mobile/tablet)
   useEffect(() => { setSidebarOpen(false) }, [pathname])
+  // peringatan langganan (global) — super-admin dilewati
+  useEffect(() => {
+    if (user && !user.is_platform_admin) billingService.subscription().then((s) => setDaysLeft(s.days_left ?? null)).catch(() => {})
+  }, [user])
   // cegah role terbatas (produksi/marketing) buka menu di luar haknya → redirect ke halaman default role-nya
   if (user && !canAccessPath(user.role, pathname)) return <Navigate to={defaultPathFor(user.role)} replace />
   // modul dimatikan paket langganan → tendang ke dashboard
@@ -45,6 +53,12 @@ export default function DashboardLayout() {
       <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
         <Header title={title} onMenuClick={() => setSidebarOpen(true)} />
+        {daysLeft != null && daysLeft <= 7 && (
+          <Link to="/settings/langganan" className={`flex items-center gap-2 px-4 py-2 text-sm ${daysLeft < 0 ? 'bg-red-600 text-white' : 'bg-amber-500 text-white'}`}>
+            <AlertTriangle size={15} />
+            {daysLeft < 0 ? 'Masa langganan telah berakhir.' : `Masa langganan berakhir dalam ${daysLeft} hari.`} Klik untuk detail & perpanjangan.
+          </Link>
+        )}
         <main className="flex-1 overflow-y-auto p-4 sm:p-6">
           <Outlet />
         </main>

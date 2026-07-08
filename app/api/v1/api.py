@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends
-from app.api.v1.endpoints import auth, users, marketing, property, sale, payment, audit, tax, document, kpr, procurement, stock, expense, rab, construction, contractor, legal, reporting, filing, platform, public
+from app.api.v1.endpoints import auth, users, marketing, property, sale, payment, audit, tax, document, kpr, procurement, stock, expense, rab, construction, contractor, legal, reporting, filing, platform, public, billing
 from app.api.deps import require_role, require_feature
 from app.models.user import UserRole
 
@@ -36,3 +36,4 @@ api_router.include_router(legal.router,       prefix="/legal",       tags=["Lega
 api_router.include_router(reporting.router,   prefix="/reporting",   tags=["Reporting"],   dependencies=[feat("laporan")])
 api_router.include_router(filing.router,      prefix="/filing",      tags=["Pemberkasan"], dependencies=[feat("dokumen")])
 api_router.include_router(platform.router,    prefix="/platform",    tags=["Platform"])
+api_router.include_router(billing.router,      prefix="/billing",     tags=["Billing"])
