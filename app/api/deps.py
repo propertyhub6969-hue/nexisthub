@@ -1,6 +1,6 @@
 import uuid
 from dataclasses import dataclass
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -122,6 +122,25 @@ def require_feature(*modules: str):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"Modul '{modules[0]}' tidak termasuk paket langganan Anda",
+            )
+    return checker
+
+
+def guard(*write_roles: UserRole, read: tuple = ()):
+    """RBAC level-router yang sadar-metode.
+
+    - write_roles: role yang boleh SEMUA method (baca & tulis).
+    - read: role tambahan yang HANYA boleh baca (GET/HEAD/OPTIONS).
+    Role di luar keduanya → 403. Isolasi antar-tenant tetap via tenant_id di query.
+    """
+    read_roles = set(write_roles) | set(read)
+
+    async def checker(request: Request, user: User = Depends(get_current_user)) -> None:
+        allowed = read_roles if request.method in ("GET", "HEAD", "OPTIONS") else set(write_roles)
+        if user.role not in allowed:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Role Anda tidak memiliki akses untuk aksi ini",
             )
     return checker
 
