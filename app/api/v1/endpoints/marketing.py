@@ -165,6 +165,7 @@ async def list_prospects(
     db: AsyncSession = Depends(get_db),
     search: Optional[str] = Query(None),
     status_filter: Optional[str] = Query(None, alias="status"),
+    project_id: Optional[uuid.UUID] = Query(None),
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=500),
 ):
@@ -174,6 +175,8 @@ async def list_prospects(
         conditions.append(or_(Prospect.full_name.ilike(term), Prospect.phone.ilike(term)))
     if status_filter:
         conditions.append(Prospect.status == status_filter)
+    if project_id:
+        conditions.append(Prospect.interested_project_id == project_id)
 
     total = await db.scalar(select(func.count()).select_from(Prospect).where(*conditions))
     result = await db.execute(

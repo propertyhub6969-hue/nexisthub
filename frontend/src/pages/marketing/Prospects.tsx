@@ -37,6 +37,7 @@ export default function Prospects() {
   const [page, setPage] = useState(1)
   const [total, setTotal] = useState(0)
   const [pages, setPages] = useState(1)
+  const [projectFilter, setProjectFilter] = useState('')
 
   const projectName = (id?: string) => projects.find((p) => p.id === id)?.name
 
@@ -44,11 +45,11 @@ export default function Prospects() {
     propertyService.listProjects({ size: 500 }).then((r) => setProjects(r.items)).catch(() => {})
   }, [])
 
-  const load = useCallback(async (term: string, pg: number) => {
+  const load = useCallback(async (term: string, pg: number, proj: string) => {
     setLoading(true)
     setError('')
     try {
-      const res = await marketingService.listProspects({ search: term || undefined, page: pg, size: 25 })
+      const res = await marketingService.listProspects({ search: term || undefined, project_id: proj || undefined, page: pg, size: 25 })
       setProspects(res.items); setTotal(res.total); setPages(res.pages)
     } catch {
       setError('Gagal memuat data prospek.')
@@ -61,12 +62,12 @@ export default function Prospects() {
   useEffect(() => {
     if (firstLoad.current) {
       firstLoad.current = false
-      load(search, page)
+      load(search, page, projectFilter)
       return
     }
-    const t = setTimeout(() => load(search, page), 300)
+    const t = setTimeout(() => load(search, page, projectFilter), 300)
     return () => clearTimeout(t)
-  }, [search, page, load])
+  }, [search, page, projectFilter, load])
 
   function openCreate() {
     setEditingId(null)
@@ -108,7 +109,7 @@ export default function Prospects() {
         await marketingService.createProspect(payload)
       }
       closeModal()
-      await load(search, page)
+      await load(search, page, projectFilter)
     } catch {
       setError('Gagal menyimpan prospek.')
     } finally {
@@ -139,15 +140,21 @@ export default function Prospects() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3">
-        <div className="relative flex-1 max-w-xs">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input
-            className="input pl-8"
-            placeholder="Cari nama..."
-            value={search}
-            onChange={(e) => { setSearch(e.target.value); setPage(1) }}
-          />
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative w-56">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              className="input pl-8"
+              placeholder="Cari nama..."
+              value={search}
+              onChange={(e) => { setSearch(e.target.value); setPage(1) }}
+            />
+          </div>
+          <select className="input w-44" value={projectFilter} onChange={(e) => { setProjectFilter(e.target.value); setPage(1) }}>
+            <option value="">Semua Properti</option>
+            {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
         </div>
         <button className="btn-primary flex items-center gap-2 text-sm" onClick={openCreate}>
           <Plus size={14} />
