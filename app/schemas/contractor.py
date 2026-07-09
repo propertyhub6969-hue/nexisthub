@@ -35,8 +35,9 @@ class ContractResponse(BaseModel):
     rab_category: str = 'upah'
     title: Optional[str] = None
     total_value: Decimal
-    paid: Decimal
-    remaining: Decimal
+    paid: Decimal        # opname yang sudah dibayar keuangan
+    submitted: Decimal   # opname diajukan, belum dibayar
+    remaining: Decimal   # sisa nilai kontrak yang belum di-opname
     notes: Optional[str] = None
     created_at: datetime
     updated_at: datetime
@@ -53,6 +54,24 @@ class OpnameResponse(BaseModel):
     amount: Decimal
     expense_date: Optional[date] = None
     description: str
+    is_paid: bool = False
+    paid_at: Optional[date] = None
 
     class Config:
         from_attributes = True
+
+
+class PendingOpnameRow(BaseModel):
+    id: uuid.UUID
+    unit_id: uuid.UUID
+    unit_label: str
+    contractor_name: Optional[str] = None
+    title: Optional[str] = None
+    expense_date: Optional[date] = None
+    description: str
+    amount: Decimal
+
+
+class MarkPaidRequest(BaseModel):
+    ids: list[uuid.UUID] = Field(..., min_length=1)
+    paid_date: Optional[date] = None

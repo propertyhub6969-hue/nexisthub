@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import datetime, date
 from decimal import Decimal
 from typing import Optional
 
@@ -10,11 +10,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.audit import record_audit
-from app.api.deps import get_current_context, AuthContext
+from app.api.deps import get_current_context, AuthContext, require_role
 from app.models.contractor import ContractorContract
 from app.models.expense import Expense, ExpenseCategory
 from app.models.property import Unit
-from app.schemas.contractor import ContractCreate, ContractUpdate, ContractResponse, OpnameCreate, OpnameResponse
+from app.models.user import UserRole
+from app.schemas.contractor import (
+    ContractCreate, ContractUpdate, ContractResponse, OpnameCreate, OpnameResponse,
+    PendingOpnameRow, MarkPaidRequest,
+)
 
 router = APIRouter()
 CNOTDEL = ContractorContract.is_deleted == False  # noqa: E712
@@ -25,19 +29,29 @@ def _lbl(u: Unit):
     return "-".join(x for x in [u.block, u.unit_number] if x) or "?"
 
 
-async def _paid(db, contract_id) -> Decimal:
-    return Decimal(await db.scalar(
-        select(func.coalesce(func.sum(Expense.amount), 0)).where(Expense.contract_id == contract_id, ENOTDEL)
-    ))
+async def _paid_submitted(db, contract_id) -> tuple[Decimal, Decimal]:
+    """(dibayar, diajukan) — Σ opname is_paid=True vs is_paid=False."""
+    rows = (await db.execute(
+        select(Expense.is_paid, func.coalesce(func.sum(Expense.amount), 0))
+        .where(Expense.contract_id == contract_id, ENOTDEL).group_by(Expense.is_paid)
+    )).all()
+    paid = submitted = Decimal(0)
+    for is_paid, total in rows:
+        if is_paid:
+            paid = Decimal(total)
+        else:
+            submitted = Decimal(total)
+    return paid, submitted
 
 
 async def _to_response(db, c: ContractorContract, unit: Unit) -> ContractResponse:
-    paid = await _paid(db, c.id)
+    paid, submitted = await _paid_submitted(db, c.id)
+    total = Decimal(c.total_value or 0)
     return ContractResponse(
         id=c.id, project_id=c.project_id, unit_id=c.unit_id, unit_label=_lbl(unit),
         vendor_id=c.vendor_id, vendor_name=c.vendor_name, pengawas=c.pengawas,
         rab_category=c.rab_category or 'upah', title=c.title,
-        total_value=Decimal(c.total_value or 0), paid=paid, remaining=Decimal(c.total_value or 0) - paid,
+        total_value=total, paid=paid, submitted=submitted, remaining=total - paid - submitted,
         notes=c.notes, created_at=c.created_at, updated_at=c.updated_at,
     )
 
@@ -122,7 +136,8 @@ async def add_opname(cid: uuid.UUID, payload: OpnameCreate, ctx: AuthContext = D
         tenant_id=ctx.tenant_id, project_id=c.project_id, unit_id=c.unit_id, contract_id=c.id,
         # kategori RAB opname ikut pilihan kontrak (upah=tukang, kontraktor=borongan pihak ketiga)
         category=ExpenseCategory(c.rab_category or "upah"), description=payload.description or "Opname borongan",
-        amount=payload.amount, expense_date=payload.expense_date, is_paid=True,
+        # is_paid=False → opname baru = DIAJUKAN (menunggu dibayar keuangan). Biaya tetap accrual (dihitung saat opname).
+        amount=payload.amount, expense_date=payload.expense_date, is_paid=False, paid_at=None,
     )
     db.add(e); await db.flush()
     await record_audit(db, ctx.tenant_id, ctx.user_id, "CREATE", "contractor_opname", e.id,
@@ -137,3 +152,48 @@ async def delete_opname(eid: uuid.UUID, ctx: AuthContext = Depends(get_current_c
     if e is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Opname tidak ditemukan")
     e.is_deleted = True; e.deleted_at = datetime.utcnow()
+
+
+# ── Pengajuan pembayaran (opname belum dibayar) — level proyek ──
+@router.get("/opname/pending", response_model=list[PendingOpnameRow])
+async def pending_opname(project_id: uuid.UUID = Query(...), ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db)):
+    """Semua opname DIAJUKAN (belum dibayar) di satu proyek — bahan Surat Pengajuan Pembayaran."""
+    rows = (await db.execute(
+        select(Expense, ContractorContract, Unit)
+        .join(ContractorContract, ContractorContract.id == Expense.contract_id)
+        .join(Unit, Unit.id == Expense.unit_id)
+        .where(Expense.tenant_id == ctx.tenant_id, Expense.project_id == project_id,
+               Expense.is_paid == False, ENOTDEL, CNOTDEL)  # noqa: E712
+        .order_by(Unit.block, Unit.unit_number, Expense.expense_date)
+    )).all()
+    out = []
+    for e, c, u in rows:
+        out.append(PendingOpnameRow(
+            id=e.id, unit_id=u.id, unit_label=_lbl(u),
+            contractor_name=c.vendor_name or c.contractor_name, title=c.title,
+            expense_date=e.expense_date, description=e.description, amount=Decimal(e.amount or 0),
+        ))
+    return out
+
+
+@router.post("/opname/mark-paid")
+async def mark_opname_paid(
+    payload: MarkPaidRequest,
+    _user=Depends(require_role(UserRole.OWNER, UserRole.ADMIN, UserRole.MANAGER)),
+    ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db),
+):
+    """Tandai sekelompok opname sebagai DIBAYAR (setelah keuangan realisasikan). Owner/admin/manager saja."""
+    pd = payload.paid_date or date.today()
+    rows = (await db.execute(
+        select(Expense).where(
+            Expense.id.in_(payload.ids), Expense.tenant_id == ctx.tenant_id,
+            Expense.is_paid == False, ENOTDEL)  # noqa: E712
+    )).scalars().all()
+    for e in rows:
+        e.is_paid = True
+        e.paid_at = pd
+    await db.flush()
+    if rows:
+        await record_audit(db, ctx.tenant_id, ctx.user_id, "PAY", "contractor_opname", None,
+                           new_data={"count": len(rows), "paid_date": str(pd), "ids": [str(e.id) for e in rows]})
+    return {"marked": len(rows), "paid_date": str(pd)}

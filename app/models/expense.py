@@ -44,6 +44,7 @@ class Expense(BaseModel, SoftDeleteMixin):
     amount: Mapped[float] = mapped_column(Numeric(15, 2), nullable=False)
     expense_date: Mapped[Date] = mapped_column(Date, nullable=True)
     is_paid: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    paid_at: Mapped[Date] = mapped_column(Date, nullable=True)  # tgl dibayar keuangan (opname: null=diajukan)
     notes: Mapped[str] = mapped_column(Text, nullable=True)
 
     vendor: Mapped["Vendor"] = relationship("Vendor")
