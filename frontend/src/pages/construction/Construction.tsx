@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react'
-import { Loader2, Pencil, HardHat, CheckCircle2, Plus, Trash2, Wallet } from 'lucide-react'
+import { Loader2, Pencil, HardHat, CheckCircle2, Plus, Trash2, Wallet, Camera, Image as ImageIcon, AlertTriangle } from 'lucide-react'
 import Badge from '../../components/ui/Badge'
 import Modal from '../../components/ui/Modal'
 import MoneyInput from '../../components/ui/MoneyInput'
@@ -8,8 +8,22 @@ import { propertyService } from '../../services/property'
 import { procurementService } from '../../services/procurement'
 import type {
   Project, Unit, Vendor, UnitConstructionRow, ConstructionSummary, ConstructionStage, ConstructionUpsert,
-  ContractorContract, ContractCreate, Opname,
+  ContractorContract, ContractCreate, Opname, ProgressLog,
 } from '../../types'
+
+const REMINDER_DAYS = 7
+function daysSince(dateStr?: string | null): number | null {
+  if (!dateStr) return null
+  const days = Math.floor((Date.now() - new Date(dateStr).getTime()) / 86400000)
+  return days >= 0 ? days : 0
+}
+function isLate(r: UnitConstructionRow): boolean {
+  if (r.stage === 'selesai') return false
+  const ref = r.last_log_date ?? r.start_date
+  if (!ref) return false
+  const d = daysSince(ref)
+  return d != null && d > REMINDER_DAYS
+}
 
 const STAGES: { key: ConstructionStage; label: string; variant: 'gray' | 'yellow' | 'blue' | 'orange' | 'green' }[] = [
   { key: 'persiapan', label: 'Persiapan', variant: 'gray' },
@@ -38,6 +52,14 @@ export default function Construction() {
   const [pModalOpen, setPModalOpen] = useState(false)
   const [editRow, setEditRow] = useState<UnitConstructionRow | null>(null)
   const [pForm, setPForm] = useState<ConstructionUpsert>({})
+  const [logModal, setLogModal] = useState(false)
+  const [logUnit, setLogUnit] = useState<UnitConstructionRow | null>(null)
+  const [logList, setLogList] = useState<ProgressLog[]>([])
+  const [logDate, setLogDate] = useState('')
+  const [logStage, setLogStage] = useState<ConstructionStage | ''>('')
+  const [logPercent, setLogPercent] = useState<number | undefined>(undefined)
+  const [logNotes, setLogNotes] = useState('')
+  const [logFile, setLogFile] = useState<File | null>(null)
 
   // borongan
   const [contracts, setContracts] = useState<ContractorContract[]>([])
@@ -97,6 +119,33 @@ export default function Construction() {
       ;['start_date', 'target_date', 'finish_date'].forEach((k) => { if (rec[k] === '') delete rec[k] })
       await constructionService.upsert(editRow.unit_id, p); setPModalOpen(false); await loadProgres(project)
     } catch { setError('Gagal menyimpan progres.') } finally { setSaving(false) }
+  }
+  async function openLog(r: UnitConstructionRow) {
+    setLogUnit(r); setLogDate(''); setLogStage(''); setLogPercent(undefined); setLogNotes(''); setLogFile(null)
+    setLogModal(true)
+    setLogList(await constructionService.listProgressLogs(r.unit_id))
+  }
+  async function submitLog(e: React.FormEvent) {
+    e.preventDefault(); if (!logUnit) return; setSaving(true)
+    try {
+      const fd = new FormData()
+      if (logDate) fd.append('log_date', logDate)
+      if (logStage) fd.append('stage', logStage)
+      if (logPercent != null) fd.append('percent', String(logPercent))
+      if (logNotes) fd.append('notes', logNotes)
+      if (logFile) fd.append('file', logFile)
+      await constructionService.addProgressLog(logUnit.unit_id, fd)
+      setLogList(await constructionService.listProgressLogs(logUnit.unit_id))
+      setLogDate(''); setLogStage(''); setLogPercent(undefined); setLogNotes(''); setLogFile(null)
+      await loadProgres(project)
+    } catch { setError('Gagal mencatat log progres.') } finally { setSaving(false) }
+  }
+  async function delLog(id: string) {
+    if (!logUnit) return
+    try {
+      await constructionService.deleteProgressLog(id)
+      setLogList(await constructionService.listProgressLogs(logUnit.unit_id)); await loadProgres(project)
+    } catch { /* noop */ }
   }
 
   // borongan handlers
@@ -162,6 +211,12 @@ export default function Construction() {
               <div className="card p-4"><p className="text-xs text-slate-500 flex items-center gap-1"><CheckCircle2 size={12} /> Selesai</p><p className="text-lg font-semibold text-emerald-600">{summary.done_count} / {summary.total_units}</p></div>
             </div>
           )}
+          {(() => { const lateCount = rows.filter(isLate).length; return lateCount > 0 && (
+            <div className="flex items-center gap-2 rounded-lg bg-amber-50 border border-amber-200 px-4 py-2.5 text-sm text-amber-800">
+              <AlertTriangle size={15} />
+              {lateCount} unit belum update progres minggu ini (lewat {REMINDER_DAYS} hari).
+            </div>
+          ) })()}
           <div className="card overflow-hidden">
             <div className="px-4 py-2.5 border-b border-slate-100 text-sm font-semibold text-slate-900 flex items-center gap-2"><HardHat size={15} /> Progres per Unit</div>
             <table className="w-full text-sm">
@@ -176,11 +231,17 @@ export default function Construction() {
                     <tr key={r.unit_id} className="hover:bg-slate-50">
                       <td className="px-4 py-2.5 font-medium text-slate-900">{r.unit_label}</td>
                       <td className="px-4 py-2.5 text-slate-500">{r.unit_type ?? '—'}</td>
-                      <td className="px-4 py-2.5"><Badge label={s.label} variant={s.variant} /></td>
+                      <td className="px-4 py-2.5">
+                        <Badge label={s.label} variant={s.variant} />
+                        {isLate(r) && <p className="text-[11px] text-red-500 mt-0.5">Terlambat {daysSince(r.last_log_date ?? r.start_date)} hari</p>}
+                      </td>
                       <td className="px-4 py-2.5"><div className="flex items-center gap-2"><div className="h-2 w-24 rounded-full bg-slate-100 overflow-hidden"><div className="h-full bg-brand-500" style={{ width: `${r.percent}%` }} /></div><span className="text-xs text-slate-500">{r.percent}%</span></div></td>
                       <td className="px-4 py-2.5 text-slate-500 text-xs">{fmtDate(r.start_date)}</td>
                       <td className="px-4 py-2.5 text-slate-500 text-xs">{fmtDate(r.finish_date)}</td>
-                      <td className="px-4 py-2.5 text-right"><button onClick={() => openEdit(r)} className="text-slate-400 hover:text-brand-600" title="Update"><Pencil size={15} /></button></td>
+                      <td className="px-4 py-2.5 text-right"><div className="flex items-center justify-end gap-3">
+                        <button onClick={() => openLog(r)} className="text-slate-400 hover:text-brand-600" title="Log progres & foto"><Camera size={15} /></button>
+                        <button onClick={() => openEdit(r)} className="text-slate-400 hover:text-brand-600" title="Update"><Pencil size={15} /></button>
+                      </div></td>
                     </tr>
                   )
                 })}
@@ -307,6 +368,49 @@ export default function Construction() {
                 <div className="flex-1"><label className="label">Keterangan</label><input className="input" placeholder="Opname minggu ke-..." value={opDesc} onChange={(e) => setOpDesc(e.target.value)} /></div>
                 <button type="submit" className="btn-primary text-sm h-[38px]" disabled={saving}>Catat</button>
               </div>
+            </form>
+          </div>
+        )}
+      </Modal>
+
+      {/* Modal Log Progres Mingguan */}
+      <Modal open={logModal} onClose={() => setLogModal(false)} title={`Log Progres — ${logUnit?.unit_label ?? ''}`}>
+        {logUnit && (
+          <div className="space-y-3">
+            <div className="space-y-1 max-h-64 overflow-y-auto">
+              {logList.length === 0 && <p className="text-xs text-slate-400">Belum ada log.</p>}
+              {logList.map((l) => (
+                <div key={l.id} className="flex items-start justify-between text-sm border-b border-slate-100 py-1.5">
+                  <div>
+                    <span className="text-slate-700">{fmtDate(l.log_date)}</span>
+                    {l.stage && <span className="ml-2"><Badge label={stageCfg(l.stage).label} variant={stageCfg(l.stage).variant} /></span>}
+                    {l.percent != null && <span className="ml-2 text-xs text-slate-500">{l.percent}%</span>}
+                    {l.notes && <p className="text-xs text-slate-400">{l.notes}</p>}
+                    {l.uploaded_by_name && <p className="text-[11px] text-slate-300">oleh {l.uploaded_by_name}</p>}
+                  </div>
+                  <span className="flex items-center gap-2 shrink-0">
+                    {l.has_photo && <button type="button" onClick={() => constructionService.openProgressPhoto(l.id)} className="text-slate-400 hover:text-brand-600" title="Lihat foto"><ImageIcon size={14} /></button>}
+                    <button onClick={() => delLog(l.id)} className="text-slate-400 hover:text-red-600"><Trash2 size={13} /></button>
+                  </span>
+                </div>
+              ))}
+            </div>
+            <form onSubmit={submitLog} className="border-t border-slate-100 pt-3 space-y-2">
+              <div className="grid grid-cols-2 gap-2">
+                <div><label className="label">Tanggal</label><input className="input" type="date" value={logDate} onChange={(e) => setLogDate(e.target.value)} /></div>
+                <div><label className="label">Tahap</label>
+                  <select className="input" value={logStage} onChange={(e) => setLogStage(e.target.value as ConstructionStage | '')}>
+                    <option value="">Tak diubah</option>
+                    {STAGES.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div><label className="label">Progres (%)</label><input className="input" type="number" min={0} max={100} value={logPercent ?? ''} onChange={(e) => setLogPercent(e.target.value === '' ? undefined : Number(e.target.value))} /></div>
+                <div><label className="label">Foto</label><input className="input" type="file" accept="image/*" onChange={(e) => setLogFile(e.target.files?.[0] ?? null)} /></div>
+              </div>
+              <div><label className="label">Catatan</label><input className="input" placeholder="Update minggu ke-..." value={logNotes} onChange={(e) => setLogNotes(e.target.value)} /></div>
+              <div className="flex justify-end"><button type="submit" className="btn-primary text-sm flex items-center gap-2" disabled={saving}>{saving && <Loader2 size={14} className="animate-spin" />}Catat Log</button></div>
             </form>
           </div>
         )}

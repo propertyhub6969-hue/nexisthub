@@ -1,7 +1,7 @@
 import api from './api'
 import type {
   ConstructionList, UnitConstructionRow, ConstructionUpsert,
-  ContractorContract, ContractCreate, Opname, OpnameCreate,
+  ContractorContract, ContractCreate, Opname, OpnameCreate, ProgressLog,
 } from '../types'
 
 export const constructionService = {
@@ -12,6 +12,27 @@ export const constructionService = {
   async upsert(unitId: string, payload: ConstructionUpsert): Promise<UnitConstructionRow> {
     const { data } = await api.put<UnitConstructionRow>(`/construction/unit/${unitId}`, payload)
     return data
+  },
+
+  // ── Log Progres Mingguan (riwayat berfoto) ──
+  async listProgressLogs(unitId: string): Promise<ProgressLog[]> {
+    const { data } = await api.get<ProgressLog[]>(`/construction/unit/${unitId}/logs`)
+    return data
+  },
+  async addProgressLog(unitId: string, formData: FormData): Promise<ProgressLog> {
+    const { data } = await api.post<ProgressLog>(`/construction/unit/${unitId}/logs`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    return data
+  },
+  async deleteProgressLog(id: string): Promise<void> {
+    await api.delete(`/construction/logs/${id}`)
+  },
+  async openProgressPhoto(logId: string): Promise<void> {
+    const res = await api.get(`/construction/logs/${logId}/photo`, { responseType: 'blob' })
+    const url = URL.createObjectURL(res.data as Blob)
+    window.open(url, '_blank')
+    setTimeout(() => URL.revokeObjectURL(url), 60000)
   },
 
   // ── Kontraktor Borongan ──
