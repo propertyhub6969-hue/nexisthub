@@ -1,6 +1,7 @@
 import re
 import uuid
 from datetime import date
+from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,7 +17,7 @@ from app.schemas.platform import (
     FEATURE_MODULES, TenantAdminResponse, TenantProvision, TenantAdminUpdate,
     ResetOwnerPassword, TenantUserRow,
 )
-from app.schemas.billing import InvoiceCreate, MarkPaid, InvoiceResponse
+from app.schemas.billing import InvoiceCreate, MarkPaid, InvoiceResponse, RevenueSummary, RevenueTrendPoint
 
 router = APIRouter()
 
@@ -127,6 +128,50 @@ async def reset_owner_password(tid: uuid.UUID, payload: ResetOwnerPassword, _: U
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Owner tenant tidak ditemukan")
     owner.hashed_password = get_password_hash(payload.new_password)
     await db.flush()
+
+
+@router.get("/revenue", response_model=RevenueSummary)
+async def platform_revenue(_: User = Depends(require_platform_admin), db: AsyncSession = Depends(get_db)):
+    """Pendapatan Nexist sendiri dari langganan tenant (Control Plane) — BUKAN data bisnis internal tenant."""
+    total_paid = Decimal(await db.scalar(
+        select(func.coalesce(func.sum(Invoice.amount), 0)).where(Invoice.status == InvoiceStatus.PAID)
+    ) or 0)
+    month_start = date.today().replace(day=1)
+    paid_this_month = Decimal(await db.scalar(
+        select(func.coalesce(func.sum(Invoice.amount), 0)).where(
+            Invoice.status == InvoiceStatus.PAID, Invoice.paid_at >= month_start)
+    ) or 0)
+    outstanding = Decimal(await db.scalar(
+        select(func.coalesce(func.sum(Invoice.amount), 0)).where(Invoice.status == InvoiceStatus.UNPAID)
+    ) or 0)
+
+    # MRR estimasi: invoice lunas TERBARU per tenant aktif/trial (billing manual, bukan recurring asli)
+    latest_paid_rows = (await db.execute(
+        select(Invoice.tenant_id, Invoice.amount)
+        .join(Tenant, Tenant.id == Invoice.tenant_id)
+        .where(Invoice.status == InvoiceStatus.PAID, Tenant.status.in_([TenantStatus.ACTIVE, TenantStatus.TRIAL]))
+        .order_by(Invoice.tenant_id, Invoice.paid_at.desc(), Invoice.created_at.desc())
+    )).all()
+    seen: set = set()
+    mrr_estimate = Decimal(0)
+    for tid, amount in latest_paid_rows:
+        if tid in seen:
+            continue
+        seen.add(tid)
+        mrr_estimate += Decimal(amount or 0)
+
+    ym = func.to_char(Invoice.paid_at, "YYYY-MM")
+    trend_rows = (await db.execute(
+        select(ym.label("ym"), func.coalesce(func.sum(Invoice.amount), 0))
+        .where(Invoice.status == InvoiceStatus.PAID, Invoice.paid_at.isnot(None))
+        .group_by(ym).order_by(ym)
+    )).all()
+    trend = [RevenueTrendPoint(month=m, amount=Decimal(v)) for m, v in trend_rows][-12:]
+
+    return RevenueSummary(
+        total_paid=total_paid, paid_this_month=paid_this_month, outstanding=outstanding,
+        mrr_estimate=mrr_estimate, trend=trend,
+    )
 
 
 # ── Invoice / Billing (manual) ──

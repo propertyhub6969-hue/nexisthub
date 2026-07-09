@@ -27,6 +27,8 @@ class TenantAdminResponse(BaseModel):
     phone: Optional[str] = None
     city: Optional[str] = None
     province: Optional[str] = None
+    estimated_project_count: Optional[int] = None
+    estimated_units_per_project: Optional[int] = None
     created_at: datetime
 
     class Config:

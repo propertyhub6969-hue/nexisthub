@@ -1,7 +1,11 @@
 import api from './api'
-import type { TenantAdmin, TenantProvision, TenantAdminUpdate, Invoice, InvoiceCreate } from '../types'
+import type { TenantAdmin, TenantProvision, TenantAdminUpdate, Invoice, InvoiceCreate, RevenueSummary } from '../types'
 
 export const platformService = {
+  async getRevenue(): Promise<RevenueSummary> {
+    const { data } = await api.get<RevenueSummary>('/platform/revenue')
+    return data
+  },
   async listInvoices(tenantId: string): Promise<Invoice[]> {
     const { data } = await api.get<Invoice[]>(`/platform/tenants/${tenantId}/invoices`)
     return data

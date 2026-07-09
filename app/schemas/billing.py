@@ -1,7 +1,7 @@
 import uuid
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Optional
+from typing import List, Optional
 from pydantic import BaseModel, Field
 from app.models.billing import InvoiceStatus
 
@@ -45,3 +45,17 @@ class SubscriptionResponse(BaseModel):
     is_active: bool
     expires_at: Optional[date] = None
     days_left: Optional[int] = None  # None bila tak ada expires_at
+
+
+class RevenueTrendPoint(BaseModel):
+    month: str  # YYYY-MM
+    amount: Decimal
+
+
+class RevenueSummary(BaseModel):
+    """Pendapatan Nexist sendiri dari langganan tenant (bukan data bisnis internal tenant)."""
+    total_paid: Decimal          # akumulasi semua invoice lunas, sepanjang waktu
+    paid_this_month: Decimal     # invoice lunas dgn paid_at di bulan berjalan
+    outstanding: Decimal         # invoice belum lunas (status unpaid)
+    mrr_estimate: Decimal        # jumlah invoice lunas TERBARU per tenant aktif/trial (estimasi, bukan recurring asli)
+    trend: List[RevenueTrendPoint] = []  # 12 bulan terakhir, berdasar paid_at

@@ -53,6 +53,8 @@ export interface TenantAdmin {
   phone?: string | null
   city?: string | null
   province?: string | null
+  estimated_project_count?: number | null
+  estimated_units_per_project?: number | null
   created_at: string
 }
 export interface TenantProvision {
@@ -96,6 +98,17 @@ export interface InvoiceCreate {
   amount: number
   method?: string
   notes?: string
+}
+export interface RevenueTrendPoint {
+  month: string
+  amount: number
+}
+export interface RevenueSummary {
+  total_paid: number
+  paid_this_month: number
+  outstanding: number
+  mrr_estimate: number
+  trend: RevenueTrendPoint[]
 }
 export interface Subscription {
   tenant_name: string

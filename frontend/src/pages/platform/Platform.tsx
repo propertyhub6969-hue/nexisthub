@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react'
-import { Loader2, Plus, Pencil, KeyRound, Building2, Receipt, Trash2, CheckCircle2 } from 'lucide-react'
+import { Loader2, Plus, Pencil, KeyRound, Building2, Receipt, Trash2, CheckCircle2, Wallet } from 'lucide-react'
 import { Navigate } from 'react-router-dom'
 import Modal from '../../components/ui/Modal'
 import Badge from '../../components/ui/Badge'
 import MoneyInput from '../../components/ui/MoneyInput'
 import { useAuth } from '../../context/AuthContext'
 import { platformService } from '../../services/platform'
-import type { TenantAdmin, TenantProvision, TenantAdminUpdate, TenantStatus, Invoice, InvoiceCreate } from '../../types'
+import type { TenantAdmin, TenantProvision, TenantAdminUpdate, TenantStatus, Invoice, InvoiceCreate, RevenueSummary } from '../../types'
 
 const fmtRp = (n?: number) => n == null ? 'Rp 0' : new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(Number(n))
 
@@ -16,11 +16,13 @@ const statusCfg: Record<TenantStatus, { label: string; variant: 'green' | 'yello
   suspended: { label: 'Suspended', variant: 'red' },
 }
 const fmtDate = (d?: string | null) => d ? new Date(d).toLocaleDateString('id-ID') : '—'
+const fmtMonth = (ym: string) => { const [y, m] = ym.split('-'); return new Date(Number(y), Number(m) - 1).toLocaleDateString('id-ID', { month: 'short', year: '2-digit' }) }
 
 export default function Platform() {
   const { user } = useAuth()
   const [modules, setModules] = useState<string[]>([])
   const [tenants, setTenants] = useState<TenantAdmin[]>([])
+  const [revenue, setRevenue] = useState<RevenueSummary | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
@@ -49,8 +51,8 @@ export default function Platform() {
   const load = async () => {
     setLoading(true)
     try {
-      const [m, t] = await Promise.all([platformService.listModules(), platformService.listTenants()])
-      setModules(m); setTenants(t)
+      const [m, t, r] = await Promise.all([platformService.listModules(), platformService.listTenants(), platformService.getRevenue()])
+      setModules(m); setTenants(t); setRevenue(r)
     } catch { setError('Gagal memuat data platform.') } finally { setLoading(false) }
   }
   useEffect(() => { if (user?.is_platform_admin) load() }, [user])
@@ -148,6 +150,35 @@ export default function Platform() {
         <div className="card p-4"><p className="text-xs text-slate-500">Suspended</p><p className="text-lg font-semibold text-red-600">{summary.suspended}</p></div>
       </div>
 
+      <div>
+        <h3 className="text-sm font-semibold text-slate-600 mb-2 flex items-center gap-1.5"><Wallet size={15} /> Pendapatan Platform</h3>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="card p-4"><p className="text-xs text-slate-500">Total Diterima</p><p className="text-lg font-semibold text-slate-900">{fmtRp(revenue?.total_paid)}</p></div>
+          <div className="card p-4"><p className="text-xs text-slate-500">Bulan Ini</p><p className="text-lg font-semibold text-emerald-600">{fmtRp(revenue?.paid_this_month)}</p></div>
+          <div className="card p-4"><p className="text-xs text-slate-500">Tertunggak</p><p className="text-lg font-semibold text-red-600">{fmtRp(revenue?.outstanding)}</p></div>
+          <div className="card p-4"><p className="text-xs text-slate-500">Estimasi MRR</p><p className="text-lg font-semibold text-indigo-600">{fmtRp(revenue?.mrr_estimate)}</p></div>
+        </div>
+        {revenue && revenue.trend.length > 0 && (
+          <div className="card p-4 mt-3">
+            <p className="text-xs text-slate-500 mb-2">Tren 12 Bulan Terakhir</p>
+            <div className="space-y-1.5">
+              {(() => {
+                const max = Math.max(...revenue.trend.map((m) => m.amount), 1)
+                return revenue.trend.map((m) => (
+                  <div key={m.month} className="flex items-center gap-2 text-xs">
+                    <span className="w-12 text-slate-500 shrink-0">{fmtMonth(m.month)}</span>
+                    <div className="flex-1 h-1.5 rounded-full bg-slate-100 overflow-hidden">
+                      <div className="h-full bg-emerald-500" style={{ width: `${(m.amount / max) * 100}%` }} />
+                    </div>
+                    <span className="w-24 text-right text-slate-700 shrink-0">{fmtRp(m.amount)}</span>
+                  </div>
+                ))
+              })()}
+            </div>
+          </div>
+        )}
+      </div>
+
       <div className="card overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-slate-50 border-b border-slate-200"><tr>{['Tenant', 'Subdomain', 'Paket', 'Status', 'User', 'Owner', 'Aktif s/d', 'Modul', ''].map((h, i) => (
@@ -159,7 +190,12 @@ export default function Platform() {
               const st = statusCfg[t.status]
               return (
                 <tr key={t.id} className="hover:bg-slate-50">
-                  <td className="px-4 py-2.5 font-medium text-slate-900">{t.name}{!t.is_active && <span className="ml-1 text-xs text-red-500">(nonaktif)</span>}</td>
+                  <td className="px-4 py-2.5 font-medium text-slate-900">
+                    {t.name}{!t.is_active && <span className="ml-1 text-xs text-red-500">(nonaktif)</span>}
+                    {(t.estimated_project_count || t.estimated_units_per_project) && (
+                      <p className="text-xs font-normal text-slate-400">{t.estimated_project_count ?? '—'} proyek · {t.estimated_units_per_project ?? '—'} unit/proyek</p>
+                    )}
+                  </td>
                   <td className="px-4 py-2.5 text-slate-500">{t.slug}.nexisthub.id</td>
                   <td className="px-4 py-2.5 text-slate-600">{t.subscription_plan}</td>
                   <td className="px-4 py-2.5">{st && <Badge label={st.label} variant={st.variant} />}</td>
