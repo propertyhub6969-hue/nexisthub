@@ -1,6 +1,6 @@
 import uuid
 from datetime import date
-from sqlalchemy import String, Boolean, Text, Enum as SAEnum, Date
+from sqlalchemy import String, Boolean, Text, Integer, Enum as SAEnum, Date
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from app.models.base import BaseModel
@@ -33,6 +33,9 @@ class Tenant(BaseModel):
     address: Mapped[str] = mapped_column(Text, nullable=True)
     city: Mapped[str] = mapped_column(String(100), nullable=True)
     province: Mapped[str] = mapped_column(String(100), nullable=True)
+    # Skala bisnis saat daftar (isian wajib di form register, bukan hitungan live dari Proyek/Unit)
+    estimated_project_count: Mapped[int] = mapped_column(Integer, nullable=True)
+    estimated_units_per_project: Mapped[int] = mapped_column(Integer, nullable=True)
 
     # Subscription
     subscription_plan: Mapped[str] = mapped_column(

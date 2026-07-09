@@ -8,7 +8,11 @@ export interface RegisterPayload {
   email: string
   password: string
   full_name: string
-  company_name?: string
+  phone: string
+  company_name: string
+  city: string
+  project_count: number
+  units_per_project: number
 }
 
 export interface Token {

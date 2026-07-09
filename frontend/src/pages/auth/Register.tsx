@@ -6,6 +6,31 @@ import { useAuth } from '../../context/AuthContext'
 import type { RegisterPayload } from '../../types'
 import BrandPanel from './BrandPanel'
 
+const CITY_OPTIONS = [
+  // Kalimantan Barat
+  'Pontianak', 'Singkawang', 'Kubu Raya', 'Sambas', 'Mempawah', 'Ketapang', 'Sanggau',
+  // Kalimantan Tengah
+  'Palangka Raya', 'Sampit', 'Pangkalan Bun',
+  // Kalimantan Selatan
+  'Banjarmasin', 'Banjarbaru', 'Martapura', 'Pelaihari', 'Kotabaru',
+  // Kalimantan Timur
+  'Samarinda', 'Balikpapan', 'Bontang', 'Tenggarong', 'Sangatta', 'Tanjung Redeb', 'Penajam',
+  // Kalimantan Utara
+  'Tarakan', 'Nunukan', 'Tanjung Selor',
+  // Sulawesi Utara
+  'Manado', 'Bitung', 'Tomohon', 'Minahasa',
+  // Sulawesi Tengah
+  'Palu', 'Poso', 'Luwuk',
+  // Sulawesi Selatan
+  'Makassar', 'Parepare', 'Palopo', 'Gowa', 'Maros', 'Watampone',
+  // Sulawesi Tenggara
+  'Kendari', 'Bau-Bau', 'Kolaka',
+  // Sulawesi Barat
+  'Mamuju', 'Majene',
+  // Gorontalo
+  'Gorontalo',
+]
+
 export default function Register() {
   const { register: registerUser } = useAuth()
   const navigate = useNavigate()
@@ -66,9 +91,44 @@ export default function Register() {
                   {errors.full_name && <p className="text-xs text-red-500 mt-1">{errors.full_name.message}</p>}
                 </div>
                 <div>
+                  <label className="label">No. HP</label>
+                  <input className="input" type="tel" placeholder="08123456789"
+                    {...register('phone', {
+                      required: 'No. HP wajib diisi',
+                      pattern: { value: /^[0-9+\-\s]{8,20}$/, message: 'Format no. HP tidak valid' },
+                    })} />
+                  {errors.phone && <p className="text-xs text-red-500 mt-1">{errors.phone.message}</p>}
+                </div>
+                <div>
                   <label className="label">Nama Perusahaan</label>
                   <input className="input" type="text" placeholder="PT. Maju Jaya Properti"
-                    {...register('company_name')} />
+                    {...register('company_name', { required: 'Nama perusahaan wajib diisi' })} />
+                  {errors.company_name && <p className="text-xs text-red-500 mt-1">{errors.company_name.message}</p>}
+                </div>
+                <div>
+                  <label className="label">Kota</label>
+                  <input className="input" type="text" list="city-options" placeholder="Cari kota..."
+                    {...register('city', { required: 'Kota wajib diisi' })} />
+                  <datalist id="city-options">{CITY_OPTIONS.map((c) => <option key={c} value={c} />)}</datalist>
+                  {errors.city && <p className="text-xs text-red-500 mt-1">{errors.city.message}</p>}
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="label">Jumlah Proyek</label>
+                    <input className="input" type="number" min={1} placeholder="1"
+                      {...register('project_count', {
+                        required: 'Wajib diisi', valueAsNumber: true, min: { value: 1, message: 'Min. 1' },
+                      })} />
+                    {errors.project_count && <p className="text-xs text-red-500 mt-1">{errors.project_count.message}</p>}
+                  </div>
+                  <div>
+                    <label className="label">Unit / Proyek</label>
+                    <input className="input" type="number" min={1} placeholder="50"
+                      {...register('units_per_project', {
+                        required: 'Wajib diisi', valueAsNumber: true, min: { value: 1, message: 'Min. 1' },
+                      })} />
+                    {errors.units_per_project && <p className="text-xs text-red-500 mt-1">{errors.units_per_project.message}</p>}
+                  </div>
                 </div>
                 <div>
                   <label className="label">Email</label>

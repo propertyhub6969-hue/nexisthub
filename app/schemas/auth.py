@@ -8,7 +8,11 @@ class UserRegister(BaseModel):
     email: EmailStr
     password: str = Field(..., min_length=8, max_length=100)
     full_name: str = Field(..., min_length=2, max_length=100)
-    company_name: Optional[str] = None
+    phone: str = Field(..., min_length=8, max_length=20)
+    company_name: str = Field(..., min_length=2, max_length=200)
+    city: str = Field(..., min_length=2, max_length=100)
+    project_count: int = Field(..., ge=1)
+    units_per_project: int = Field(..., ge=1)
 
 
 class UserLogin(BaseModel):

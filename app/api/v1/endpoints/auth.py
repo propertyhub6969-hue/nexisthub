@@ -55,7 +55,7 @@ async def register(
         )
 
     # Create Tenant
-    company = payload.company_name or f"{payload.full_name}'s Company"
+    company = payload.company_name
     base_slug = slugify(company)
 
     # Ensure slug is unique
@@ -73,6 +73,10 @@ async def register(
         slug=slug,
         status=TenantStatus.TRIAL,
         company_name=company,
+        phone=payload.phone,
+        city=payload.city,
+        estimated_project_count=payload.project_count,
+        estimated_units_per_project=payload.units_per_project,
         expires_at=date.today() + timedelta(days=TRIAL_DAYS),  # trial 14 hari
     )
     db.add(tenant)
