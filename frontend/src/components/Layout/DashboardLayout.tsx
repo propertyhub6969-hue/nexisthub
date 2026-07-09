@@ -37,7 +37,7 @@ export default function DashboardLayout() {
     if (user && !user.is_platform_admin) billingService.subscription().then((s) => setDaysLeft(s.days_left ?? null)).catch(() => {})
   }, [user])
   // cegah role terbatas (produksi/marketing) buka menu di luar haknya → redirect ke halaman default role-nya
-  if (user && !canAccessPath(user.role, pathname)) return <Navigate to={defaultPathFor(user.role)} replace />
+  if (user && !canAccessPath(user.role, pathname, user.is_platform_admin)) return <Navigate to={defaultPathFor(user.role, user.is_platform_admin)} replace />
   // modul dimatikan paket langganan → tendang ke dashboard
   if (user && !canAccessFeature(user.feature_flags, pathname)) return <Navigate to="/dashboard" replace />
   const title = pageTitles[pathname]

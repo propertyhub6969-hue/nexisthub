@@ -97,7 +97,7 @@ export default function Sidebar({ open = false, onClose }: { open?: boolean; onC
     ...(user?.is_platform_admin ? [platformItem] : []),
   ]
   // gabungan gating: akses role + feature-flag paket tenant
-  const allow = (to: string) => canAccessPath(user?.role, to) && canAccessFeature(user?.feature_flags, to)
+  const allow = (to: string) => canAccessPath(user?.role, to, user?.is_platform_admin) && canAccessFeature(user?.feature_flags, to)
   // saring menu sesuai akses role (produksi = Dashboard/Konstruksi/Procurement; role lain penuh)
   const items = allItems.filter((it) =>
     'to' in it ? allow(it.to) : it.children.some((c) => allow(c.to))

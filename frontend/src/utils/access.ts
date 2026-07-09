@@ -13,7 +13,9 @@ const ROLE_PATHS: Partial<Record<UserRole, string[]>> = {
 const PROD_AREA = ['/construction', '/procurement']
 const PROD_ROLES: UserRole[] = ['owner', 'admin', 'manager', 'produksi']
 
-export function canAccessPath(role: UserRole | undefined, path: string): boolean {
+export function canAccessPath(role: UserRole | undefined, path: string, isPlatformAdmin = false): boolean {
+  // Platform admin (vendor Control Plane) — HANYA area /platform, terlepas dari role tenant dummy-nya.
+  if (isPlatformAdmin) return path.startsWith('/platform')
   if (!role) return true
   // Area Produksi dibatasi utk semua role (termasuk viewer) — hanya PROD_ROLES yang boleh.
   if (PROD_AREA.some((p) => path.startsWith(p))) return PROD_ROLES.includes(role)
@@ -24,7 +26,8 @@ export function canAccessPath(role: UserRole | undefined, path: string): boolean
 }
 
 // Halaman default (landing/redirect) per role — harus berupa path yang boleh diakses role itu.
-export function defaultPathFor(role: UserRole | undefined): string {
+export function defaultPathFor(role: UserRole | undefined, isPlatformAdmin = false): string {
+  if (isPlatformAdmin) return '/platform/tenants'
   if (role === 'marketing') return '/marketing/leads'
   return '/dashboard'
 }
