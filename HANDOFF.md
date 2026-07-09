@@ -1,6 +1,6 @@
 # NexistHub — Summary Handoff
 
-_Diperbarui: 2026-07-08_
+_Diperbarui: 2026-07-09_
 
 ERP multi-tenant untuk **developer properti** (rumah **subsidi + komersial**, bangun sendiri) — Kalimantan & Sulawesi. Dikembangkan bertahap per "Session/Fase" via cowork.
 
@@ -67,7 +67,11 @@ docker run --rm -v "$PWD:/app" -w /app nexisthub-backend alembic heads
 - **Agen & Komisi**: DITUNDA sampai user survey ke developer (skema komisi belum pasti).
 - **Optimasi skala (DITUNDA — fokus business process dulu)**: paginasi server-side + UI (SEMUA list ambil `size:500` render semua baris, TANPA paginasi — **bug laten: record ke-501+ per tenant tak tampil**); dropdown lazy (Clients/Leads ambil semua unit tiap buka); indeks DB; React Query caching. Ambang mulai: ±300+ record/modul per tenant.
 - **MinIO (file storage)**: pindah blob→object storage saat total file mendekati beberapa GB / backup DB berat. MinIO SUDAH ada di VPS (milik app lain, `s3-minio.nexisthub.id`); isolasi per `{tenant_id}/...`. Self-hosted (data tetap di VPS).
-- **Platform/Control Plane**: routing DB per domain, provisioning otomatis, billing, feature-flag.
+- **Platform/Control Plane**: Fase 1–4 (cockpit, gating, subdomain, self-serve trial+billing manual) SUDAH live. Billing OTOMATIS (Midtrans/Xendit) & custom domain (CNAME) belum — nunggu ada aliran pelanggan bayar nyata dulu.
+- **Panel Admin — dibenahi 2026-07-09**: bug menu bocor (super-admin sempat lihat seluruh sidebar tenant kosong) diperbaiki — `canAccessPath`/`defaultPathFor` kini sadar `is_platform_admin`, landing langsung `/platform/tenants`. + **Ringkasan Pendapatan Platform** (`GET /platform/revenue`: total diterima/bulan-ini/tertunggak/estimasi MRR + tren 12 bln, dari `Invoice` billing manual — BUKAN data bisnis internal tenant, batas yg sengaja dijaga).
+- **Panel Admin lanjutan — didiskusikan 2026-07-09, DITUNDA SENGAJA** (keputusan bersama user+Claude sbg partner strategis, bukan sekadar backlog):
+  - **Subdomain terpisah super-admin** (mis. `admin.nexisthub.id`): dicek layak — infra MUDAH (satu router Traefik tambahan ke service yang sama; tenant ditentukan dari JWT bukan Host header, jadi BUKAN migrasi/re-arsitektur). Pertimbangan Claude: murni polish URL/branding, tak mengubah keamanan/fungsi apa pun → prioritas rendah, boleh dikerjakan kapan saja tanpa risiko atau dependency ke fitur lain.
+  - **"Lihat sebagai Tenant" (impersonation read-only)**: desain sudah matang & disetujui bareng sebelum ditunda — super-admin autentikasi sbg OWNER tenant target lewat token 30 menit tanpa refresh; enforcement read-only TERPUSAT di `get_current_context` (independen dari role → otomatis melindungi ~20 router, tak bisa lolos krn lupa guard per-endpoint); audit log ditulis ke tenant target (transparan, bukan mengintip diam-diam); token disimpan di `sessionStorage` (per-tab) supaya sesi admin sendiri di `localStorage` tak tertimpa saat buka tab baru. Pertimbangan Claude: fitur paling kompleks & sensitif di roadmap Control Plane — menyentuh titik auth yang dipakai hampir semua endpoint. Rekomendasi: tunda sampai ada KEBUTUHAN KONKRET (mis. tenant minta dibantu troubleshoot data mereka langsung), jangan dibangun spekulatif duluan — kompleksitas & permukaan risikonya baru sepadan kalau benar-benar dipakai.
 - Penyempurnaan: auto-refresh token; bundle FE >500KB (code-split); LB unit juga dari dokumen (opsional).
 
 ## 6. Cara Cepat Menjelajah (UI)
