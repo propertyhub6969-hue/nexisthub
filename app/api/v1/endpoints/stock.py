@@ -15,7 +15,10 @@ from app.api.deps import get_current_context, AuthContext
 from app.models.stock import StockMovement, MovementType, MovementSource
 from app.models.procurement import PurchaseOrder, POStatus
 from app.models.user import User
-from app.schemas.stock import StockInCreate, StockOutCreate, MovementResponse, StockBalance
+from app.schemas.stock import (
+    StockInCreate, StockOutCreate, StockReturnVendorCreate, StockReturnUnitCreate,
+    MovementResponse, StockBalance,
+)
 from app.schemas.procurement import ReceivePO
 
 router = APIRouter()
@@ -116,6 +119,16 @@ async def _recompute_po_status(db, tenant_id, po_id):
         .group_by(StockMovement.po_item_id)
     )).all()
     recv = {r[0]: Decimal(r[1]) for r in rows}
+    # kurangkan retur ke vendor yg mengoreksi penerimaan PO ini — jangan sampai tetap ke-mark RECEIVED penuh
+    ret_rows = (await db.execute(
+        select(StockMovement.po_item_id, func.coalesce(func.sum(StockMovement.quantity), 0))
+        .where(StockMovement.tenant_id == tenant_id, StockMovement.po_id == po_id,
+               StockMovement.movement_type == MovementType.OUT, StockMovement.source == MovementSource.RETURN_VENDOR,
+               StockMovement.is_deleted == False)  # noqa: E712
+        .group_by(StockMovement.po_item_id)
+    )).all()
+    for pid, qty in ret_rows:
+        recv[pid] = recv.get(pid, Decimal(0)) - Decimal(qty)
     total_recv = sum(recv.values(), Decimal(0))
     all_full = all(recv.get(it.id, Decimal(0)) >= Decimal(it.quantity or 0) for it in po.items)
     if total_recv > 0 and all_full:
@@ -176,6 +189,43 @@ async def stock_out(payload: StockOutCreate, ctx: AuthContext = Depends(get_curr
         unit_price=avg, **payload.model_dump(),
     )
     db.add(m); await db.flush(); await db.refresh(m)
+    return m
+
+
+@router.post("/stock/return-vendor", response_model=MovementResponse, status_code=status.HTTP_201_CREATED)
+async def return_to_vendor(payload: StockReturnVendorCreate, ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db)):
+    """Retur ke vendor — barang baru diterima rusak/salah, dikembalikan sebelum dipakai. Bukan pemakaian proyek."""
+    movs = await _movements(db, ctx.tenant_id, payload.project_id)
+    bal = _balance_qty(movs, payload.material_name, payload.unit or "")
+    if Decimal(payload.quantity) > bal:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=f"Stok tidak cukup (sisa {bal} {payload.unit or ''})")
+    price = payload.unit_price if payload.unit_price is not None else _avg_price(movs, payload.material_name, payload.unit or "")
+    data = payload.model_dump(exclude={"unit_price"})
+    m = StockMovement(
+        tenant_id=ctx.tenant_id, movement_type=MovementType.OUT, source=MovementSource.RETURN_VENDOR,
+        unit_price=price, **data,
+    )
+    db.add(m); await db.flush()
+    if m.po_id:
+        await _recompute_po_status(db, ctx.tenant_id, m.po_id)
+        await db.flush()
+    await db.refresh(m)
+    await record_audit(db, ctx.tenant_id, ctx.user_id, "RETURN", "stock_movements", m.id, reason=payload.notes)
+    return m
+
+
+@router.post("/stock/return-unit", response_model=MovementResponse, status_code=status.HTTP_201_CREATED)
+async def return_from_unit(payload: StockReturnUnitCreate, ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db)):
+    """Retur dari unit ke gudang — material terkirim ke unit ternyata sisa/tak terpakai."""
+    movs = await _movements(db, ctx.tenant_id, payload.project_id)
+    price = payload.unit_price if payload.unit_price is not None else _avg_price(movs, payload.material_name, payload.unit or "")
+    data = payload.model_dump(exclude={"unit_price"})
+    m = StockMovement(
+        tenant_id=ctx.tenant_id, movement_type=MovementType.IN, source=MovementSource.RETURN_UNIT,
+        unit_price=price, **data,
+    )
+    db.add(m); await db.flush(); await db.refresh(m)
+    await record_audit(db, ctx.tenant_id, ctx.user_id, "RETURN", "stock_movements", m.id, reason=payload.notes)
     return m
 
 

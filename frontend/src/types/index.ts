@@ -954,6 +954,27 @@ export interface StockOutCreate {
   movement_date?: string
   notes?: string
 }
+export interface StockReturnVendorCreate {
+  project_id: string
+  material_name: string
+  unit?: string
+  quantity: number
+  unit_price?: number
+  po_id?: string
+  po_item_id?: string
+  movement_date?: string
+  notes: string
+}
+export interface StockReturnUnitCreate {
+  project_id: string
+  material_name: string
+  unit?: string
+  quantity: number
+  unit_id: string
+  unit_price?: number
+  movement_date?: string
+  notes: string
+}
 
 // ── Biaya (Expense) & Rollup ──────────────────────────────────────
 export type ExpenseCategory = 'material' | 'upah' | 'kontraktor' | 'operasional' | 'perizinan' | 'lain'
@@ -1022,6 +1043,7 @@ export interface UnitConstructionRow {
   target_date?: string
   finish_date?: string
   notes?: string
+  last_log_date?: string | null
 }
 export interface ConstructionSummary {
   total_units: number
@@ -1068,6 +1090,19 @@ export interface ContractCreate {
 }
 export interface Opname { id: string; amount: number; expense_date?: string; description: string }
 export interface OpnameCreate { amount: number; expense_date?: string; description?: string }
+
+// ── Log Progres Mingguan (riwayat berfoto) ──
+export interface ProgressLog {
+  id: string
+  unit_id: string
+  log_date: string
+  stage?: ConstructionStage
+  percent?: number
+  notes?: string
+  uploaded_by_name?: string
+  has_photo: boolean
+  created_at: string
+}
 
 // ── Audit ─────────────────────────────────────────────────────────
 export interface AuditEntry {

@@ -28,6 +28,31 @@ class StockOutCreate(BaseModel):
     notes: Optional[str] = None
 
 
+class StockReturnVendorCreate(BaseModel):
+    """Retur ke vendor — barang baru diterima (PO/langsung) ternyata rusak/salah, dikembalikan sebelum dipakai."""
+    project_id: uuid.UUID
+    material_name: str = Field(..., min_length=1, max_length=200)
+    unit: Optional[str] = Field(None, max_length=50)
+    quantity: Decimal = Field(..., gt=0)
+    unit_price: Optional[Decimal] = Field(None, ge=0)  # kosong = HPP rata2 saat ini
+    po_id: Optional[uuid.UUID] = None
+    po_item_id: Optional[uuid.UUID] = None  # isi bila retur ini mengoreksi penerimaan PO tertentu
+    movement_date: Optional[date] = None
+    notes: str = Field(..., min_length=1)  # alasan retur wajib — jejak audit
+
+
+class StockReturnUnitCreate(BaseModel):
+    """Retur dari unit ke gudang — material terkirim ke unit ternyata sisa/tak terpakai."""
+    project_id: uuid.UUID
+    material_name: str = Field(..., min_length=1, max_length=200)
+    unit: Optional[str] = Field(None, max_length=50)
+    quantity: Decimal = Field(..., gt=0)
+    unit_id: uuid.UUID  # WAJIB — unit asal retur
+    unit_price: Optional[Decimal] = Field(None, ge=0)  # kosong = HPP rata2 saat ini
+    movement_date: Optional[date] = None
+    notes: str = Field(..., min_length=1)
+
+
 class MovementResponse(BaseModel):
     id: uuid.UUID
     project_id: uuid.UUID

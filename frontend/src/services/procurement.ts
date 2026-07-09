@@ -1,7 +1,7 @@
 import api from './api'
 import type {
   Vendor, VendorCreate, PurchaseOrder, POCreate, VendorPayment, VendorPaymentCreate, PaginatedResponse,
-  StockBalance, StockMovement, StockInCreate, StockOutCreate, ReceivePOPayload,
+  StockBalance, StockMovement, StockInCreate, StockOutCreate, StockReturnVendorCreate, StockReturnUnitCreate, ReceivePOPayload,
   Expense, ExpenseCreate, CostSummary, Material, MaterialCreate,
   RabTemplate, RabTemplateCreate, UnitRab, RabAdjustment, LeakageRow, LeakageDetail, ExpenseCategory,
 } from '../types'
@@ -90,6 +90,14 @@ export const procurementService = {
   },
   async stockOut(payload: StockOutCreate): Promise<StockMovement> {
     const { data } = await api.post<StockMovement>('/procurement/stock/out', payload)
+    return data
+  },
+  async returnToVendor(payload: StockReturnVendorCreate): Promise<StockMovement> {
+    const { data } = await api.post<StockMovement>('/procurement/stock/return-vendor', payload)
+    return data
+  },
+  async returnFromUnit(payload: StockReturnUnitCreate): Promise<StockMovement> {
+    const { data } = await api.post<StockMovement>('/procurement/stock/return-unit', payload)
     return data
   },
   async receivePO(poId: string, payload: ReceivePOPayload): Promise<StockMovement[]> {

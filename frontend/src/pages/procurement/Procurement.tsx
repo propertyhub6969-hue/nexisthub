@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react'
-import { Plus, Trash2, Pencil, Loader2, Wallet, X, PackageCheck, ArrowDownToLine, ArrowUpFromLine, ClipboardList } from 'lucide-react'
+import { Plus, Trash2, Pencil, Loader2, Wallet, X, PackageCheck, ArrowDownToLine, ArrowUpFromLine, ClipboardList, Undo2 } from 'lucide-react'
 import Badge from '../../components/ui/Badge'
 import Modal from '../../components/ui/Modal'
 import MoneyInput from '../../components/ui/MoneyInput'
@@ -8,6 +8,7 @@ import { propertyService } from '../../services/property'
 import type {
   Vendor, VendorCreate, PurchaseOrder, POCreate, POItemIn, VendorPayment,
   POStatus, Project, Unit, StockBalance, StockMovement, StockInCreate, StockOutCreate,
+  StockReturnVendorCreate, StockReturnUnitCreate,
   Expense, ExpenseCreate, ExpenseCategory, CostSummary, Material, MaterialCreate,
   RabTemplate, RabTemplateCreate, UnitRab, LeakageRow, LeakageDetail,
 } from '../../types'
@@ -75,6 +76,14 @@ export default function Procurement() {
   const [inForm, setInForm] = useState<StockInCreate>(emptyStockIn(''))
   const [outModal, setOutModal] = useState(false)
   const [outForm, setOutForm] = useState<StockOutCreate>(emptyStockOut(''))
+  const [retModal, setRetModal] = useState(false)
+  const [retDir, setRetDir] = useState<'vendor' | 'unit'>('vendor')
+  const [retMaterial, setRetMaterial] = useState('|')
+  const [retQty, setRetQty] = useState(0)
+  const [retPrice, setRetPrice] = useState<number | undefined>(undefined)
+  const [retDate, setRetDate] = useState('')
+  const [retUnitId, setRetUnitId] = useState('')
+  const [retNotes, setRetNotes] = useState('')
   // Biaya
   const [expenses, setExpenses] = useState<Expense[]>([])
   const [cost, setCost] = useState<CostSummary | null>(null)
@@ -147,6 +156,33 @@ export default function Procurement() {
     } catch (err: unknown) {
       const d = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
       setError(d || 'Gagal distribusi material.')
+    } finally { setSaving(false) }
+  }
+  function openReturn() {
+    setRetDir('vendor'); setRetMaterial('|'); setRetQty(0); setRetPrice(undefined)
+    setRetDate(''); setRetUnitId(''); setRetNotes(''); setRetModal(true)
+  }
+  async function submitReturn(e: React.FormEvent) {
+    e.preventDefault(); setSaving(true); setError('')
+    const [name, unit] = retMaterial.split('|')
+    try {
+      if (retDir === 'vendor') {
+        const p: StockReturnVendorCreate = {
+          project_id: stockProject, material_name: name, unit: unit || undefined, quantity: retQty,
+          unit_price: retPrice, movement_date: retDate || undefined, notes: retNotes,
+        }
+        await procurementService.returnToVendor(p)
+      } else {
+        const p: StockReturnUnitCreate = {
+          project_id: stockProject, material_name: name, unit: unit || undefined, quantity: retQty,
+          unit_id: retUnitId, unit_price: retPrice, movement_date: retDate || undefined, notes: retNotes,
+        }
+        await procurementService.returnFromUnit(p)
+      }
+      setRetModal(false); await loadStock(stockProject); await reloadPO()
+    } catch (err: unknown) {
+      const d = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      setError(d || 'Gagal mencatat retur.')
     } finally { setSaving(false) }
   }
   function openReceive(po: PurchaseOrder) {
@@ -450,6 +486,7 @@ export default function Procurement() {
             </select>
             <div className="flex gap-2">
               <button className="btn-secondary text-sm flex items-center gap-1" onClick={openStockIn} disabled={!stockProject}><ArrowDownToLine size={14} /> Barang Masuk</button>
+              <button className="btn-secondary text-sm flex items-center gap-1" onClick={openReturn} disabled={!stockProject}><Undo2 size={14} /> Retur</button>
               <button className="btn-primary text-sm flex items-center gap-1" onClick={openStockOut} disabled={!stockProject}><ArrowUpFromLine size={14} /> Distribusi</button>
             </div>
           </div>
@@ -497,10 +534,18 @@ export default function Procurement() {
                   <tr key={m.id} className="hover:bg-slate-50">
                     <td className="px-4 py-2.5 text-slate-500 text-xs">{m.movement_date ? new Date(m.movement_date).toLocaleDateString('id-ID') : '—'}</td>
                     <td className="px-4 py-2.5 font-medium text-slate-900">{m.material_name}{m.do_number && <span className="block text-[11px] font-normal text-slate-400">DO: {m.do_number}</span>}</td>
-                    <td className="px-4 py-2.5">{m.movement_type === 'in' ? <Badge label="Masuk" variant="green" /> : <Badge label="Keluar" variant="orange" />}</td>
+                    <td className="px-4 py-2.5">
+                      {m.source === 'return_vendor' ? <Badge label="Retur Vendor" variant="red" />
+                        : m.source === 'return_unit' ? <Badge label="Retur Unit" variant="blue" />
+                        : m.movement_type === 'in' ? <Badge label="Masuk" variant="green" /> : <Badge label="Keluar" variant="orange" />}
+                    </td>
                     <td className="px-4 py-2.5 text-slate-600">{Number(m.quantity)} {m.unit ?? ''}</td>
                     <td className="px-4 py-2.5 text-slate-500">{fmt(m.unit_price)}</td>
-                    <td className="px-4 py-2.5 text-slate-500">{m.movement_type === 'out' ? (unitLabel(m.unit_id) ?? 'Umum') : '—'}</td>
+                    <td className="px-4 py-2.5 text-slate-500">
+                      {m.movement_type === 'out' && m.source !== 'return_vendor' ? (unitLabel(m.unit_id) ?? 'Umum')
+                        : m.source === 'return_unit' ? `Dari ${unitLabel(m.unit_id) ?? '?'}`
+                        : '—'}
+                    </td>
                     <td className="px-4 py-2.5 text-slate-500 text-xs">{m.received_by_name ?? '—'}</td>
                     <td className="px-4 py-2.5"><button onClick={() => delMovement(m.id)} className="text-slate-400 hover:text-red-600"><Trash2 size={13} /></button></td>
                   </tr>
@@ -884,6 +929,49 @@ export default function Procurement() {
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" className="btn-secondary text-sm" onClick={() => setOutModal(false)}>Batal</button>
             <button type="submit" className="btn-primary text-sm flex items-center gap-2" disabled={saving}>{saving && <Loader2 size={14} className="animate-spin" />}Distribusi</button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Modal Retur */}
+      <Modal open={retModal} onClose={() => setRetModal(false)} title="Retur Material">
+        <form onSubmit={submitReturn} className="space-y-3">
+          <div className="flex gap-2">
+            <button type="button" onClick={() => setRetDir('vendor')}
+              className={`flex-1 rounded-lg border px-3 py-2 text-sm font-medium ${retDir === 'vendor' ? 'border-brand-500 bg-brand-50 text-brand-700' : 'border-slate-200 text-slate-500'}`}>
+              Ke Vendor
+            </button>
+            <button type="button" onClick={() => setRetDir('unit')}
+              className={`flex-1 rounded-lg border px-3 py-2 text-sm font-medium ${retDir === 'unit' ? 'border-brand-500 bg-brand-50 text-brand-700' : 'border-slate-200 text-slate-500'}`}>
+              Dari Unit
+            </button>
+          </div>
+          <p className="text-xs text-slate-400">
+            {retDir === 'vendor' ? 'Barang baru diterima rusak/salah, dikembalikan ke vendor sebelum dipakai.' : 'Material yang sudah terkirim ke unit ternyata sisa/tak terpakai, dikembalikan ke gudang.'}
+          </p>
+          <div><label className="label">Material *</label>
+            <select className="input" required value={retMaterial} onChange={(e) => setRetMaterial(e.target.value)}>
+              <option value="|">Pilih material...</option>
+              {balances.filter((b) => Number(b.balance) > 0).map((b, i) => <option key={i} value={`${b.material_name}|${b.unit ?? ''}`}>{b.material_name} ({b.unit ?? '-'}) — sisa {Number(b.balance)}</option>)}
+            </select>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div><label className="label">Qty *</label><input className="input" type="number" min={0} step="0.01" required value={retQty || ''} onChange={(e) => setRetQty(Number(e.target.value))} /></div>
+            <div><label className="label">Tanggal</label><input className="input" type="date" value={retDate} onChange={(e) => setRetDate(e.target.value)} /></div>
+          </div>
+          <div><label className="label">Harga/sat (opsional)</label><MoneyInput value={retPrice} onChange={(v) => setRetPrice(v)} /><p className="text-[11px] text-slate-400 mt-0.5">Kosong = pakai HPP rata² saat ini.</p></div>
+          {retDir === 'unit' && (
+            <div><label className="label">Dari Unit *</label>
+              <select className="input" required value={retUnitId} onChange={(e) => setRetUnitId(e.target.value)}>
+                <option value="">Pilih unit...</option>
+                {stockUnits.map((u) => <option key={u.id} value={u.id}>{[u.block, u.unit_number].filter(Boolean).join('-')}</option>)}
+              </select>
+            </div>
+          )}
+          <div><label className="label">Alasan Retur *</label><input className="input" required value={retNotes} onChange={(e) => setRetNotes(e.target.value)} placeholder="mis. barang cacat, kelebihan kirim..." /></div>
+          <div className="flex justify-end gap-2 pt-2">
+            <button type="button" className="btn-secondary text-sm" onClick={() => setRetModal(false)}>Batal</button>
+            <button type="submit" className="btn-primary text-sm flex items-center gap-2" disabled={saving}>{saving && <Loader2 size={14} className="animate-spin" />}Catat Retur</button>
           </div>
         </form>
       </Modal>

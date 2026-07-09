@@ -16,6 +16,8 @@ class MovementSource(str, enum.Enum):
     DIRECT = "direct"         # Beli langsung
     DISTRIBUTION = "distribution"  # Distribusi ke unit
     ADJUSTMENT = "adjustment"      # Penyesuaian/koreksi
+    RETURN_VENDOR = "return_vendor"  # Retur ke vendor (OUT, unit_id kosong — bukan pemakaian proyek)
+    RETURN_UNIT = "return_unit"      # Retur dari unit ke gudang (IN, unit_id = unit asal retur)
 
 
 class StockMovement(BaseModel, SoftDeleteMixin):

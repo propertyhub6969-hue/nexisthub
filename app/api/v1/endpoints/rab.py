@@ -12,7 +12,7 @@ from app.core.database import get_db
 from app.api.deps import get_current_context, AuthContext
 from app.models.rab import RabTemplate, RabTemplateLine, UnitRabAdjustment
 from app.models.expense import Expense
-from app.models.stock import StockMovement, MovementType
+from app.models.stock import StockMovement, MovementType, MovementSource
 from app.models.property import Unit
 from app.schemas.rab import (
     RabTemplateCreate, RabTemplateUpdate, RabTemplateResponse,
@@ -151,9 +151,14 @@ async def _realisasi_map(db, tenant_id, project_id):
     res = defaultdict(lambda: defaultdict(Decimal))
     movs = (await db.execute(select(StockMovement).where(
         StockMovement.tenant_id == tenant_id, StockMovement.project_id == project_id,
-        StockMovement.movement_type == MovementType.OUT, StockMovement.is_deleted == False))).scalars().all()  # noqa: E712
+        StockMovement.is_deleted == False))).scalars().all()  # noqa: E712
     for m in movs:
-        res[m.unit_id]["material"] += Decimal(m.quantity) * Decimal(m.unit_price)
+        if m.movement_type == MovementType.OUT and m.source != MovementSource.RETURN_VENDOR:
+            # retur ke vendor BUKAN pemakaian proyek — dikecualikan dari biaya
+            res[m.unit_id]["material"] += Decimal(m.quantity) * Decimal(m.unit_price)
+        elif m.movement_type == MovementType.IN and m.source == MovementSource.RETURN_UNIT:
+            # retur dari unit balik ke gudang -> kurangkan biaya material unit asal retur
+            res[m.unit_id]["material"] -= Decimal(m.quantity) * Decimal(m.unit_price)
     exps = (await db.execute(select(Expense).where(
         Expense.tenant_id == tenant_id, Expense.project_id == project_id, Expense.is_deleted == False))).scalars().all()  # noqa: E712
     for e in exps:
