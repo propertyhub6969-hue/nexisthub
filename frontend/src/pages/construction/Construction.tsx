@@ -256,14 +256,15 @@ export default function Construction() {
           </div>
           <div className="card overflow-hidden">
             <table className="w-full text-sm">
-              <thead className="bg-slate-50 border-b border-slate-200"><tr>{['Unit', 'Kontraktor', 'Pengawas', 'Nilai Borongan', 'Terbayar', 'Sisa', ''].map((h, i) => (
+              <thead className="bg-slate-50 border-b border-slate-200"><tr>{['Unit', 'Judul', 'Kontraktor', 'Pengawas', 'Nilai Borongan', 'Terbayar', 'Sisa', ''].map((h, i) => (
                 <th key={i} className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">{h}</th>))}</tr></thead>
               <tbody className="divide-y divide-slate-100">
                 {contracts.length === 0 ? (
-                  <tr><td colSpan={7} className="px-4 py-8 text-center text-slate-400 text-sm">Belum ada kontrak borongan.</td></tr>
+                  <tr><td colSpan={8} className="px-4 py-8 text-center text-slate-400 text-sm">Belum ada kontrak borongan.</td></tr>
                 ) : contracts.map((c) => (
                   <tr key={c.id} className="hover:bg-slate-50">
                     <td className="px-4 py-2.5 font-medium text-slate-900">{c.unit_label}</td>
+                    <td className="px-4 py-2.5 text-slate-600">{c.title || '—'}</td>
                     <td className="px-4 py-2.5 text-slate-600">{c.vendor_name ?? '—'}</td>
                     <td className="px-4 py-2.5 text-slate-500">{c.pengawas ?? '—'}</td>
                     <td className="px-4 py-2.5 text-slate-600">{fmt(c.total_value)}</td>
