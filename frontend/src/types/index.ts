@@ -1074,6 +1074,7 @@ export interface ContractorContract {
   title?: string
   total_value: number
   paid: number
+  submitted: number
   remaining: number
   notes?: string
   created_at: string
@@ -1088,8 +1089,18 @@ export interface ContractCreate {
   total_value: number
   notes?: string
 }
-export interface Opname { id: string; amount: number; expense_date?: string; description: string }
+export interface Opname { id: string; amount: number; expense_date?: string; description: string; is_paid: boolean; paid_at?: string }
 export interface OpnameCreate { amount: number; expense_date?: string; description?: string }
+export interface PendingOpname {
+  id: string
+  unit_id: string
+  unit_label: string
+  contractor_name?: string
+  title?: string
+  expense_date?: string
+  description: string
+  amount: number
+}
 
 // ── Log Progres Mingguan (riwayat berfoto) ──
 export interface ProgressLog {

@@ -1,14 +1,16 @@
 import { useEffect, useState, useCallback } from 'react'
-import { Loader2, Pencil, HardHat, CheckCircle2, Plus, Trash2, Wallet, Camera, Image as ImageIcon, AlertTriangle } from 'lucide-react'
+import { Loader2, Pencil, HardHat, CheckCircle2, Plus, Trash2, Wallet, Camera, Image as ImageIcon, AlertTriangle, Printer, FileText } from 'lucide-react'
 import Badge from '../../components/ui/Badge'
 import Modal from '../../components/ui/Modal'
 import MoneyInput from '../../components/ui/MoneyInput'
 import { constructionService } from '../../services/construction'
 import { propertyService } from '../../services/property'
 import { procurementService } from '../../services/procurement'
+import { useAuth } from '../../context/AuthContext'
+import { printPengajuan } from '../../utils/pengajuan'
 import type {
   Project, Unit, Vendor, UnitConstructionRow, ConstructionSummary, ConstructionStage, ConstructionUpsert,
-  ContractorContract, ContractCreate, Opname, ProgressLog,
+  ContractorContract, ContractCreate, Opname, ProgressLog, PendingOpname,
 } from '../../types'
 
 const REMINDER_DAYS = 7
@@ -76,6 +78,14 @@ export default function Construction() {
   const [opAmount, setOpAmount] = useState<number | undefined>(undefined)
   const [opDate, setOpDate] = useState('')
   const [opDesc, setOpDesc] = useState('')
+
+  // pengajuan pembayaran (level proyek)
+  const { user } = useAuth()
+  const canPay = user?.role === 'owner' || user?.role === 'admin' || user?.role === 'manager'
+  const [pengModal, setPengModal] = useState(false)
+  const [pending, setPending] = useState<PendingOpname[]>([])
+  const [pengLoading, setPengLoading] = useState(false)
+  const [payDate, setPayDate] = useState('')
 
   useEffect(() => {
     propertyService.listProjects({ size: 500 }).then((r) => {
@@ -182,6 +192,32 @@ export default function Construction() {
     try { await constructionService.deleteOpname(id); setOpList(await constructionService.listOpname(opContract.id)); await loadBorongan(project) } catch { /* noop */ }
   }
 
+  // pengajuan pembayaran handlers
+  async function openPengajuan() {
+    setPengModal(true); setPayDate(''); setPengLoading(true)
+    try { setPending(await constructionService.getPendingOpname(project)) }
+    catch { setError('Gagal memuat pengajuan.'); setPending([]) }
+    finally { setPengLoading(false) }
+  }
+  function cetakPengajuan() {
+    printPengajuan({
+      project: projects.find((p) => p.id === project)?.name ?? '',
+      company: user?.tenant_name ?? undefined,
+      rows: pending.map((r) => ({ unit_label: r.unit_label, contractor_name: r.contractor_name, expense_date: r.expense_date, description: r.description, amount: Number(r.amount) })),
+    })
+  }
+  async function tandaiDibayar() {
+    if (pending.length === 0) return
+    if (!confirm(`Tandai ${pending.length} opname sebagai DIBAYAR${payDate ? ' per ' + fmtDate(payDate) : ''}? Tindakan ini mencatat realisasi pembayaran keuangan.`)) return
+    setSaving(true)
+    try {
+      await constructionService.markOpnamePaid(pending.map((r) => r.id), payDate || undefined)
+      setPengModal(false); await loadBorongan(project)
+    } catch { setError('Gagal menandai dibayar.') } finally { setSaving(false) }
+  }
+
+  const pengTotal = pending.reduce((s, r) => s + Number(r.amount || 0), 0)
+
   if (loading) return <div className="py-16 text-center text-slate-400"><Loader2 size={20} className="inline animate-spin" /></div>
 
   return (
@@ -251,16 +287,17 @@ export default function Construction() {
         </>
       ) : (
         <>
-          <div className="flex justify-end">
+          <div className="flex justify-end gap-2">
+            <button className="btn-secondary text-sm flex items-center gap-1" onClick={openPengajuan} disabled={!project}><FileText size={14} /> Pengajuan Pembayaran</button>
             <button className="btn-primary text-sm flex items-center gap-1" onClick={openCCreate} disabled={!project}><Plus size={14} /> Kontrak Borongan</button>
           </div>
           <div className="card overflow-hidden">
             <table className="w-full text-sm">
-              <thead className="bg-slate-50 border-b border-slate-200"><tr>{['Unit', 'Judul', 'Kontraktor', 'Pengawas', 'Nilai Borongan', 'Terbayar', 'Sisa', ''].map((h, i) => (
+              <thead className="bg-slate-50 border-b border-slate-200"><tr>{['Unit', 'Judul', 'Kontraktor', 'Pengawas', 'Nilai Borongan', 'Diajukan', 'Terbayar', 'Sisa', ''].map((h, i) => (
                 <th key={i} className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">{h}</th>))}</tr></thead>
               <tbody className="divide-y divide-slate-100">
                 {contracts.length === 0 ? (
-                  <tr><td colSpan={8} className="px-4 py-8 text-center text-slate-400 text-sm">Belum ada kontrak borongan.</td></tr>
+                  <tr><td colSpan={9} className="px-4 py-8 text-center text-slate-400 text-sm">Belum ada kontrak borongan.</td></tr>
                 ) : contracts.map((c) => (
                   <tr key={c.id} className="hover:bg-slate-50">
                     <td className="px-4 py-2.5 font-medium text-slate-900">{c.unit_label}</td>
@@ -268,8 +305,9 @@ export default function Construction() {
                     <td className="px-4 py-2.5 text-slate-600">{c.vendor_name ?? '—'}</td>
                     <td className="px-4 py-2.5 text-slate-500">{c.pengawas ?? '—'}</td>
                     <td className="px-4 py-2.5 text-slate-600">{fmt(c.total_value)}</td>
+                    <td className={`px-4 py-2.5 ${Number(c.submitted) > 0 ? 'text-amber-600 font-medium' : 'text-slate-400'}`}>{fmt(c.submitted)}</td>
                     <td className="px-4 py-2.5 text-emerald-600">{fmt(c.paid)}</td>
-                    <td className={`px-4 py-2.5 font-medium ${Number(c.remaining) > 0 ? 'text-amber-600' : 'text-slate-500'}`}>{fmt(c.remaining)}</td>
+                    <td className={`px-4 py-2.5 font-medium ${Number(c.remaining) > 0 ? 'text-slate-600' : 'text-slate-500'}`}>{fmt(c.remaining)}</td>
                     <td className="px-4 py-2.5"><div className="flex items-center justify-end gap-3">
                       <button onClick={() => openOpname(c)} className="text-slate-400 hover:text-brand-600" title="Opname mingguan"><Wallet size={15} /></button>
                       <button onClick={() => openCEdit(c)} className="text-slate-400 hover:text-brand-600" title="Edit"><Pencil size={15} /></button>
@@ -345,17 +383,19 @@ export default function Construction() {
       <Modal open={opModal} onClose={() => setOpModal(false)} title={`Opname — ${opContract?.unit_label ?? ''}`}>
         {opContract && (
           <div className="space-y-3">
-            <div className="grid grid-cols-3 gap-2 text-sm">
+            <div className="grid grid-cols-4 gap-2 text-sm">
               <div className="card p-2"><p className="text-xs text-slate-500">Nilai</p><p className="font-semibold">{fmt(opContract.total_value)}</p></div>
-              <div className="card p-2"><p className="text-xs text-slate-500">Terbayar</p><p className="font-semibold text-emerald-600">{fmt(opContract.paid)}</p></div>
-              <div className="card p-2"><p className="text-xs text-slate-500">Sisa</p><p className="font-semibold text-amber-600">{fmt(opContract.remaining)}</p></div>
+              <div className="card p-2"><p className="text-xs text-slate-500">Diajukan</p><p className="font-semibold text-amber-600">{fmt(opContract.submitted)}</p></div>
+              <div className="card p-2"><p className="text-xs text-slate-500">Dibayar</p><p className="font-semibold text-emerald-600">{fmt(opContract.paid)}</p></div>
+              <div className="card p-2"><p className="text-xs text-slate-500">Sisa</p><p className="font-semibold text-slate-600">{fmt(opContract.remaining)}</p></div>
             </div>
             <div className="space-y-1">
               {opList.length === 0 && <p className="text-xs text-slate-400">Belum ada opname.</p>}
               {opList.map((o) => (
                 <div key={o.id} className="flex items-center justify-between text-sm border-b border-slate-100 py-1.5">
-                  <span>{o.description}</span>
-                  <span className="flex items-center gap-2"><span className="text-xs text-slate-400">{fmtDate(o.expense_date)}</span><span className="text-emerald-600 font-medium">{fmt(o.amount)}</span>
+                  <span className="flex items-center gap-2">{o.description}
+                    {o.is_paid ? <Badge label="Dibayar" variant="green" /> : <Badge label="Diajukan" variant="yellow" />}</span>
+                  <span className="flex items-center gap-2"><span className="text-xs text-slate-400">{fmtDate(o.expense_date)}</span><span className="font-medium">{fmt(o.amount)}</span>
                     <button onClick={() => delOpname(o.id)} className="text-slate-400 hover:text-red-600"><Trash2 size={13} /></button></span>
                 </div>
               ))}
@@ -415,6 +455,46 @@ export default function Construction() {
             </form>
           </div>
         )}
+      </Modal>
+
+      {/* Modal Pengajuan Pembayaran (level proyek) */}
+      <Modal open={pengModal} onClose={() => setPengModal(false)} title="Pengajuan Pembayaran Borongan">
+        <div className="space-y-3">
+          <p className="text-xs text-slate-500">Semua opname berstatus <b>Diajukan</b> (belum dibayar) di proyek ini. Cetak untuk diserahkan ke keuangan; setelah dibayar, tandai lunas.</p>
+          {pengLoading ? (
+            <div className="py-8 text-center text-slate-400"><Loader2 size={18} className="inline animate-spin" /></div>
+          ) : pending.length === 0 ? (
+            <p className="py-6 text-center text-sm text-slate-400">Tidak ada opname yang menunggu dibayar.</p>
+          ) : (
+            <div className="max-h-72 overflow-y-auto border border-slate-100 rounded-lg divide-y divide-slate-100">
+              {pending.map((r) => (
+                <div key={r.id} className="flex items-center justify-between px-3 py-2 text-sm">
+                  <div>
+                    <span className="font-medium text-slate-800">{r.unit_label}</span>
+                    {r.contractor_name && <span className="text-slate-400"> · {r.contractor_name}</span>}
+                    <p className="text-xs text-slate-400">{fmtDate(r.expense_date)} — {r.description}</p>
+                  </div>
+                  <span className="font-medium text-amber-600 shrink-0">{fmt(r.amount)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          {pending.length > 0 && (
+            <div className="flex items-center justify-between border-t border-slate-100 pt-2 text-sm font-semibold">
+              <span>Total Pengajuan ({pending.length} opname)</span>
+              <span className="text-slate-900">{fmt(pengTotal)}</span>
+            </div>
+          )}
+          <div className="flex flex-wrap items-end justify-between gap-2 pt-2">
+            <button type="button" className="btn-secondary text-sm flex items-center gap-1" onClick={cetakPengajuan} disabled={pending.length === 0}><Printer size={14} /> Cetak</button>
+            {canPay && (
+              <div className="flex items-end gap-2">
+                <div><label className="label">Tgl Dibayar</label><input className="input h-[38px]" type="date" value={payDate} onChange={(e) => setPayDate(e.target.value)} /></div>
+                <button type="button" className="btn-primary text-sm h-[38px] flex items-center gap-2" onClick={tandaiDibayar} disabled={saving || pending.length === 0}>{saving && <Loader2 size={14} className="animate-spin" />}Tandai Dibayar</button>
+              </div>
+            )}
+          </div>
+        </div>
       </Modal>
     </div>
   )

@@ -1,7 +1,7 @@
 import api from './api'
 import type {
   ConstructionList, UnitConstructionRow, ConstructionUpsert,
-  ContractorContract, ContractCreate, Opname, OpnameCreate, ProgressLog,
+  ContractorContract, ContractCreate, Opname, OpnameCreate, ProgressLog, PendingOpname,
 } from '../types'
 
 export const constructionService = {
@@ -61,5 +61,13 @@ export const constructionService = {
   },
   async deleteOpname(id: string): Promise<void> {
     await api.delete(`/construction/opname/${id}`)
+  },
+  async getPendingOpname(projectId: string): Promise<PendingOpname[]> {
+    const { data } = await api.get<PendingOpname[]>('/construction/opname/pending', { params: { project_id: projectId } })
+    return data
+  },
+  async markOpnamePaid(ids: string[], paidDate?: string): Promise<{ marked: number; paid_date: string }> {
+    const { data } = await api.post('/construction/opname/mark-paid', { ids, paid_date: paidDate || undefined })
+    return data
   },
 }
