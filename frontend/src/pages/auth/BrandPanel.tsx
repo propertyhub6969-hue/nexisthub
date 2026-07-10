@@ -18,7 +18,7 @@ function Illustration() {
   const cardBg = '#1b2540'
   const deep = '#141b2d'
   return (
-    <svg viewBox="0 0 440 250" className="w-full h-auto" role="img" aria-label="Kompleks perumahan dengan crane konstruksi, dashboard, sertifikat unit, dan pembiayaan KPR">
+    <svg viewBox="0 0 440 250" preserveAspectRatio="xMidYMid meet" className="w-full h-full max-h-full" role="img" aria-label="Kompleks perumahan dengan crane konstruksi, dashboard, sertifikat unit, dan pembiayaan KPR">
       <path d="M34 236 H372" fill="none" stroke={muted} strokeWidth="1.2" strokeDasharray="6 7" opacity="0.8" />
 
       {/* Crane */}
@@ -100,26 +100,28 @@ function Illustration() {
 
 export default function BrandPanel() {
   return (
-    <div className="relative hidden lg:flex flex-col justify-between bg-sidebar text-white p-12 overflow-hidden">
+    <div className="relative hidden lg:flex flex-col h-screen overflow-hidden bg-sidebar text-white p-10">
       <div className="absolute inset-0 bp-grid opacity-70" />
       <div className="absolute -top-24 -right-24 w-96 h-96 rounded-full bg-brand-500/25 blur-3xl" />
 
-      <div className="relative">
+      <div className="relative shrink-0">
         <p className="font-display text-3xl font-extrabold tracking-tight">
           Nexist<span className="text-brass-500">Hub</span>
         </p>
       </div>
 
-      <div className="relative">
-        <div className="-mx-12 mb-8">
-          <Illustration />
-        </div>
-        <div className="h-px w-14 bg-brass-500 mb-6" />
+      {/* Ilustrasi mengisi ruang sisa (full-bleed lebar) & menyusut adaptif → tak pernah bikin scroll */}
+      <div className="relative flex-1 min-h-0 -mx-10 my-4 flex items-center justify-center">
+        <Illustration />
+      </div>
+
+      <div className="relative shrink-0">
+        <div className="h-px w-14 bg-brass-500 mb-5" />
         <h2 className="font-display text-3xl sm:text-4xl font-bold leading-[1.15] text-white">
           Ribuan unit,<br />satu dashboard.
         </h2>
 
-        <ul className="mt-5 space-y-2 max-w-sm">
+        <ul className="mt-4 space-y-1.5 max-w-sm">
           {FEATURES.map((f) => (
             <li key={f} className="flex items-start gap-2.5 text-sm text-slate-300 leading-snug">
               <Check size={15} className="text-brass-500 mt-0.5 shrink-0" />
@@ -128,12 +130,12 @@ export default function BrandPanel() {
           ))}
         </ul>
 
-        <p className="mt-6 font-display text-base font-semibold text-white">
+        <p className="mt-5 font-display text-base font-semibold text-white">
           Efisiensi developer rumah subsidi, <span className="text-brass-400">dimulai.</span>
         </p>
       </div>
 
-      <div className="relative flex items-center gap-2 text-xs text-slate-400">
+      <div className="relative shrink-0 mt-6 flex items-center gap-2 text-xs text-slate-400">
         <span className="w-1.5 h-1.5 rounded-full bg-brass-500" />
         The future of work, built for your business.
       </div>
