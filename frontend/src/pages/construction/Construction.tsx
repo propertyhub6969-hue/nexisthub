@@ -203,7 +203,8 @@ export default function Construction() {
     printPengajuan({
       project: projects.find((p) => p.id === project)?.name ?? '',
       company: user?.tenant_name ?? undefined,
-      rows: pending.map((r) => ({ unit_label: r.unit_label, contractor_name: r.contractor_name, expense_date: r.expense_date, description: r.description, amount: Number(r.amount) })),
+      // Uraian di surat pengajuan = judul kontrak borongan (fallback ke keterangan opname bila judul kosong)
+      rows: pending.map((r) => ({ unit_label: r.unit_label, contractor_name: r.contractor_name, expense_date: r.expense_date, description: r.title || r.description, amount: Number(r.amount) })),
     })
   }
   async function tandaiDibayar() {
