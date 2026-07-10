@@ -4,32 +4,8 @@ import { useForm } from 'react-hook-form'
 import { Loader2, CheckCircle2 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import type { RegisterPayload } from '../../types'
+import { INDONESIA_CITIES } from '../../data/indonesiaCities'
 import BrandPanel from './BrandPanel'
-
-const CITY_OPTIONS = [
-  // Kalimantan Barat
-  'Pontianak', 'Singkawang', 'Kubu Raya', 'Sambas', 'Mempawah', 'Ketapang', 'Sanggau',
-  // Kalimantan Tengah
-  'Palangka Raya', 'Sampit', 'Pangkalan Bun',
-  // Kalimantan Selatan
-  'Banjarmasin', 'Banjarbaru', 'Martapura', 'Pelaihari', 'Kotabaru',
-  // Kalimantan Timur
-  'Samarinda', 'Balikpapan', 'Bontang', 'Tenggarong', 'Sangatta', 'Tanjung Redeb', 'Penajam',
-  // Kalimantan Utara
-  'Tarakan', 'Nunukan', 'Tanjung Selor',
-  // Sulawesi Utara
-  'Manado', 'Bitung', 'Tomohon', 'Minahasa',
-  // Sulawesi Tengah
-  'Palu', 'Poso', 'Luwuk',
-  // Sulawesi Selatan
-  'Makassar', 'Parepare', 'Palopo', 'Gowa', 'Maros', 'Watampone',
-  // Sulawesi Tenggara
-  'Kendari', 'Bau-Bau', 'Kolaka',
-  // Sulawesi Barat
-  'Mamuju', 'Majene',
-  // Gorontalo
-  'Gorontalo',
-]
 
 export default function Register() {
   const { register: registerUser } = useAuth()
@@ -109,7 +85,7 @@ export default function Register() {
                   <label className="label">Kota</label>
                   <input className="input" type="text" list="city-options" placeholder="Cari kota..."
                     {...register('city', { required: 'Kota wajib diisi' })} />
-                  <datalist id="city-options">{CITY_OPTIONS.map((c) => <option key={c} value={c} />)}</datalist>
+                  <datalist id="city-options">{[...new Set(INDONESIA_CITIES)].map((c) => <option key={c} value={c} />)}</datalist>
                   {errors.city && <p className="text-xs text-red-500 mt-1">{errors.city.message}</p>}
                 </div>
                 <div className="grid grid-cols-2 gap-3">
