@@ -3,10 +3,11 @@ import { Check } from 'lucide-react'
 // Panel kiri halaman auth (login/register): ink navy + grid blueprint + ilustrasi + wordmark & tagline.
 // Signature identitas NexistHub — disembunyikan di layar kecil.
 const FEATURES = [
-  'Konstruksi, legalitas & KPR terpadu',
-  'Marketing — Pembeli, KPR & follow-up otomatis',
-  'Deteksi kebocoran biaya per unit',
+  'Marketing terintegrasi — Pembeli, KPR & follow-up otomatis',
+  'Procurement real-time. Finance & legalitas terpadu.',
   'Laporan & analitik penjualan real-time',
+  'Deteksi kebocoran biaya per unit',
+  'AI-powered insights untuk keputusan lebih cepat',
 ]
 
 // Ilustrasi vektor (murni SVG, tanpa file eksternal): crane konstruksi mengangkat unit yang dibangun →
