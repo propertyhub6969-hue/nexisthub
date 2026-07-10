@@ -111,7 +111,7 @@ export default function BrandPanel() {
       </div>
 
       <div className="relative">
-        <div className="max-w-sm mb-8">
+        <div className="max-w-lg mb-8">
           <Illustration />
         </div>
         <div className="h-px w-14 bg-brass-500 mb-6" />
