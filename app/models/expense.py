@@ -10,6 +10,7 @@ class ExpenseCategory(str, enum.Enum):
     MATERIAL = "material"        # material non-stok / beli langsung
     UPAH = "upah"               # upah tukang harian
     KONTRAKTOR = "kontraktor"   # borongan
+    KELISTRIKAN = "kelistrikan"  # instalasi & material listrik
     OPERASIONAL = "operasional"
     PERIZINAN = "perizinan"
     LAIN = "lain"
