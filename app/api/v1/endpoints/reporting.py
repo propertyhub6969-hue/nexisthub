@@ -15,6 +15,7 @@ from app.models.marketing import Lead, Prospect, Client, ProspectStatus, ClientS
 from app.models.property import Project, Unit, UnitStatus
 from app.models.payment import Payment, PaymentSchedule, ScheduleStatus, PaymentSource
 from app.models.kpr import KprApplication, KprStage
+from app.models.construction import UnitConstruction, ConstructionStage, ConstructionProgressLog
 
 router = APIRouter()
 
@@ -390,6 +391,123 @@ async def sales_recap(
         contract_value=sum((r.contract_value for r in rows), Decimal(0)),
         cash_in=sum((r.cash_in for r in rows), Decimal(0)),
         remaining=sum((r.remaining for r in rows), Decimal(0)),
+    )
+
+
+# ═══════════════════════ LAPORAN: PROGRES KONSTRUKSI ═══════════════════════
+CONSTRUCTION_REMINDER_DAYS = 7  # samakan dgn frontend Construction.tsx isLate()
+
+
+class ConstructionProject(BaseModel):
+    project_id: uuid.UUID
+    project_name: str
+    units_total: int
+    avg_percent: float
+    done: int            # selesai (stage=selesai atau percent>=100)
+    in_progress: int     # sudah mulai, belum selesai
+    not_started: int     # persiapan & 0%
+    overdue_target: int  # target_date lewat & belum selesai
+    late_update: int     # belum update progres > 7 hari (unit belum selesai)
+
+
+class ConstructionProgressReport(BaseModel):
+    projects: list[ConstructionProject]
+    units_total: int
+    done: int
+    overdue_target: int
+    late_update: int
+    avg_percent: float
+    stage_counts: dict[str, int]
+
+
+@router.get("/construction-progress", response_model=ConstructionProgressReport)
+async def construction_progress(
+    ctx: AuthContext = Depends(get_current_context),
+    db: AsyncSession = Depends(get_db),
+):
+    """Progres pembangunan per proyek: rata-rata %, tahap, selesai & keterlambatan.
+    Unit tanpa baris UnitConstruction dianggap tahap persiapan / 0% (konsisten dgn list_construction)."""
+    t = ctx.tenant_id
+    today = date.today()
+
+    projects = (await db.execute(
+        select(Project.id, Project.name).where(Project.tenant_id == t).order_by(Project.name)
+    )).all()
+    proj_name = {pid: name for pid, name in projects}
+
+    units = (await db.execute(
+        select(Unit.id, Unit.project_id).where(Unit.tenant_id == t)
+    )).all()
+
+    cons = (await db.execute(
+        select(UnitConstruction.unit_id, UnitConstruction.stage, UnitConstruction.percent,
+               UnitConstruction.start_date, UnitConstruction.target_date, UnitConstruction.finish_date)
+        .where(UnitConstruction.tenant_id == t)
+    )).all()
+    cmap = {r[0]: r for r in cons}
+
+    log_rows = (await db.execute(
+        select(ConstructionProgressLog.unit_id, func.max(ConstructionProgressLog.log_date))
+        .where(ConstructionProgressLog.tenant_id == t, ConstructionProgressLog.is_deleted == False)  # noqa: E712
+        .group_by(ConstructionProgressLog.unit_id)
+    )).all()
+    last_log = {uid: d for uid, d in log_rows}
+
+    # akumulator per proyek
+    agg: dict = {pid: {"units": 0, "pct_sum": 0, "done": 0, "in_progress": 0,
+                       "not_started": 0, "overdue_target": 0, "late_update": 0}
+                 for pid, _ in projects}
+    stage_counts = {s.value: 0 for s in ConstructionStage}
+
+    for uid, pid in units:
+        a = agg.get(pid)
+        if a is None:  # unit proyek yg tak ada di daftar (harusnya tak terjadi)
+            continue
+        c = cmap.get(uid)
+        stage = c[1] if c else ConstructionStage.PERSIAPAN
+        pct = c[2] if c else 0
+        target = c[4] if c else None
+        start = c[3] if c else None
+        is_done = stage == ConstructionStage.SELESAI or pct >= 100
+
+        a["units"] += 1
+        a["pct_sum"] += pct
+        stage_counts[stage.value] += 1
+        if is_done:
+            a["done"] += 1
+        elif stage == ConstructionStage.PERSIAPAN and pct == 0:
+            a["not_started"] += 1
+        else:
+            a["in_progress"] += 1
+
+        if not is_done and target is not None and target < today:
+            a["overdue_target"] += 1
+        if not is_done:
+            ref = last_log.get(uid) or start
+            if ref is not None and (today - ref).days > CONSTRUCTION_REMINDER_DAYS:
+                a["late_update"] += 1
+
+    rows: list[ConstructionProject] = []
+    for pid, _ in projects:
+        a = agg[pid]
+        n = a["units"]
+        rows.append(ConstructionProject(
+            project_id=pid, project_name=proj_name[pid],
+            units_total=n, avg_percent=round(a["pct_sum"] / n, 1) if n else 0.0,
+            done=a["done"], in_progress=a["in_progress"], not_started=a["not_started"],
+            overdue_target=a["overdue_target"], late_update=a["late_update"],
+        ))
+
+    total_units = sum(r.units_total for r in rows)
+    total_pct = sum(a["pct_sum"] for a in agg.values())
+    return ConstructionProgressReport(
+        projects=rows,
+        units_total=total_units,
+        done=sum(r.done for r in rows),
+        overdue_target=sum(r.overdue_target for r in rows),
+        late_update=sum(r.late_update for r in rows),
+        avg_percent=round(total_pct / total_units, 1) if total_units else 0.0,
+        stage_counts=stage_counts,
     )
 
 

@@ -712,6 +712,28 @@ export interface AgingReport {
   overdue_schedules: number
 }
 
+export interface ConstructionProject {
+  project_id: string
+  project_name: string
+  units_total: number
+  avg_percent: number
+  done: number
+  in_progress: number
+  not_started: number
+  overdue_target: number
+  late_update: number
+}
+
+export interface ConstructionProgressReport {
+  projects: ConstructionProject[]
+  units_total: number
+  done: number
+  overdue_target: number
+  late_update: number
+  avg_percent: number
+  stage_counts: Record<string, number>
+}
+
 // ── Pemberkasan (ringkasan lintas pembeli, read-only) ──────────────
 export interface FilingSummaryItem {
   client_id: string

@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react'
 import {
   Loader2, Landmark, TrendingDown, CheckCircle2, XCircle, FileStack,
-  Wallet, Users, Building2, PiggyBank, HandCoins, Home, AlertTriangle, Clock,
+  Wallet, Users, Building2, PiggyBank, HandCoins, Home, AlertTriangle, Clock, HardHat, CalendarClock,
 } from 'lucide-react'
 import { reportingService } from '../services/reporting'
-import type { KprRejectionReport, CashflowReport, SalesRecapReport, AgingReport } from '../types'
+import type { KprRejectionReport, CashflowReport, SalesRecapReport, AgingReport, ConstructionProgressReport } from '../types'
 
 const fmtRp = (n?: number | null) =>
   n == null ? '—' : new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(Number(n))
@@ -350,10 +350,124 @@ function AgingTab() {
   )
 }
 
+// ═══════════════════════ PROGRES KONSTRUKSI ═══════════════════════
+const STAGE_LABELS: { key: string; label: string }[] = [
+  { key: 'persiapan', label: 'Persiapan' },
+  { key: 'pondasi', label: 'Pondasi' },
+  { key: 'struktur', label: 'Struktur' },
+  { key: 'dinding', label: 'Dinding' },
+  { key: 'atap', label: 'Atap' },
+  { key: 'finishing', label: 'Finishing' },
+  { key: 'selesai', label: 'Selesai' },
+]
+
+function ConstructionProgressTab() {
+  const [rep, setRep] = useState<ConstructionProgressReport | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    reportingService.constructionProgress().then(setRep).catch(() => setError('Gagal memuat progres konstruksi.')).finally(() => setLoading(false))
+  }, [])
+
+  if (loading) return <div className="card p-12 text-center text-slate-400"><Loader2 size={20} className="inline animate-spin" /></div>
+  if (error) return <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-2">{error}</div>
+  if (!rep) return null
+  if (rep.units_total === 0) {
+    return (
+      <div className="card p-12 flex flex-col items-center justify-center text-center">
+        <HardHat size={40} className="text-slate-300 mb-4" />
+        <h3 className="text-base font-semibold text-slate-700 mb-1">Belum ada unit</h3>
+        <p className="text-sm text-slate-400">Progres akan muncul setelah ada proyek & unit.</p>
+      </div>
+    )
+  }
+
+  const maxStage = Math.max(...STAGE_LABELS.map((s) => rep.stage_counts[s.key] ?? 0), 1)
+
+  return (
+    <div className="space-y-5">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+        <StatCard icon={<Home size={15} />} label="Total Unit" value={String(rep.units_total)} />
+        <StatCard icon={<TrendingDown size={15} className="rotate-180" />} label="Rata-rata Progres" value={`${rep.avg_percent}%`} accent="text-brand-600" />
+        <StatCard icon={<CheckCircle2 size={15} />} label="Selesai" value={`${rep.done} / ${rep.units_total}`} accent="text-emerald-600" />
+        <StatCard icon={<CalendarClock size={15} />} label="Lewat Target" value={String(rep.overdue_target)} hint="target lewat, belum selesai" accent={rep.overdue_target ? 'text-red-600' : undefined} />
+        <StatCard icon={<AlertTriangle size={15} />} label="Terlambat Update" value={String(rep.late_update)} hint="belum update > 7 hari" accent={rep.late_update ? 'text-amber-600' : undefined} />
+      </div>
+
+      <div>
+        <h3 className="text-sm font-semibold text-slate-600 mb-2">Distribusi Tahap</h3>
+        <div className="card p-4 space-y-2">
+          {STAGE_LABELS.map((s) => {
+            const c = rep.stage_counts[s.key] ?? 0
+            return (
+              <div key={s.key} className="flex items-center gap-3 text-sm">
+                <span className="w-20 text-slate-500 shrink-0">{s.label}</span>
+                <div className="flex-1 h-2 rounded-full bg-slate-100 overflow-hidden">
+                  <div className={`h-full ${s.key === 'selesai' ? 'bg-emerald-500' : 'bg-brand-500'}`} style={{ width: `${(c / maxStage) * 100}%` }} />
+                </div>
+                <span className="w-8 text-right text-slate-700 font-medium shrink-0">{c}</span>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+
+      <div className="card overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="bg-slate-50 border-b border-slate-200">
+            <tr>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Proyek</th>
+              <th className="px-4 py-3 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">Unit</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider w-44">Rata-rata Progres</th>
+              <th className="px-4 py-3 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">Selesai</th>
+              <th className="px-4 py-3 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">Dalam Proses</th>
+              <th className="px-4 py-3 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">Belum Mulai</th>
+              <th className="px-4 py-3 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">Lewat Target</th>
+              <th className="px-4 py-3 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">Terlambat Update</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {rep.projects.map((p) => (
+              <tr key={p.project_id} className="hover:bg-slate-50 transition-colors">
+                <td className="px-4 py-3 font-medium text-slate-900">{p.project_name}</td>
+                <td className="px-4 py-3 text-center text-slate-600">{p.units_total}</td>
+                <td className="px-4 py-3">
+                  <div className="flex items-center gap-2">
+                    <div className="h-2 flex-1 rounded-full bg-slate-100 overflow-hidden"><div className="h-full bg-brand-500" style={{ width: `${p.avg_percent}%` }} /></div>
+                    <span className="text-xs text-slate-500 w-10 text-right">{p.avg_percent}%</span>
+                  </div>
+                </td>
+                <td className="px-4 py-3 text-center text-emerald-600 font-medium">{p.done || '—'}</td>
+                <td className="px-4 py-3 text-center text-slate-600">{p.in_progress || '—'}</td>
+                <td className="px-4 py-3 text-center text-slate-400">{p.not_started || '—'}</td>
+                <td className={`px-4 py-3 text-center font-medium ${p.overdue_target ? 'text-red-600' : 'text-slate-400'}`}>{p.overdue_target || '—'}</td>
+                <td className={`px-4 py-3 text-center font-medium ${p.late_update ? 'text-amber-600' : 'text-slate-400'}`}>{p.late_update || '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot className="bg-slate-50 border-t border-slate-200 font-semibold text-slate-900">
+            <tr>
+              <td className="px-4 py-3">Total</td>
+              <td className="px-4 py-3 text-center">{rep.units_total}</td>
+              <td className="px-4 py-3 text-slate-500 text-xs">{rep.avg_percent}% rata-rata</td>
+              <td className="px-4 py-3 text-center">{rep.done}</td>
+              <td className="px-4 py-3" colSpan={2}></td>
+              <td className="px-4 py-3 text-center">{rep.overdue_target}</td>
+              <td className="px-4 py-3 text-center">{rep.late_update}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+  )
+}
+
 // ═══════════════════════ PAGE ═══════════════════════
 const TABS = [
   { key: 'cashflow', label: 'Arus Kas', desc: 'Kas masuk dari pembeli vs bank, plus piutang & retensi.' },
   { key: 'sales', label: 'Rekap Penjualan', desc: 'Penjualan & kas masuk per proyek, status unit.' },
+  { key: 'construction', label: 'Progres Konstruksi', desc: 'Progres pembangunan per proyek: tahap, % rata-rata, selesai & keterlambatan.' },
   { key: 'aging', label: 'Tunggakan', desc: 'Termin lewat jatuh tempo, dikelompokkan umur & per pembeli.' },
   { key: 'kpr', label: 'Rejection-Rate KPR', desc: 'Persentase pengajuan KPR ditolak per bank penyalur.' },
 ] as const
@@ -385,6 +499,7 @@ export default function Reports() {
 
       {tab === 'cashflow' && <CashflowTab />}
       {tab === 'sales' && <SalesRecapTab />}
+      {tab === 'construction' && <ConstructionProgressTab />}
       {tab === 'aging' && <AgingTab />}
       {tab === 'kpr' && <KprRejectionTab />}
     </div>
