@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react'
+import { today } from '../../utils/date'
 import { useParams, Link } from 'react-router-dom'
 import { Plus, Trash2, Pencil, Loader2, ArrowLeft, Map, FileSignature, Printer, Boxes, X } from 'lucide-react'
 import Badge from '../../components/ui/Badge'
@@ -379,7 +380,7 @@ export default function ProjectUnits() {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="label">Tanggal BAST</label>
-              <input className="input" type="date" value={bastDate} onChange={(e) => setBastDate(e.target.value)} />
+              <input className="input" type="date" max={today()} value={bastDate} onChange={(e) => setBastDate(e.target.value)} />
             </div>
             <div>
               <label className="label">No. BAST</label>

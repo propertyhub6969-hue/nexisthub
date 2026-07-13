@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react'
+import { today } from '../../utils/date'
 import { useParams, Link } from 'react-router-dom'
 import { ArrowLeft, Plus, Trash2, Pencil, Loader2, CalendarClock, Wallet, History, Eye, Printer, Landmark } from 'lucide-react'
 import { printReceipt } from '../../utils/receipt'
@@ -411,7 +412,7 @@ export default function ClientPayments() {
             </div>
             <div>
               <label className="label">Tanggal Bayar</label>
-              <input className="input" type="date" value={payForm.payment_date} onChange={(e) => setPayForm({ ...payForm, payment_date: e.target.value })} />
+              <input className="input" type="date" max={today()} value={payForm.payment_date} onChange={(e) => setPayForm({ ...payForm, payment_date: e.target.value })} />
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">

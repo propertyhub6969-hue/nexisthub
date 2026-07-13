@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
+import { today } from '../../utils/date'
 import { Link } from 'react-router-dom'
 import { Plus, Search, Trash2, Pencil, Loader2, Wallet, Scale, Landmark, Columns3, MoreVertical } from 'lucide-react'
 import Badge from '../../components/ui/Badge'
@@ -390,7 +391,7 @@ export default function Clients() {
             </div>
             <div>
               <label className="label">Tanggal *</label>
-              <input className="input" type="date" required value={form.contract_date} onChange={(e) => setForm({ ...form, contract_date: e.target.value })} />
+              <input className="input" type="date" max={today()} required value={form.contract_date} onChange={(e) => setForm({ ...form, contract_date: e.target.value })} />
             </div>
             <div>
               <label className="label">Cara Beli</label>

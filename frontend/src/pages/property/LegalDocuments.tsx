@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
+import { today } from '../../utils/date'
 import { FileCheck, Plus, Trash2, Pencil, Loader2, Upload, Eye, ListChecks, Paperclip, X } from 'lucide-react'
 import Badge from '../../components/ui/Badge'
 import Modal from '../../components/ui/Modal'
@@ -283,7 +284,7 @@ export default function LegalDocuments() {
             </div>
             <div>
               <label className="label">Tanggal</label>
-              <input className="input" type="date" value={form.doc_date} onChange={(e) => setForm({ ...form, doc_date: e.target.value })} />
+              <input className="input" type="date" max={today()} value={form.doc_date} onChange={(e) => setForm({ ...form, doc_date: e.target.value })} />
             </div>
           </div>
           <div>
@@ -324,7 +325,7 @@ export default function LegalDocuments() {
                     {(Object.keys(docStatusCfg) as DocStatus[]).map((k) => <option key={k} value={k}>{docStatusCfg[k].label}</option>)}
                   </select>
                   <input className="input" placeholder="Nomor" value={r.name} onChange={(e) => setRow(i, { name: e.target.value })} />
-                  <input className="input" type="date" value={r.doc_date} onChange={(e) => setRow(i, { doc_date: e.target.value })} />
+                  <input className="input" type="date" max={today()} value={r.doc_date} onChange={(e) => setRow(i, { doc_date: e.target.value })} />
                   {isSertifikat(r.doc_type) ? (
                     <input className="input" type="number" min={0} step="0.01" placeholder="LT (m²)"
                       value={r.land_area ?? ''} onChange={(e) => setRow(i, { land_area: e.target.value ? Number(e.target.value) : undefined })} />

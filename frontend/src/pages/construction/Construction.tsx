@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react'
+import { today } from '../../utils/date'
 import { Loader2, Pencil, HardHat, CheckCircle2, Plus, Trash2, Wallet, Camera, Image as ImageIcon, AlertTriangle, Printer, FileText } from 'lucide-react'
 import Badge from '../../components/ui/Badge'
 import Modal from '../../components/ui/Modal'
@@ -333,9 +334,9 @@ export default function Construction() {
             <div><label className="label">Progres (%)</label><input className="input" type="number" min={0} max={100} value={pForm.percent ?? 0} onChange={(e) => setPForm({ ...pForm, percent: Number(e.target.value) })} /></div>
           </div>
           <div className="grid grid-cols-3 gap-3">
-            <div><label className="label">Mulai</label><input className="input" type="date" value={pForm.start_date} onChange={(e) => setPForm({ ...pForm, start_date: e.target.value })} /></div>
+            <div><label className="label">Mulai</label><input className="input" type="date" max={today()} value={pForm.start_date} onChange={(e) => setPForm({ ...pForm, start_date: e.target.value })} /></div>
             <div><label className="label">Target</label><input className="input" type="date" value={pForm.target_date} onChange={(e) => setPForm({ ...pForm, target_date: e.target.value })} /></div>
-            <div><label className="label">Selesai</label><input className="input" type="date" value={pForm.finish_date} onChange={(e) => setPForm({ ...pForm, finish_date: e.target.value })} /></div>
+            <div><label className="label">Selesai</label><input className="input" type="date" max={today()} value={pForm.finish_date} onChange={(e) => setPForm({ ...pForm, finish_date: e.target.value })} /></div>
           </div>
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" className="btn-secondary text-sm" onClick={() => setPModalOpen(false)}>Batal</button>
@@ -404,7 +405,7 @@ export default function Construction() {
             <form onSubmit={addOpname} className="border-t border-slate-100 pt-3 space-y-2">
               <div className="grid grid-cols-2 gap-2">
                 <div><label className="label">Nominal (Rp) *</label><MoneyInput required value={opAmount} onChange={(v) => setOpAmount(v)} /></div>
-                <div><label className="label">Tanggal</label><input className="input" type="date" value={opDate} onChange={(e) => setOpDate(e.target.value)} /></div>
+                <div><label className="label">Tanggal</label><input className="input" type="date" max={today()} value={opDate} onChange={(e) => setOpDate(e.target.value)} /></div>
               </div>
               <div className="flex items-end gap-2">
                 <div className="flex-1"><label className="label">Keterangan</label><input className="input" placeholder="Opname minggu ke-..." value={opDesc} onChange={(e) => setOpDesc(e.target.value)} /></div>
@@ -439,7 +440,7 @@ export default function Construction() {
             </div>
             <form onSubmit={submitLog} className="border-t border-slate-100 pt-3 space-y-2">
               <div className="grid grid-cols-2 gap-2">
-                <div><label className="label">Tanggal</label><input className="input" type="date" value={logDate} onChange={(e) => setLogDate(e.target.value)} /></div>
+                <div><label className="label">Tanggal</label><input className="input" type="date" max={today()} value={logDate} onChange={(e) => setLogDate(e.target.value)} /></div>
                 <div><label className="label">Tahap</label>
                   <select className="input" value={logStage} onChange={(e) => setLogStage(e.target.value as ConstructionStage | '')}>
                     <option value="">Tak diubah</option>
@@ -490,7 +491,7 @@ export default function Construction() {
             <button type="button" className="btn-secondary text-sm flex items-center gap-1" onClick={cetakPengajuan} disabled={pending.length === 0}><Printer size={14} /> Cetak</button>
             {canPay && (
               <div className="flex items-end gap-2">
-                <div><label className="label">Tgl Dibayar</label><input className="input h-[38px]" type="date" value={payDate} onChange={(e) => setPayDate(e.target.value)} /></div>
+                <div><label className="label">Tgl Dibayar</label><input className="input h-[38px]" type="date" max={today()} value={payDate} onChange={(e) => setPayDate(e.target.value)} /></div>
                 <button type="button" className="btn-primary text-sm h-[38px] flex items-center gap-2" onClick={tandaiDibayar} disabled={saving || pending.length === 0}>{saving && <Loader2 size={14} className="animate-spin" />}Tandai Dibayar</button>
               </div>
             )}

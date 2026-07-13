@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
+import { today } from '../../utils/date'
 import { useParams, Link } from 'react-router-dom'
 import { ArrowLeft, Plus, Trash2, Pencil, Loader2, Receipt, Scale, FileText, Upload, Eye, Contact, FileSignature, ListChecks, Paperclip, X } from 'lucide-react'
 import Badge from '../../components/ui/Badge'
@@ -581,7 +582,7 @@ export default function ClientTax() {
             </div>
             <div>
               <label className="label">Tanggal</label>
-              <input className="input" type="date" value={docForm.doc_date} onChange={(e) => setDocForm({ ...docForm, doc_date: e.target.value })} />
+              <input className="input" type="date" max={today()} value={docForm.doc_date} onChange={(e) => setDocForm({ ...docForm, doc_date: e.target.value })} />
             </div>
           </div>
           <p className="text-xs text-slate-400">File bisa diupload dari tombol Upload di tabel setelah dokumen dibuat (maks 10 MB).</p>
@@ -679,7 +680,7 @@ export default function ClientTax() {
             </div>
             <div>
               <label className="label">Tanggal</label>
-              <input className="input" type="date" value={taxForm.tax_date} onChange={(e) => setTaxForm({ ...taxForm, tax_date: e.target.value })} />
+              <input className="input" type="date" max={today()} value={taxForm.tax_date} onChange={(e) => setTaxForm({ ...taxForm, tax_date: e.target.value })} />
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
@@ -720,7 +721,7 @@ export default function ClientTax() {
             </div>
             <div>
               <label className="label">Tanggal</label>
-              <input className="input" type="date" value={feeForm.fee_date} onChange={(e) => setFeeForm({ ...feeForm, fee_date: e.target.value })} />
+              <input className="input" type="date" max={today()} value={feeForm.fee_date} onChange={(e) => setFeeForm({ ...feeForm, fee_date: e.target.value })} />
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
