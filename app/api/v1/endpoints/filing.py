@@ -73,6 +73,8 @@ async def filing_summary(
     )).all()
     kpr_stage: dict = {}
     kpr_bank_id: dict = {}
+    kpr_akad_date: dict = {}  # akad_date pengajuan TERBARU (yang berhasil), utk ujung durasi
+    kpr_start: dict = {}      # submitted_date PALING AWAL — mulai berkas dikumpulkan (lintas pengajuan/penolakan)
     kpr_days: dict = {}
     kpr_akad: dict = {}
     today = date.today()
@@ -80,11 +82,17 @@ async def filing_summary(
         if client_id not in kpr_stage:  # baris pertama per klien = paling baru
             kpr_stage[client_id] = stage
             kpr_bank_id[client_id] = bank_id
-            if submitted_date is not None:
-                end = akad_date if akad_date is not None else today
-                d = (end - submitted_date).days
-                kpr_days[client_id] = d if d >= 0 else None
-                kpr_akad[client_id] = akad_date is not None
+            kpr_akad_date[client_id] = akad_date
+            kpr_akad[client_id] = akad_date is not None
+        # durasi pemberkasan dihitung dari pengajuan PERTAMA (proses berlanjut walau ditolak & ajukan ulang)
+        if submitted_date is not None:
+            cur = kpr_start.get(client_id)
+            if cur is None or submitted_date < cur:
+                kpr_start[client_id] = submitted_date
+    for client_id, start in kpr_start.items():
+        end = kpr_akad_date.get(client_id) or today  # akad pengajuan terbaru, atau hari ini bila belum akad
+        d = (end - start).days
+        kpr_days[client_id] = d if d >= 0 else None
     # nama bank
     bank_ids = {b for b in kpr_bank_id.values() if b}
     bank_names = {
