@@ -8,13 +8,29 @@ from app.models.stock import MovementType, MovementSource
 
 
 class StockInCreate(BaseModel):
-    project_id: uuid.UUID
+    """Barang masuk ke sebuah LOKASI — isi project_id ATAU warehouse_id (tepat satu)."""
+    project_id: Optional[uuid.UUID] = None
+    warehouse_id: Optional[uuid.UUID] = None
     material_name: str = Field(..., min_length=1, max_length=200)
     unit: Optional[str] = Field(None, max_length=50)
     quantity: Decimal = Field(..., gt=0)
     unit_price: Decimal = Field(0, ge=0)
     movement_date: Optional[date] = None
     po_id: Optional[uuid.UUID] = None
+    notes: Optional[str] = None
+
+
+class StockTransferCreate(BaseModel):
+    """Pindah material antar-LOKASI (gudang↔proyek, proyek↔proyek). BUKAN biaya — cuma pindah tempat.
+    Isi tepat satu lokasi asal (from_*) dan tepat satu lokasi tujuan (to_*)."""
+    from_project_id: Optional[uuid.UUID] = None
+    from_warehouse_id: Optional[uuid.UUID] = None
+    to_project_id: Optional[uuid.UUID] = None
+    to_warehouse_id: Optional[uuid.UUID] = None
+    material_name: str = Field(..., min_length=1, max_length=200)
+    unit: Optional[str] = Field(None, max_length=50)
+    quantity: Decimal = Field(..., gt=0)
+    movement_date: Optional[date] = None
     notes: Optional[str] = None
 
 
@@ -29,8 +45,10 @@ class StockOutCreate(BaseModel):
 
 
 class StockReturnVendorCreate(BaseModel):
-    """Retur ke vendor — barang baru diterima (PO/langsung) ternyata rusak/salah, dikembalikan sebelum dipakai."""
-    project_id: uuid.UUID
+    """Retur ke vendor — barang baru diterima (PO/langsung) ternyata rusak/salah, dikembalikan sebelum dipakai.
+    Bisa dari LOKASI mana pun: isi project_id ATAU warehouse_id (tepat satu)."""
+    project_id: Optional[uuid.UUID] = None
+    warehouse_id: Optional[uuid.UUID] = None
     material_name: str = Field(..., min_length=1, max_length=200)
     unit: Optional[str] = Field(None, max_length=50)
     quantity: Decimal = Field(..., gt=0)
@@ -55,7 +73,10 @@ class StockReturnUnitCreate(BaseModel):
 
 class MovementResponse(BaseModel):
     id: uuid.UUID
-    project_id: uuid.UUID
+    project_id: Optional[uuid.UUID] = None
+    warehouse_id: Optional[uuid.UUID] = None
+    transfer_id: Optional[uuid.UUID] = None
+    counterpart_label: Optional[str] = None  # lokasi lawan transfer (nama gudang/proyek) — transien
     material_name: str
     unit: Optional[str] = None
     movement_type: MovementType

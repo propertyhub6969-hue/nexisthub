@@ -152,9 +152,10 @@ async def _realisasi_map(db, tenant_id, project_id):
     movs = (await db.execute(select(StockMovement).where(
         StockMovement.tenant_id == tenant_id, StockMovement.project_id == project_id,
         StockMovement.is_deleted == False))).scalars().all()  # noqa: E712
+    # BUKAN biaya: retur ke vendor (koreksi stok) & transfer keluar (cuma pindah lokasi, belum dipakai)
+    NOT_A_COST = (MovementSource.RETURN_VENDOR, MovementSource.TRANSFER_OUT)
     for m in movs:
-        if m.movement_type == MovementType.OUT and m.source != MovementSource.RETURN_VENDOR:
-            # retur ke vendor BUKAN pemakaian proyek — dikecualikan dari biaya
+        if m.movement_type == MovementType.OUT and m.source not in NOT_A_COST:
             res[m.unit_id]["material"] += Decimal(m.quantity) * Decimal(m.unit_price)
         elif m.movement_type == MovementType.IN and m.source == MovementSource.RETURN_UNIT:
             # retur dari unit balik ke gudang -> kurangkan biaya material unit asal retur

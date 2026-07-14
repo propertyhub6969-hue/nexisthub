@@ -14,10 +14,12 @@ from app.core.audit import record_audit
 from app.api.deps import get_current_context, AuthContext
 from app.models.stock import StockMovement, MovementType, MovementSource
 from app.models.procurement import PurchaseOrder, POStatus
+from app.models.property import Project
+from app.models.warehouse import Warehouse
 from app.models.user import User
 from app.schemas.stock import (
     StockInCreate, StockOutCreate, StockReturnVendorCreate, StockReturnUnitCreate,
-    MovementResponse, StockBalance,
+    StockTransferCreate, MovementResponse, StockBalance,
 )
 from app.schemas.procurement import ReceivePO
 
@@ -25,11 +27,19 @@ router = APIRouter()
 NOTDEL = StockMovement.is_deleted == False  # noqa: E712
 
 
-async def _movements(db, tenant_id, project_id):
+def _one_location(project_id, warehouse_id, what: str = "Lokasi"):
+    """Validasi: tepat SATU lokasi terisi (proyek ATAU gudang)."""
+    if bool(project_id) == bool(warehouse_id):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                            detail=f"{what} harus diisi tepat satu: proyek ATAU gudang")
+
+
+async def _movements(db, tenant_id, project_id=None, warehouse_id=None):
+    """Mutasi pada satu LOKASI (proyek atau gudang)."""
+    loc = (StockMovement.project_id == project_id) if project_id else (StockMovement.warehouse_id == warehouse_id)
     r = await db.execute(
-        select(StockMovement).where(
-            StockMovement.tenant_id == tenant_id, StockMovement.project_id == project_id, NOTDEL
-        ).order_by(StockMovement.movement_date.desc(), StockMovement.created_at.desc())
+        select(StockMovement).where(StockMovement.tenant_id == tenant_id, loc, NOTDEL)
+        .order_by(StockMovement.movement_date.desc(), StockMovement.created_at.desc())
     )
     return r.scalars().all()
 
@@ -52,9 +62,13 @@ def _balance_qty(movements, name, unit):
 
 
 @router.get("/stock", response_model=list[StockBalance])
-async def stock_balance(project_id: uuid.UUID = Query(...), ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db)):
-    """Saldo stok per material (agregat masuk/keluar/sisa + HPP rata2)."""
-    movs = await _movements(db, ctx.tenant_id, project_id)
+async def stock_balance(
+    project_id: Optional[uuid.UUID] = Query(None), warehouse_id: Optional[uuid.UUID] = Query(None),
+    ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db),
+):
+    """Saldo stok per material di satu LOKASI (proyek ATAU gudang): masuk/keluar/sisa + HPP rata2."""
+    _one_location(project_id, warehouse_id)
+    movs = await _movements(db, ctx.tenant_id, project_id, warehouse_id)
     agg = defaultdict(lambda: {"in": Decimal(0), "out": Decimal(0), "in_val": Decimal(0)})
     for m in movs:
         key = (m.material_name, m.unit or "")
@@ -74,12 +88,39 @@ async def stock_balance(project_id: uuid.UUID = Query(...), ctx: AuthContext = D
     return out
 
 
+async def _label_counterparts(db, tenant_id, movs):
+    """Isi counterpart_label: untuk baris transfer, tampilkan nama lokasi LAWAN-nya."""
+    tids = {m.transfer_id for m in movs if m.transfer_id}
+    if not tids:
+        return
+    others = (await db.execute(
+        select(StockMovement).where(
+            StockMovement.tenant_id == tenant_id, StockMovement.transfer_id.in_(tids), NOTDEL)
+    )).scalars().all()
+    pids = {o.project_id for o in others if o.project_id}
+    wids = {o.warehouse_id for o in others if o.warehouse_id}
+    pnames = {r[0]: r[1] for r in (await db.execute(select(Project.id, Project.name).where(Project.id.in_(pids)))).all()} if pids else {}
+    wnames = {r[0]: r[1] for r in (await db.execute(select(Warehouse.id, Warehouse.name).where(Warehouse.id.in_(wids)))).all()} if wids else {}
+    by_tid: dict = {}
+    for o in others:
+        by_tid.setdefault(o.transfer_id, []).append(o)
+    for m in movs:
+        if not m.transfer_id:
+            continue
+        for o in by_tid.get(m.transfer_id, []):
+            if o.id == m.id:
+                continue  # lewati diri sendiri → sisanya = lokasi lawan
+            m.counterpart_label = pnames.get(o.project_id) or wnames.get(o.warehouse_id)
+
+
 @router.get("/stock/movements", response_model=list[MovementResponse])
 async def list_movements(
-    project_id: uuid.UUID = Query(...), material: Optional[str] = Query(None),
+    project_id: Optional[uuid.UUID] = Query(None), warehouse_id: Optional[uuid.UUID] = Query(None),
+    material: Optional[str] = Query(None),
     ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db),
 ):
-    movs = await _movements(db, ctx.tenant_id, project_id)
+    _one_location(project_id, warehouse_id)
+    movs = await _movements(db, ctx.tenant_id, project_id, warehouse_id)
     if material:
         movs = [m for m in movs if m.material_name == material]
     # resolve nama PIC penerima (transien)
@@ -90,11 +131,14 @@ async def list_movements(
         names = {r[0]: r[1] for r in rows}
     for m in movs:
         m.received_by_name = names.get(m.received_by_id)
+    await _label_counterparts(db, ctx.tenant_id, movs)
     return movs
 
 
 @router.post("/stock/in", response_model=MovementResponse, status_code=status.HTTP_201_CREATED)
 async def stock_in(payload: StockInCreate, ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db)):
+    """Barang masuk ke satu LOKASI (proyek atau gudang)."""
+    _one_location(payload.project_id, payload.warehouse_id)
     m = StockMovement(
         tenant_id=ctx.tenant_id, movement_type=MovementType.IN,
         source=MovementSource.PO if payload.po_id else MovementSource.DIRECT,
@@ -102,6 +146,39 @@ async def stock_in(payload: StockInCreate, ctx: AuthContext = Depends(get_curren
     )
     db.add(m); await db.flush(); await db.refresh(m)
     return m
+
+
+@router.post("/stock/transfer", response_model=list[MovementResponse], status_code=status.HTTP_201_CREATED)
+async def stock_transfer(payload: StockTransferCreate, ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db)):
+    """Pindah material antar-LOKASI (gudang↔proyek, proyek↔proyek).
+    BUKAN biaya — cuma pindah tempat. Membuat 2 baris (OUT di asal, IN di tujuan) terikat transfer_id sama.
+    HPP rata2 lokasi asal ikut terbawa → biaya unit tetap akurat saat nanti didistribusikan."""
+    _one_location(payload.from_project_id, payload.from_warehouse_id, "Lokasi asal")
+    _one_location(payload.to_project_id, payload.to_warehouse_id, "Lokasi tujuan")
+    if (payload.from_project_id and payload.from_project_id == payload.to_project_id) or \
+       (payload.from_warehouse_id and payload.from_warehouse_id == payload.to_warehouse_id):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Lokasi asal dan tujuan tidak boleh sama")
+
+    movs = await _movements(db, ctx.tenant_id, payload.from_project_id, payload.from_warehouse_id)
+    bal = _balance_qty(movs, payload.material_name, payload.unit or "")
+    if Decimal(payload.quantity) > bal:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=f"Stok tidak cukup di lokasi asal (sisa {bal} {payload.unit or ''})")
+    price = _avg_price(movs, payload.material_name, payload.unit or "")
+
+    tid = uuid.uuid4()
+    common = dict(
+        tenant_id=ctx.tenant_id, transfer_id=tid, material_name=payload.material_name, unit=payload.unit,
+        quantity=payload.quantity, unit_price=price, movement_date=payload.movement_date, notes=payload.notes,
+    )
+    out = StockMovement(movement_type=MovementType.OUT, source=MovementSource.TRANSFER_OUT,
+                        project_id=payload.from_project_id, warehouse_id=payload.from_warehouse_id, **common)
+    inn = StockMovement(movement_type=MovementType.IN, source=MovementSource.TRANSFER_IN,
+                        project_id=payload.to_project_id, warehouse_id=payload.to_warehouse_id, **common)
+    db.add_all([out, inn]); await db.flush()
+    await db.refresh(out); await db.refresh(inn)
+    await record_audit(db, ctx.tenant_id, ctx.user_id, "TRANSFER", "stock_movements", tid,
+                       new_data={"material": payload.material_name, "qty": str(payload.quantity)})
+    return [out, inn]
 
 
 async def _recompute_po_status(db, tenant_id, po_id):
@@ -141,15 +218,17 @@ async def _recompute_po_status(db, tenant_id, po_id):
 
 @router.post("/stock/receive-po/{po_id}", response_model=list[MovementResponse])
 async def receive_po(po_id: uuid.UUID, payload: ReceivePO, ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db)):
-    """Terima item PO ke stok proyek (boleh sebagian). Tiap penerimaan = satu DO/surat jalan."""
+    """Terima item PO ke stok (boleh sebagian). Tujuan = GUDANG bila po.warehouse_id diisi, else PROYEK.
+    Tiap penerimaan = satu DO/surat jalan."""
     po = (await db.execute(
         select(PurchaseOrder).options(selectinload(PurchaseOrder.items))
         .where(PurchaseOrder.id == po_id, PurchaseOrder.tenant_id == ctx.tenant_id, PurchaseOrder.is_deleted == False)  # noqa: E712
     )).scalar_one_or_none()
     if po is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="PO tidak ditemukan")
-    if po.project_id is None:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="PO belum punya proyek untuk lokasi stok")
+    if po.warehouse_id is None and po.project_id is None:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="PO belum punya tujuan (gudang atau proyek) untuk lokasi stok")
+    dest = dict(warehouse_id=po.warehouse_id) if po.warehouse_id else dict(project_id=po.project_id)
     items_by_id = {it.id: it for it in po.items}
     created = []
     for r in payload.items:
@@ -160,7 +239,7 @@ async def receive_po(po_id: uuid.UUID, payload: ReceivePO, ctx: AuthContext = De
         if it is None:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Item PO tidak ditemukan")
         m = StockMovement(
-            tenant_id=ctx.tenant_id, project_id=po.project_id, material_name=it.item_name, unit=it.unit,
+            tenant_id=ctx.tenant_id, material_name=it.item_name, unit=it.unit, **dest,
             movement_type=MovementType.IN, source=MovementSource.PO, quantity=qty,
             unit_price=it.unit_price, po_id=po.id, po_item_id=it.id, do_number=payload.do_number,
             received_by_id=ctx.user_id, movement_date=payload.receive_date or date.today(),
@@ -194,8 +273,10 @@ async def stock_out(payload: StockOutCreate, ctx: AuthContext = Depends(get_curr
 
 @router.post("/stock/return-vendor", response_model=MovementResponse, status_code=status.HTTP_201_CREATED)
 async def return_to_vendor(payload: StockReturnVendorCreate, ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db)):
-    """Retur ke vendor — barang baru diterima rusak/salah, dikembalikan sebelum dipakai. Bukan pemakaian proyek."""
-    movs = await _movements(db, ctx.tenant_id, payload.project_id)
+    """Retur ke vendor — barang baru diterima rusak/salah, dikembalikan sebelum dipakai. Bukan pemakaian proyek.
+    Bisa dari lokasi mana pun (proyek atau gudang)."""
+    _one_location(payload.project_id, payload.warehouse_id)
+    movs = await _movements(db, ctx.tenant_id, payload.project_id, payload.warehouse_id)
     bal = _balance_qty(movs, payload.material_name, payload.unit or "")
     if Decimal(payload.quantity) > bal:
         raise HTTPException(status.HTTP_409_CONFLICT, detail=f"Stok tidak cukup (sisa {bal} {payload.unit or ''})")
@@ -234,7 +315,16 @@ async def delete_movement(mid: uuid.UUID, ctx: AuthContext = Depends(get_current
     m = (await db.execute(select(StockMovement).where(StockMovement.id == mid, StockMovement.tenant_id == ctx.tenant_id, NOTDEL))).scalar_one_or_none()
     if m is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Mutasi tidak ditemukan")
-    m.is_deleted = True; m.deleted_at = datetime.utcnow()
+    now = datetime.utcnow()
+    if m.transfer_id:
+        # Transfer = sepasang OUT/IN → hapus KEDUA sisi, kalau tidak saldo lokasi jadi pincang.
+        pair = (await db.execute(select(StockMovement).where(
+            StockMovement.tenant_id == ctx.tenant_id, StockMovement.transfer_id == m.transfer_id, NOTDEL
+        ))).scalars().all()
+        for x in pair:
+            x.is_deleted = True; x.deleted_at = now
+        return
+    m.is_deleted = True; m.deleted_at = now
     if m.po_id:  # penerimaan PO dibatalkan → status PO dihitung ulang
         await db.flush()
         await _recompute_po_status(db, ctx.tenant_id, m.po_id)

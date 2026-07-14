@@ -883,6 +883,7 @@ export interface PurchaseOrder {
   vendor_id?: string
   vendor_name?: string
   project_id?: string
+  warehouse_id?: string
   unit_id?: string
   po_number?: string
   order_date?: string
@@ -899,6 +900,7 @@ export interface PurchaseOrder {
 export interface POCreate {
   vendor_id?: string
   project_id?: string
+  warehouse_id?: string
   unit_id?: string
   po_number?: string
   order_date?: string
@@ -926,6 +928,20 @@ export interface VendorPaymentCreate {
   notes?: string
 }
 
+// ── Gudang (lokasi stok selain proyek) ────────────────────────────
+export interface Warehouse {
+  id: string
+  name: string
+  address?: string
+  notes?: string
+  created_at: string
+}
+export interface WarehouseCreate {
+  name: string
+  address?: string
+  notes?: string
+}
+
 // ── Stok Material ─────────────────────────────────────────────────
 export type MovementType = 'in' | 'out'
 
@@ -938,9 +954,23 @@ export interface StockBalance {
   avg_price: number
   value: number
 }
+export interface StockTransferCreate {
+  from_project_id?: string
+  from_warehouse_id?: string
+  to_project_id?: string
+  to_warehouse_id?: string
+  material_name: string
+  unit?: string
+  quantity: number
+  movement_date?: string
+  notes?: string
+}
 export interface StockMovement {
   id: string
-  project_id: string
+  project_id?: string
+  warehouse_id?: string
+  transfer_id?: string
+  counterpart_label?: string
   material_name: string
   unit?: string
   movement_type: MovementType
@@ -958,7 +988,8 @@ export interface StockMovement {
   created_at: string
 }
 export interface StockInCreate {
-  project_id: string
+  project_id?: string
+  warehouse_id?: string
   material_name: string
   unit?: string
   quantity: number
@@ -977,7 +1008,8 @@ export interface StockOutCreate {
   notes?: string
 }
 export interface StockReturnVendorCreate {
-  project_id: string
+  project_id?: string
+  warehouse_id?: string
   material_name: string
   unit?: string
   quantity: number

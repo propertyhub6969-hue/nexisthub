@@ -2,9 +2,13 @@ import api from './api'
 import type {
   Vendor, VendorCreate, PurchaseOrder, POCreate, VendorPayment, VendorPaymentCreate, PaginatedResponse,
   StockBalance, StockMovement, StockInCreate, StockOutCreate, StockReturnVendorCreate, StockReturnUnitCreate, ReceivePOPayload,
+  Warehouse, WarehouseCreate, StockTransferCreate,
   Expense, ExpenseCreate, CostSummary, Material, MaterialCreate,
   RabTemplate, RabTemplateCreate, UnitRab, RabAdjustment, LeakageRow, LeakageDetail, ExpenseCategory,
 } from '../types'
+
+// Lokasi stok: tepat satu yang diisi — proyek ATAU gudang.
+export type StockLocation = { project_id: string; warehouse_id?: never } | { warehouse_id: string; project_id?: never }
 
 export const procurementService = {
   // ── Master Material ──
@@ -75,17 +79,38 @@ export const procurementService = {
     await api.delete(`/procurement/vendor-payments/${id}`)
   },
 
-  // ── Stok Material ──
-  async stockBalance(projectId: string): Promise<StockBalance[]> {
-    const { data } = await api.get<StockBalance[]>('/procurement/stock', { params: { project_id: projectId } })
+  // ── Gudang (lokasi stok selain proyek) ──
+  async listWarehouses(): Promise<Warehouse[]> {
+    const { data } = await api.get<Warehouse[]>('/procurement/warehouses')
     return data
   },
-  async stockMovements(projectId: string): Promise<StockMovement[]> {
-    const { data } = await api.get<StockMovement[]>('/procurement/stock/movements', { params: { project_id: projectId } })
+  async createWarehouse(payload: WarehouseCreate): Promise<Warehouse> {
+    const { data } = await api.post<Warehouse>('/procurement/warehouses', payload)
+    return data
+  },
+  async updateWarehouse(id: string, payload: Partial<WarehouseCreate>): Promise<Warehouse> {
+    const { data } = await api.patch<Warehouse>(`/procurement/warehouses/${id}`, payload)
+    return data
+  },
+  async deleteWarehouse(id: string): Promise<void> {
+    await api.delete(`/procurement/warehouses/${id}`)
+  },
+
+  // ── Stok Material (per LOKASI: proyek ATAU gudang) ──
+  async stockBalance(loc: StockLocation): Promise<StockBalance[]> {
+    const { data } = await api.get<StockBalance[]>('/procurement/stock', { params: loc })
+    return data
+  },
+  async stockMovements(loc: StockLocation): Promise<StockMovement[]> {
+    const { data } = await api.get<StockMovement[]>('/procurement/stock/movements', { params: loc })
     return data
   },
   async stockIn(payload: StockInCreate): Promise<StockMovement> {
     const { data } = await api.post<StockMovement>('/procurement/stock/in', payload)
+    return data
+  },
+  async stockTransfer(payload: StockTransferCreate): Promise<StockMovement[]> {
+    const { data } = await api.post<StockMovement[]>('/procurement/stock/transfer', payload)
     return data
   },
   async stockOut(payload: StockOutCreate): Promise<StockMovement> {

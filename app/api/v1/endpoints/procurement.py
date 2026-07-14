@@ -14,6 +14,7 @@ from app.core.audit import record_audit
 from app.api.deps import get_current_context, AuthContext
 from app.models.procurement import Vendor, PurchaseOrder, PurchaseOrderItem, VendorPayment, Material
 from app.models.stock import StockMovement, MovementType
+from app.models.warehouse import Warehouse
 from app.schemas.marketing import Paginated
 from app.schemas.procurement import (
     VendorCreate, VendorUpdate, VendorResponse,
@@ -21,9 +22,46 @@ from app.schemas.procurement import (
     VPCreate, VPResponse,
     MaterialCreate, MaterialUpdate, MaterialResponse,
 )
+from app.schemas.warehouse import WarehouseCreate, WarehouseUpdate, WarehouseResponse
 
 router = APIRouter()
 NOTDEL = lambda m: m.is_deleted == False  # noqa: E731, E712
+
+
+# ═══════════════════════ GUDANG ═══════════════════════
+@router.get("/warehouses", response_model=list[WarehouseResponse])
+async def list_warehouses(ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db)):
+    r = await db.execute(select(Warehouse).where(Warehouse.tenant_id == ctx.tenant_id, NOTDEL(Warehouse)).order_by(Warehouse.name))
+    return r.scalars().all()
+
+
+@router.post("/warehouses", response_model=WarehouseResponse, status_code=status.HTTP_201_CREATED)
+async def create_warehouse(payload: WarehouseCreate, ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db)):
+    w = Warehouse(tenant_id=ctx.tenant_id, **payload.model_dump())
+    db.add(w); await db.flush(); await db.refresh(w)
+    return w
+
+
+async def _get_warehouse(db, tenant_id, wid) -> Warehouse:
+    w = (await db.execute(select(Warehouse).where(Warehouse.id == wid, Warehouse.tenant_id == tenant_id, NOTDEL(Warehouse)))).scalar_one_or_none()
+    if w is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Gudang tidak ditemukan")
+    return w
+
+
+@router.patch("/warehouses/{wid}", response_model=WarehouseResponse)
+async def update_warehouse(wid: uuid.UUID, payload: WarehouseUpdate, ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db)):
+    w = await _get_warehouse(db, ctx.tenant_id, wid)
+    for f, v in payload.model_dump(exclude_unset=True).items():
+        setattr(w, f, v)
+    await db.flush(); await db.refresh(w)
+    return w
+
+
+@router.delete("/warehouses/{wid}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_warehouse(wid: uuid.UUID, ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db)):
+    w = await _get_warehouse(db, ctx.tenant_id, wid)
+    w.is_deleted = True; w.deleted_at = datetime.utcnow()
 
 
 # ═══════════════════════ MASTER MATERIAL ═══════════════════════

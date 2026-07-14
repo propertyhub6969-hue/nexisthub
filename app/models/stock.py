@@ -18,20 +18,30 @@ class MovementSource(str, enum.Enum):
     ADJUSTMENT = "adjustment"      # Penyesuaian/koreksi
     RETURN_VENDOR = "return_vendor"  # Retur ke vendor (OUT, unit_id kosong — bukan pemakaian proyek)
     RETURN_UNIT = "return_unit"      # Retur dari unit ke gudang (IN, unit_id = unit asal retur)
+    TRANSFER_OUT = "transfer_out"    # Keluar dari lokasi asal (pindah lokasi — BUKAN biaya)
+    TRANSFER_IN = "transfer_in"      # Masuk ke lokasi tujuan (pasangan TRANSFER_OUT, transfer_id sama)
 
 
 class StockMovement(BaseModel, SoftDeleteMixin):
-    """Kartu stok material per proyek: barang masuk & distribusi ke unit."""
+    """Kartu stok material per LOKASI (gudang ATAU proyek): barang masuk, transfer antar-lokasi,
+    dan distribusi ke unit. Tepat SATU dari (project_id, warehouse_id) terisi = lokasi mutasi ini."""
     __tablename__ = "stock_movements"
 
     tenant_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"),
         nullable=False, index=True
     )
+    # ── LOKASI: tepat satu yang terisi ──
     project_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"),
-        nullable=False, index=True
+        nullable=True, index=True
     )
+    warehouse_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("warehouses.id", ondelete="CASCADE"),
+        nullable=True, index=True
+    )
+    # Mengikat pasangan TRANSFER_OUT & TRANSFER_IN dari satu aksi transfer
+    transfer_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
     material_name: Mapped[str] = mapped_column(String(200), nullable=False, index=True)
     unit: Mapped[str] = mapped_column(String(50), nullable=True)   # sak, m3, batang
     movement_type: Mapped[MovementType] = mapped_column(SAEnum(MovementType), nullable=False)

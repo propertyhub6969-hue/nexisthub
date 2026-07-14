@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { today } from '../../utils/date'
-import { Plus, Trash2, Pencil, Loader2, Wallet, X, PackageCheck, ArrowDownToLine, ArrowUpFromLine, ClipboardList, Undo2 } from 'lucide-react'
+import { Plus, Trash2, Pencil, Loader2, Wallet, X, PackageCheck, ArrowDownToLine, ArrowUpFromLine, ClipboardList, Undo2, ArrowLeftRight, Warehouse as WarehouseIcon } from 'lucide-react'
 import Badge from '../../components/ui/Badge'
 import Modal from '../../components/ui/Modal'
 import MoneyInput from '../../components/ui/MoneyInput'
@@ -9,7 +9,7 @@ import { propertyService } from '../../services/property'
 import type {
   Vendor, VendorCreate, PurchaseOrder, POCreate, POItemIn, VendorPayment,
   POStatus, Project, Unit, StockBalance, StockMovement, StockInCreate, StockOutCreate,
-  StockReturnVendorCreate, StockReturnUnitCreate,
+  StockReturnVendorCreate, StockReturnUnitCreate, Warehouse, WarehouseCreate, StockTransferCreate,
   Expense, ExpenseCreate, ExpenseCategory, CostSummary, Material, MaterialCreate,
   RabTemplate, RabTemplateCreate, UnitRab, LeakageRow, LeakageDetail,
 } from '../../types'
@@ -29,18 +29,31 @@ const poStatusCfg: Record<POStatus, { label: string; variant: 'gray' | 'blue' | 
 const emptyPO = (): POCreate => ({ vendor_id: '', project_id: '', unit_id: '', po_number: '', order_date: '', status: 'draft', items: [] })
 const emptyVendor: VendorCreate = { name: '', category: 'Material', contact_name: '', phone: '', npwp: '', bank_name: '', bank_account: '' }
 
-const emptyStockIn = (pid: string): StockInCreate => ({ project_id: pid, material_name: '', unit: '', quantity: 0, unit_price: 0, movement_date: '' })
+const emptyStockIn = (): StockInCreate => ({ material_name: '', unit: '', quantity: 0, unit_price: 0, movement_date: '' })
 const emptyStockOut = (pid: string): StockOutCreate => ({ project_id: pid, material_name: '', unit: '', quantity: 0, unit_id: '', movement_date: '' })
+
+// ── LOKASI stok: proyek ("p:<id>") atau gudang ("w:<id>") ──
+const locKey = (kind: 'p' | 'w', id: string) => `${kind}:${id}`
+const isWarehouseLoc = (loc: string) => loc.startsWith('w:')
+const locId = (loc: string) => loc.slice(2)
+/** Param API untuk lokasi terpilih (project_id ATAU warehouse_id). */
+const locParams = (loc: string) => (isWarehouseLoc(loc) ? { warehouse_id: locId(loc) } : { project_id: locId(loc) }) as
+  { project_id: string; warehouse_id?: never } | { warehouse_id: string; project_id?: never }
 const emptyExpense = (pid: string): ExpenseCreate => ({ project_id: pid, unit_id: '', category: 'upah', description: '', amount: 0, expense_date: '', is_paid: true })
 const emptyTpl = (pid: string): RabTemplateCreate => ({ project_id: pid, name: '', lines: [] })
 
 export default function Procurement() {
-  const [tab, setTab] = useState<'po' | 'stock' | 'biaya' | 'rab' | 'vendor' | 'material'>('po')
+  const [tab, setTab] = useState<'po' | 'stock' | 'biaya' | 'rab' | 'vendor' | 'material' | 'gudang'>('po')
   const [vendors, setVendors] = useState<Vendor[]>([])
   const [materials, setMaterials] = useState<Material[]>([])
   const [mModal, setMModal] = useState(false)
   const [mForm, setMForm] = useState<MaterialCreate>({ name: '', unit: '', category: '', last_price: undefined })
   const [mEditId, setMEditId] = useState<string | null>(null)
+  // Gudang (lokasi stok selain proyek)
+  const [warehouses, setWarehouses] = useState<Warehouse[]>([])
+  const [whModal, setWhModal] = useState(false)
+  const [whForm, setWhForm] = useState<WarehouseCreate>({ name: '', address: '', notes: '' })
+  const [whEditId, setWhEditId] = useState<string | null>(null)
   const [projects, setProjects] = useState<Project[]>([])
   const [unitsByProject, setUnitsByProject] = useState<Record<string, Unit[]>>({})  // lazy per-proyek
   const [pos, setPos] = useState<PurchaseOrder[]>([])
@@ -69,14 +82,22 @@ export default function Procurement() {
   const [vModal, setVModal] = useState(false)
   const [vForm, setVForm] = useState<VendorCreate>(emptyVendor)
   const [vEditId, setVEditId] = useState<string | null>(null)
-  // Stok
+  // Stok — LOKASI bisa proyek atau gudang. (stockProject tetap dipakai tab Biaya & RAB yang murni proyek.)
   const [stockProject, setStockProject] = useState('')
+  const [stockLoc, setStockLoc] = useState('')            // "p:<id>" | "w:<id>"
   const [balances, setBalances] = useState<StockBalance[]>([])
   const [movements, setMovements] = useState<StockMovement[]>([])
   const [inModal, setInModal] = useState(false)
-  const [inForm, setInForm] = useState<StockInCreate>(emptyStockIn(''))
+  const [inForm, setInForm] = useState<StockInCreate>(emptyStockIn())
   const [outModal, setOutModal] = useState(false)
   const [outForm, setOutForm] = useState<StockOutCreate>(emptyStockOut(''))
+  // Transfer antar-lokasi
+  const [trfModal, setTrfModal] = useState(false)
+  const [trfMaterial, setTrfMaterial] = useState('|')
+  const [trfQty, setTrfQty] = useState(0)
+  const [trfTo, setTrfTo] = useState('')                  // lokasi tujuan ("p:<id>" | "w:<id>")
+  const [trfDate, setTrfDate] = useState('')
+  const [trfNotes, setTrfNotes] = useState('')
   const [retModal, setRetModal] = useState(false)
   const [retDir, setRetDir] = useState<'vendor' | 'unit'>('vendor')
   const [retMaterial, setRetMaterial] = useState('|')
@@ -105,14 +126,28 @@ export default function Procurement() {
   const load = useCallback(async () => {
     setLoading(true); setError('')
     try {
-      const [v, p, po, mt] = await Promise.all([
+      const [v, p, po, mt, wh] = await Promise.all([
         procurementService.listVendors(), propertyService.listProjects({ size: 500 }),
         procurementService.listPOs(), procurementService.listMaterials(),
+        procurementService.listWarehouses(),
       ])
-      setVendors(v); setProjects(p.items); setPos(po); setMaterials(mt)
+      setVendors(v); setProjects(p.items); setPos(po); setMaterials(mt); setWarehouses(wh)
     } catch { setError('Gagal memuat data procurement.') } finally { setLoading(false) }
   }, [])
   useEffect(() => { load() }, [load])
+  const reloadWarehouse = async () => setWarehouses(await procurementService.listWarehouses())
+
+  // ── Derivasi lokasi stok terpilih ──
+  const stockIsWarehouse = isWarehouseLoc(stockLoc)
+  const stockLocProject = stockLoc && !stockIsWarehouse ? locId(stockLoc) : ''  // proyek terpilih ('' bila gudang)
+  const locName = (loc: string) => isWarehouseLoc(loc)
+    ? warehouses.find((w) => w.id === locId(loc))?.name
+    : projects.find((p) => p.id === locId(loc))?.name
+  /** Semua lokasi (gudang + proyek) — untuk tujuan transfer. */
+  const allLocs = [
+    ...warehouses.map((w) => ({ key: locKey('w', w.id), label: w.name, group: 'Gudang' })),
+    ...projects.map((p) => ({ key: locKey('p', p.id), label: p.name, group: 'Proyek' })),
+  ]
 
   // Lazy: muat unit per-proyek on-demand (stok pakai stockProject, form PO pakai poForm.project_id)
   const unitsFor = (pid?: string) => (pid && unitsByProject[pid]) || []
@@ -131,32 +166,66 @@ export default function Procurement() {
 
   // default proyek stok saat data siap
   useEffect(() => { if (!stockProject && projects.length) setStockProject(projects[0].id) }, [projects, stockProject])
+  // default lokasi stok: gudang pertama bila ada, else proyek pertama
+  useEffect(() => {
+    if (stockLoc) return
+    if (warehouses.length) setStockLoc(locKey('w', warehouses[0].id))
+    else if (projects.length) setStockLoc(locKey('p', projects[0].id))
+  }, [warehouses, projects, stockLoc])
 
-  const loadStock = useCallback(async (pid: string) => {
-    if (!pid) { setBalances([]); setMovements([]); return }
-    const [b, m] = await Promise.all([procurementService.stockBalance(pid), procurementService.stockMovements(pid)])
+  const loadStock = useCallback(async (loc: string) => {
+    if (!loc) { setBalances([]); setMovements([]); return }
+    const lp = locParams(loc)
+    const [b, m] = await Promise.all([procurementService.stockBalance(lp), procurementService.stockMovements(lp)])
     setBalances(b); setMovements(m)
   }, [])
-  useEffect(() => { if (tab === 'stock' && stockProject) loadStock(stockProject) }, [tab, stockProject, loadStock])
+  useEffect(() => { if (tab === 'stock' && stockLoc) loadStock(stockLoc) }, [tab, stockLoc, loadStock])
+  // unit hanya ada di proyek → muat unit saat lokasi = proyek
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { ensureUnits(stockLocProject) }, [stockLocProject])
 
-  function openStockIn() { setInForm(emptyStockIn(stockProject)); setInModal(true) }
-  function openStockOut() { setOutForm(emptyStockOut(stockProject)); setOutModal(true) }
+  function openStockIn() { setInForm(emptyStockIn()); setInModal(true) }
+  function openStockOut() { setOutForm(emptyStockOut(stockLocProject)); setOutModal(true) }
   async function submitIn(e: React.FormEvent) {
     e.preventDefault(); setSaving(true)
     try {
-      const p = { ...inForm }; if (p.movement_date === '') delete p.movement_date
-      await procurementService.stockIn(p); setInModal(false); await loadStock(stockProject); await reloadPO()
+      const p: StockInCreate = { ...inForm, ...locParams(stockLoc) }
+      if (p.movement_date === '') delete p.movement_date
+      await procurementService.stockIn(p); setInModal(false); await loadStock(stockLoc); await reloadPO()
     } catch { setError('Gagal mencatat barang masuk.') } finally { setSaving(false) }
   }
   async function submitOut(e: React.FormEvent) {
     e.preventDefault(); setSaving(true)
     try {
-      const p = { ...outForm }; const rec = p as unknown as Record<string, unknown>
+      const p = { ...outForm, project_id: stockLocProject }; const rec = p as unknown as Record<string, unknown>
       ;['unit_id', 'movement_date'].forEach((k) => { if (rec[k] === '') delete rec[k] })
-      await procurementService.stockOut(p); setOutModal(false); await loadStock(stockProject)
+      await procurementService.stockOut(p); setOutModal(false); await loadStock(stockLoc)
     } catch (err: unknown) {
       const d = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
       setError(d || 'Gagal distribusi material.')
+    } finally { setSaving(false) }
+  }
+  // ── Transfer antar-lokasi ──
+  function openTransfer() {
+    setTrfMaterial('|'); setTrfQty(0); setTrfTo(''); setTrfDate(''); setTrfNotes(''); setTrfModal(true)
+  }
+  async function submitTransfer(e: React.FormEvent) {
+    e.preventDefault(); setSaving(true); setError('')
+    const [name, unit] = trfMaterial.split('|')
+    try {
+      const from = locParams(stockLoc)
+      const to = locParams(trfTo)
+      const p: StockTransferCreate = {
+        from_project_id: from.project_id, from_warehouse_id: from.warehouse_id,
+        to_project_id: to.project_id, to_warehouse_id: to.warehouse_id,
+        material_name: name, unit: unit || undefined, quantity: trfQty,
+        movement_date: trfDate || undefined, notes: trfNotes || undefined,
+      }
+      await procurementService.stockTransfer(p)
+      setTrfModal(false); await loadStock(stockLoc)
+    } catch (err: unknown) {
+      const d = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      setError(d || 'Gagal transfer material.')
     } finally { setSaving(false) }
   }
   function openReturn() {
@@ -169,25 +238,26 @@ export default function Procurement() {
     try {
       if (retDir === 'vendor') {
         const p: StockReturnVendorCreate = {
-          project_id: stockProject, material_name: name, unit: unit || undefined, quantity: retQty,
+          ...locParams(stockLoc), material_name: name, unit: unit || undefined, quantity: retQty,
           unit_price: retPrice, movement_date: retDate || undefined, notes: retNotes,
         }
         await procurementService.returnToVendor(p)
       } else {
+        // retur dari unit hanya bisa saat lokasi = proyek (unit milik proyek)
         const p: StockReturnUnitCreate = {
-          project_id: stockProject, material_name: name, unit: unit || undefined, quantity: retQty,
+          project_id: stockLocProject, material_name: name, unit: unit || undefined, quantity: retQty,
           unit_id: retUnitId, unit_price: retPrice, movement_date: retDate || undefined, notes: retNotes,
         }
         await procurementService.returnFromUnit(p)
       }
-      setRetModal(false); await loadStock(stockProject); await reloadPO()
+      setRetModal(false); await loadStock(stockLoc); await reloadPO()
     } catch (err: unknown) {
       const d = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
       setError(d || 'Gagal mencatat retur.')
     } finally { setSaving(false) }
   }
   function openReceive(po: PurchaseOrder) {
-    if (!po.project_id) { setError('PO belum punya proyek untuk lokasi stok.'); return }
+    if (!po.project_id && !po.warehouse_id) { setError('PO belum punya tujuan (gudang/proyek) untuk lokasi stok.'); return }
     setRecvPo(po); setRecvDo(''); setRecvDate('')
     // default: terima sisa tiap item
     setRecvQty(Object.fromEntries(po.items.map((it) => [it.id, Math.max(Number(it.outstanding) || 0, 0)])))
@@ -202,14 +272,19 @@ export default function Procurement() {
     setSaving(true)
     try {
       await procurementService.receivePO(recvPo.id, { do_number: recvDo || undefined, receive_date: recvDate || undefined, items })
-      setRecvModal(false); await reloadPO(); if (stockProject === recvPo.project_id) await loadStock(stockProject)
+      setRecvModal(false); await reloadPO()
+      // muat ulang bila lokasi terpilih = tujuan penerimaan PO
+      const dest = recvPo.warehouse_id ? locKey('w', recvPo.warehouse_id) : recvPo.project_id ? locKey('p', recvPo.project_id) : ''
+      if (dest && dest === stockLoc) await loadStock(stockLoc)
     } catch { setError('Gagal menerima PO ke stok.') } finally { setSaving(false) }
   }
   async function delMovement(id: string) {
-    if (!confirm('Hapus mutasi ini?')) return
-    try { await procurementService.deleteMovement(id); await loadStock(stockProject) } catch { /* noop */ }
+    const m = movements.find((x) => x.id === id)
+    const msg = m?.transfer_id ? 'Hapus transfer ini? KEDUA sisi (keluar & masuk) akan dihapus.' : 'Hapus mutasi ini?'
+    if (!confirm(msg)) return
+    try { await procurementService.deleteMovement(id); await loadStock(stockLoc) } catch { /* noop */ }
   }
-  const stockUnits = unitsFor(stockProject)
+  const stockUnits = unitsFor(stockLocProject)
 
   const loadCost = useCallback(async (pid: string) => {
     if (!pid) { setExpenses([]); setCost(null); return }
@@ -383,6 +458,22 @@ export default function Procurement() {
     if (!confirm('Hapus material ini?')) return
     try { await procurementService.deleteMaterial(id); await reloadMaterial() } catch { setError('Gagal menghapus material.') }
   }
+  // ── Gudang ──
+  function openWhCreate() { setWhEditId(null); setWhForm({ name: '', address: '', notes: '' }); setWhModal(true) }
+  function openWhEdit(w: Warehouse) { setWhEditId(w.id); setWhForm({ name: w.name, address: w.address ?? '', notes: w.notes ?? '' }); setWhModal(true) }
+  async function submitWh(e: React.FormEvent) {
+    e.preventDefault(); setSaving(true)
+    try {
+      const p = { ...whForm }; const rec = p as unknown as Record<string, unknown>
+      ;['address', 'notes'].forEach((k) => { if (rec[k] === '') delete rec[k] })
+      if (whEditId) await procurementService.updateWarehouse(whEditId, p); else await procurementService.createWarehouse(p)
+      setWhModal(false); await reloadWarehouse()
+    } catch { setError('Gagal menyimpan gudang.') } finally { setSaving(false) }
+  }
+  async function delWh(id: string) {
+    if (!confirm('Hapus gudang ini? Riwayat mutasi stoknya tetap tersimpan.')) return
+    try { await procurementService.deleteWarehouse(id); await reloadWarehouse() } catch { setError('Gagal menghapus gudang.') }
+  }
   // autofill satuan & harga dari master saat nama material cocok
   const findMaterial = (name: string) => materials.find((m) => m.name.trim().toLowerCase() === name.trim().toLowerCase())
 
@@ -399,7 +490,8 @@ export default function Procurement() {
     remaining: poFiltered.reduce((s, p) => s + Number(p.remaining || 0), 0),
   }
   // Tab Stok: status penerimaan PO proyek terpilih
-  const stockPos = pos.filter((p) => p.project_id === stockProject)
+  // PO yang tujuannya = lokasi stok terpilih (gudang atau proyek)
+  const stockPos = pos.filter((p) => (stockIsWarehouse ? p.warehouse_id === locId(stockLoc) : p.project_id === stockLocProject))
   const stockPoSum = {
     received: stockPos.filter((p) => p.status === 'received').length,
     partial: stockPos.filter((p) => p.status === 'partial').length,
@@ -418,10 +510,10 @@ export default function Procurement() {
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2 border-b border-slate-200">
-        {(['po', 'stock', 'biaya', 'rab', 'material', 'vendor'] as const).map((t) => (
+        {(['po', 'stock', 'biaya', 'rab', 'gudang', 'material', 'vendor'] as const).map((t) => (
           <button key={t} onClick={() => setTab(t)}
             className={`px-4 py-2 text-sm font-medium -mb-px border-b-2 ${tab === t ? 'border-brand-500 text-brand-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
-            {t === 'po' ? 'Purchase Order' : t === 'stock' ? 'Stok Material' : t === 'biaya' ? 'Biaya & Rollup' : t === 'rab' ? 'RAB & Kebocoran' : t === 'material' ? 'Master Material' : 'Vendor'}
+            {t === 'po' ? 'Purchase Order' : t === 'stock' ? 'Stok Material' : t === 'biaya' ? 'Biaya & Rollup' : t === 'rab' ? 'RAB & Kebocoran' : t === 'gudang' ? 'Gudang' : t === 'material' ? 'Master Material' : 'Vendor'}
           </button>
         ))}
       </div>
@@ -480,19 +572,39 @@ export default function Procurement() {
         </>
       ) : tab === 'stock' ? (
         <>
-          <div className="flex items-center justify-between gap-3">
-            <select className="input max-w-xs" value={stockProject} onChange={(e) => setStockProject(e.target.value)}>
-              <option value="">Pilih proyek...</option>
-              {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
-            <div className="flex gap-2">
-              <button className="btn-secondary text-sm flex items-center gap-1" onClick={openStockIn} disabled={!stockProject}><ArrowDownToLine size={14} /> Barang Masuk</button>
-              <button className="btn-secondary text-sm flex items-center gap-1" onClick={openReturn} disabled={!stockProject}><Undo2 size={14} /> Retur</button>
-              <button className="btn-primary text-sm flex items-center gap-1" onClick={openStockOut} disabled={!stockProject}><ArrowUpFromLine size={14} /> Distribusi</button>
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div className="flex items-center gap-2">
+              <select className="input max-w-xs" value={stockLoc} onChange={(e) => setStockLoc(e.target.value)}>
+                <option value="">Pilih lokasi...</option>
+                {warehouses.length > 0 && (
+                  <optgroup label="Gudang">
+                    {warehouses.map((w) => <option key={w.id} value={locKey('w', w.id)}>{w.name}</option>)}
+                  </optgroup>
+                )}
+                <optgroup label="Proyek">
+                  {projects.map((p) => <option key={p.id} value={locKey('p', p.id)}>{p.name}</option>)}
+                </optgroup>
+              </select>
+              {stockIsWarehouse && <Badge label="Gudang" variant="blue" />}
+            </div>
+            <div className="flex gap-2 flex-wrap">
+              <button className="btn-secondary text-sm flex items-center gap-1" onClick={openStockIn} disabled={!stockLoc}><ArrowDownToLine size={14} /> Barang Masuk</button>
+              <button className="btn-secondary text-sm flex items-center gap-1" onClick={openTransfer} disabled={!stockLoc}><ArrowLeftRight size={14} /> Transfer</button>
+              <button className="btn-secondary text-sm flex items-center gap-1" onClick={openReturn} disabled={!stockLoc}><Undo2 size={14} /> Retur</button>
+              <button className="btn-primary text-sm flex items-center gap-1" onClick={openStockOut} disabled={!stockLocProject}
+                title={stockIsWarehouse ? 'Distribusi ke unit hanya dari lokasi PROYEK — transfer dulu ke proyek' : undefined}>
+                <ArrowUpFromLine size={14} /> Distribusi
+              </button>
             </div>
           </div>
 
-          {stockProject && (
+          {stockIsWarehouse && (
+            <div className="rounded-lg bg-blue-50 border border-blue-200 text-blue-800 text-xs px-4 py-2">
+              Lokasi <b>gudang</b>: material di sini belum jadi biaya proyek. <b>Transfer</b> ke proyek dulu, lalu <b>Distribusi</b> ke unit — saat itulah biaya tercatat.
+            </div>
+          )}
+
+          {stockLoc && (
             <div className="grid grid-cols-3 gap-3">
               <div className="card p-4"><p className="text-xs text-slate-500">PO Diterima Penuh</p><p className="text-lg font-semibold text-emerald-600">{stockPoSum.received}</p></div>
               <div className="card p-4"><p className="text-xs text-slate-500">PO Diterima Sebagian</p><p className="text-lg font-semibold text-amber-600">{stockPoSum.partial}</p></div>
@@ -526,7 +638,7 @@ export default function Procurement() {
           <div className="card overflow-hidden">
             <div className="px-4 py-2.5 border-b border-slate-100 text-sm font-semibold text-slate-900">Riwayat Mutasi</div>
             <table className="w-full text-sm">
-              <thead className="bg-slate-50 border-b border-slate-200"><tr>{['Tanggal', 'Material', 'Tipe', 'Qty', 'Harga', 'Ke Unit', 'PIC', ''].map((h, i) => (
+              <thead className="bg-slate-50 border-b border-slate-200"><tr>{['Tanggal', 'Material', 'Tipe', 'Qty', 'Harga', 'Tujuan / Asal', 'PIC', ''].map((h, i) => (
                 <th key={i} className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">{h}</th>))}</tr></thead>
               <tbody className="divide-y divide-slate-100">
                 {movements.length === 0 ? (
@@ -538,13 +650,17 @@ export default function Procurement() {
                     <td className="px-4 py-2.5">
                       {m.source === 'return_vendor' ? <Badge label="Retur Vendor" variant="red" />
                         : m.source === 'return_unit' ? <Badge label="Retur Unit" variant="blue" />
+                        : m.source === 'transfer_out' ? <Badge label="Transfer Keluar" variant="orange" />
+                        : m.source === 'transfer_in' ? <Badge label="Transfer Masuk" variant="blue" />
                         : m.movement_type === 'in' ? <Badge label="Masuk" variant="green" /> : <Badge label="Keluar" variant="orange" />}
                     </td>
                     <td className="px-4 py-2.5 text-slate-600">{Number(m.quantity)} {m.unit ?? ''}</td>
                     <td className="px-4 py-2.5 text-slate-500">{fmt(m.unit_price)}</td>
                     <td className="px-4 py-2.5 text-slate-500">
-                      {m.movement_type === 'out' && m.source !== 'return_vendor' ? (unitLabel(m.unit_id) ?? 'Umum')
+                      {m.source === 'transfer_out' ? <>→ {m.counterpart_label ?? '?'}</>
+                        : m.source === 'transfer_in' ? <>← {m.counterpart_label ?? '?'}</>
                         : m.source === 'return_unit' ? `Dari ${unitLabel(m.unit_id) ?? '?'}`
+                        : m.movement_type === 'out' && m.source !== 'return_vendor' ? (unitLabel(m.unit_id) ?? 'Umum')
                         : '—'}
                     </td>
                     <td className="px-4 py-2.5 text-slate-500 text-xs">{m.received_by_name ?? '—'}</td>
@@ -704,6 +820,34 @@ export default function Procurement() {
             </table>
           </div>
         </>
+      ) : tab === 'gudang' ? (
+        <>
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm text-slate-500">Gudang induk/pusat — menerima material dari vendor, lalu <b>transfer</b> ke proyek. Material baru jadi biaya saat didistribusikan ke unit.</p>
+            <button className="btn-primary flex items-center gap-2 text-sm shrink-0" onClick={openWhCreate}><Plus size={14} /> Tambah Gudang</button>
+          </div>
+          <div className="card overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 border-b border-slate-200"><tr>{['Nama Gudang', 'Alamat', 'Catatan', ''].map((h, i) => (
+                <th key={i} className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">{h}</th>))}</tr></thead>
+              <tbody className="divide-y divide-slate-100">
+                {warehouses.length === 0 ? (
+                  <tr><td colSpan={4} className="px-4 py-8 text-center text-slate-400 text-sm">Belum ada gudang. Klik "Tambah Gudang".</td></tr>
+                ) : warehouses.map((w) => (
+                  <tr key={w.id} className="hover:bg-slate-50">
+                    <td className="px-4 py-2.5 font-medium text-slate-900 flex items-center gap-2"><WarehouseIcon size={15} className="text-slate-400" />{w.name}</td>
+                    <td className="px-4 py-2.5 text-slate-500">{w.address || '—'}</td>
+                    <td className="px-4 py-2.5 text-slate-500">{w.notes || '—'}</td>
+                    <td className="px-4 py-2.5"><div className="flex items-center justify-end gap-3">
+                      <button onClick={() => openWhEdit(w)} className="text-slate-400 hover:text-brand-600" title="Edit"><Pencil size={15} /></button>
+                      <button onClick={() => delWh(w.id)} className="text-slate-400 hover:text-red-600" title="Hapus"><Trash2 size={15} /></button>
+                    </div></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
       ) : tab === 'material' ? (
         <>
           <div className="flex items-center justify-between gap-3">
@@ -774,9 +918,18 @@ export default function Procurement() {
             <div><label className="label">No. PO</label><input className="input" placeholder={poEditId ? '' : 'Otomatis (PO-000001) bila kosong'} value={poForm.po_number} onChange={(e) => setPoForm({ ...poForm, po_number: e.target.value })} /></div>
           </div>
           <div className="grid grid-cols-3 gap-3">
-            <div><label className="label">Proyek</label>
-              <select className="input" value={poForm.project_id} onChange={(e) => setPoForm({ ...poForm, project_id: e.target.value, unit_id: '' })}>
-                <option value="">Umum / pilih...</option>{projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            <div><label className="label">Tujuan Penerimaan</label>
+              <select className="input"
+                value={poForm.warehouse_id ? locKey('w', poForm.warehouse_id) : poForm.project_id ? locKey('p', poForm.project_id) : ''}
+                onChange={(e) => {
+                  const v = e.target.value
+                  if (!v) setPoForm({ ...poForm, project_id: '', warehouse_id: '', unit_id: '' })
+                  else if (isWarehouseLoc(v)) setPoForm({ ...poForm, warehouse_id: locId(v), project_id: '', unit_id: '' })
+                  else setPoForm({ ...poForm, project_id: locId(v), warehouse_id: '', unit_id: '' })
+                }}>
+                <option value="">Umum / pilih...</option>
+                {warehouses.length > 0 && <optgroup label="Gudang">{warehouses.map((w) => <option key={w.id} value={locKey('w', w.id)}>{w.name}</option>)}</optgroup>}
+                <optgroup label="Proyek">{projects.map((p) => <option key={p.id} value={locKey('p', p.id)}>{p.name}</option>)}</optgroup>
               </select></div>
             <div><label className="label">Unit (opsional)</label>
               <select className="input" value={poForm.unit_id} onChange={(e) => setPoForm({ ...poForm, unit_id: e.target.value })} disabled={!poForm.project_id}>
@@ -973,6 +1126,52 @@ export default function Procurement() {
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" className="btn-secondary text-sm" onClick={() => setRetModal(false)}>Batal</button>
             <button type="submit" className="btn-primary text-sm flex items-center gap-2" disabled={saving}>{saving && <Loader2 size={14} className="animate-spin" />}Catat Retur</button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Modal Transfer antar-lokasi */}
+      <Modal open={trfModal} onClose={() => setTrfModal(false)} title="Transfer Material">
+        <form onSubmit={submitTransfer} className="space-y-3">
+          <div className="rounded-lg bg-slate-50 border border-slate-200 px-3 py-2 text-xs text-slate-600">
+            Dari <b>{locName(stockLoc) ?? '—'}</b>. Transfer <b>bukan biaya</b> — cuma pindah lokasi. HPP rata² ikut terbawa.
+          </div>
+          <div><label className="label">Material *</label>
+            <select className="input" required value={trfMaterial} onChange={(e) => setTrfMaterial(e.target.value)}>
+              <option value="|">Pilih material...</option>
+              {balances.filter((b) => Number(b.balance) > 0).map((b, i) => <option key={i} value={`${b.material_name}|${b.unit ?? ''}`}>{b.material_name} ({b.unit ?? '-'}) — sisa {Number(b.balance)}</option>)}
+            </select>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div><label className="label">Qty *</label><input className="input" type="number" min={0} step="0.01" required value={trfQty || ''} onChange={(e) => setTrfQty(Number(e.target.value))} /></div>
+            <div><label className="label">Tanggal</label><input className="input" type="date" max={today()} value={trfDate} onChange={(e) => setTrfDate(e.target.value)} /></div>
+          </div>
+          <div><label className="label">Lokasi Tujuan *</label>
+            <select className="input" required value={trfTo} onChange={(e) => setTrfTo(e.target.value)}>
+              <option value="">Pilih tujuan...</option>
+              {['Gudang', 'Proyek'].map((g) => {
+                const opts = allLocs.filter((l) => l.group === g && l.key !== stockLoc)
+                return opts.length ? <optgroup key={g} label={g}>{opts.map((l) => <option key={l.key} value={l.key}>{l.label}</option>)}</optgroup> : null
+              })}
+            </select>
+          </div>
+          <div><label className="label">Catatan</label><input className="input" value={trfNotes} onChange={(e) => setTrfNotes(e.target.value)} placeholder="mis. kirim untuk pekerjaan pondasi" /></div>
+          <div className="flex justify-end gap-2 pt-2">
+            <button type="button" className="btn-secondary text-sm" onClick={() => setTrfModal(false)}>Batal</button>
+            <button type="submit" className="btn-primary text-sm flex items-center gap-2" disabled={saving}>{saving && <Loader2 size={14} className="animate-spin" />}Transfer</button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Modal Gudang */}
+      <Modal open={whModal} onClose={() => setWhModal(false)} title={whEditId ? 'Edit Gudang' : 'Tambah Gudang'}>
+        <form onSubmit={submitWh} className="space-y-3">
+          <div><label className="label">Nama Gudang *</label><input className="input" required value={whForm.name} onChange={(e) => setWhForm({ ...whForm, name: e.target.value })} placeholder="Gudang Induk" /></div>
+          <div><label className="label">Alamat</label><input className="input" value={whForm.address} onChange={(e) => setWhForm({ ...whForm, address: e.target.value })} /></div>
+          <div><label className="label">Catatan</label><input className="input" value={whForm.notes} onChange={(e) => setWhForm({ ...whForm, notes: e.target.value })} /></div>
+          <div className="flex justify-end gap-2 pt-2">
+            <button type="button" className="btn-secondary text-sm" onClick={() => setWhModal(false)}>Batal</button>
+            <button type="submit" className="btn-primary text-sm flex items-center gap-2" disabled={saving}>{saving && <Loader2 size={14} className="animate-spin" />}Simpan</button>
           </div>
         </form>
       </Modal>

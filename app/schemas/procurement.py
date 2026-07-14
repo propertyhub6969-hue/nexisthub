@@ -84,6 +84,7 @@ class ReceivePO(BaseModel):
 class POBase(BaseModel):
     vendor_id: Optional[uuid.UUID] = None
     project_id: Optional[uuid.UUID] = None
+    warehouse_id: Optional[uuid.UUID] = None  # tujuan penerimaan alternatif (gudang)
     unit_id: Optional[uuid.UUID] = None
     po_number: Optional[str] = Field(None, max_length=50)
     order_date: Optional[date] = None
@@ -99,6 +100,7 @@ class POCreate(POBase):
 class POUpdate(BaseModel):
     vendor_id: Optional[uuid.UUID] = None
     project_id: Optional[uuid.UUID] = None
+    warehouse_id: Optional[uuid.UUID] = None
     unit_id: Optional[uuid.UUID] = None
     po_number: Optional[str] = Field(None, max_length=50)
     order_date: Optional[date] = None
