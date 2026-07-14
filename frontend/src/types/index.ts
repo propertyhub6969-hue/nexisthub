@@ -234,6 +234,7 @@ export interface Client {
   remaining?: number
   kpr_stage?: KprStage | null
   kpr_rejected?: boolean
+  unit_label?: string   // "blok-nomor" dari relasi unit_id (dihitung backend)
   created_at: string
   updated_at: string
 }

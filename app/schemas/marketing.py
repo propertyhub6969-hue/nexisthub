@@ -156,10 +156,11 @@ class ClientResponse(ClientBase):
     status: ClientStatus
     has_ppjb_file: bool = False
     has_ajb_file: bool = False
-    # Dihitung saat fetch (bukan kolom DB): sisa piutang & tahap KPR berjalan
+    # Dihitung saat fetch (bukan kolom DB): sisa piutang, tahap KPR berjalan, label unit
     remaining: Optional[Decimal] = None
     kpr_stage: Optional[str] = None
     kpr_rejected: bool = False
+    unit_label: Optional[str] = None  # "blok-nomor" dari relasi unit_id (fallback: unit_number lama)
     created_at: datetime
     updated_at: datetime
 

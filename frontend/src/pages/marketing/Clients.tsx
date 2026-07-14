@@ -213,7 +213,8 @@ export default function Clients() {
       case 'proyek':
         return <span className="text-slate-500">{projectName(c.project_id) ?? '—'}</span>
       case 'unit':
-        return <span className="text-slate-500">{unitNumberById(c.unit_id) ?? c.unit_number ?? '—'}</span>
+        // unit_label dari backend (selalu ada) — jangan andalkan unitsByProject yg dimuat lazy
+        return <span className="text-slate-500">{c.unit_label ?? unitNumberById(c.unit_id) ?? c.unit_number ?? '—'}</span>
       case 'harga':
         return <span className="text-slate-600 whitespace-nowrap">{fmt(c.contract_value)}</span>
       case 'piutang':

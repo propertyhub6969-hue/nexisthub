@@ -301,11 +301,22 @@ async def _attach_client_extras(db: AsyncSession, clients: list[Client]) -> None
             stage_by_client[client_id] = stage
             rejected_by_client[client_id] = rejected_date is not None
 
+    # Label unit (blok-nomor) dari relasi unit_id — JANGAN andalkan FE memuat daftar unit
+    # (unit dimuat lazy per-proyek, jadi kolom No.Unit kosong saat daftar dibuka tanpa filter).
+    uids = {c.unit_id for c in clients if c.unit_id}
+    unit_labels: dict = {}
+    if uids:
+        for uid, block, num in (await db.execute(
+            select(Unit.id, Unit.block, Unit.unit_number).where(Unit.id.in_(uids))
+        )).all():
+            unit_labels[uid] = "-".join(x for x in [block, num] if x) or None
+
     for c in clients:
         price = c.contract_value or 0
         c.remaining = (price - paid_by_client.get(c.id, 0)) if c.contract_value is not None else None
         c.kpr_stage = stage_by_client.get(c.id)
         c.kpr_rejected = rejected_by_client.get(c.id, False)
+        c.unit_label = unit_labels.get(c.unit_id) or c.unit_number  # fallback ke field teks lama
 
 
 @router.get("/clients", response_model=Paginated[ClientResponse])
