@@ -13,8 +13,9 @@ class DocStatus(str, enum.Enum):
 
 
 class Document(BaseModel, SoftDeleteMixin):
-    """Dokumen/berkas: melekat ke PEMBELI (berkas identitas KTP/KK/NPWP) ATAU ke UNIT
-    (legalitas SHM/SLF/IMB-PBG/PBB — ada tanpa perlu pembeli). File tersimpan di DB."""
+    """Dokumen/berkas: melekat ke PEMBELI (berkas identitas KTP/KK/NPWP), ke UNIT
+    (legalitas SHM/SLF/IMB-PBG/PBB), ATAU ke PROYEK (perizinan proyek: KKPR/Izin Lingkungan/PBG/SLF,
+    dan sertifikat INDUK sebelum dipecah). File tersimpan di DB/MinIO."""
     __tablename__ = "documents"
 
     tenant_id: Mapped[uuid.UUID] = mapped_column(
@@ -29,7 +30,15 @@ class Document(BaseModel, SoftDeleteMixin):
         UUID(as_uuid=True), ForeignKey("units.id", ondelete="CASCADE"),
         nullable=True, index=True   # opsional — diisi utk dokumen legalitas unit
     )
-    doc_type: Mapped[str] = mapped_column(String(100), nullable=False)   # KTP, KK, NPWP, SHM, SLF, IMB/PBG, PBB, dll
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=True, index=True   # opsional — diisi utk perizinan proyek & sertifikat INDUK
+    )
+    parent_document_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("documents.id", ondelete="SET NULL"),
+        nullable=True, index=True   # diisi di sertifikat PECAHAN → menunjuk ke sertifikat INDUK (project-level)
+    )
+    doc_type: Mapped[str] = mapped_column(String(100), nullable=False)   # KTP, KK, NPWP, SHM, SLF, IMB/PBG, PBB, HGB Induk, dll
     name: Mapped[str] = mapped_column(String(200), nullable=True)        # nomor dokumen
     address: Mapped[str] = mapped_column(String(300), nullable=True)     # alamat objek — mis. alamat objek pajak (PBB)
     land_area: Mapped[float] = mapped_column(Numeric(10, 2), nullable=True)  # LT (m²) — utk dok legalitas unit (SHM); disinkron ke Unit.land_area
@@ -37,6 +46,7 @@ class Document(BaseModel, SoftDeleteMixin):
         SAEnum(DocStatus), default=DocStatus.BELUM, nullable=False
     )
     doc_date: Mapped[Date] = mapped_column(Date, nullable=True)
+    expiry_date: Mapped[Date] = mapped_column(Date, nullable=True)  # masa berlaku — HGB induk & sebagian izin lingkungan
     # file (disimpan di DB; file_data deferred agar tak ikut di query list)
     file_name: Mapped[str] = mapped_column(String(255), nullable=True)
     file_type: Mapped[str] = mapped_column(String(100), nullable=True)
@@ -51,6 +61,83 @@ class Document(BaseModel, SoftDeleteMixin):
 
     def __repr__(self) -> str:
         return f"<Document {self.doc_type} [{self.status}]>"
+
+
+class SplitBatchStatus(str, enum.Enum):
+    """Pipeline pengajuan pemecahan sertifikat induk ke BPN."""
+    DIAJUKAN = "diajukan"        # submit ke BPN
+    PENGUKURAN = "pengukuran"    # proses ukur/petakan bidang
+    SK_TERBIT = "sk_terbit"      # SK pemecahan terbit
+    SELESAI = "selesai"          # semua sertifikat pecahan dlm batch sudah terbit
+    DITOLAK = "ditolak"
+
+
+class CertificateSplitBatch(BaseModel, SoftDeleteMixin):
+    """Satu pengajuan pemecahan sertifikat INDUK yang mencakup banyak unit sekaligus."""
+    __tablename__ = "certificate_split_batches"
+
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"),
+        nullable=False, index=True
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False, index=True
+    )
+    master_document_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("documents.id", ondelete="CASCADE"),
+        nullable=False, index=True   # sertifikat INDUK yang dipecah
+    )
+    batch_number: Mapped[str] = mapped_column(String(50), nullable=True)  # auto: SPLIT-000001 (pola sama BAST)
+    status: Mapped[SplitBatchStatus] = mapped_column(
+        SAEnum(SplitBatchStatus), default=SplitBatchStatus.DIAJUKAN, nullable=False
+    )
+    submitted_date: Mapped[Date] = mapped_column(Date, nullable=True)
+    sk_number: Mapped[str] = mapped_column(String(100), nullable=True)   # nomor SK pemecahan BPN
+    sk_date: Mapped[Date] = mapped_column(Date, nullable=True)
+    # bukti SK (scan) — MinIO, pola sama proof_key di DocumentHandover
+    sk_file_key: Mapped[str] = mapped_column(String(600), nullable=True)
+    sk_file_name: Mapped[str] = mapped_column(String(255), nullable=True)
+    sk_file_type: Mapped[str] = mapped_column(String(100), nullable=True)
+    sk_file_size: Mapped[int] = mapped_column(Integer, nullable=True)
+    notes: Mapped[str] = mapped_column(Text, nullable=True)
+
+    master_document: Mapped["Document"] = relationship("Document", foreign_keys=[master_document_id])
+    items: Mapped[list["CertificateSplitBatchItem"]] = relationship(
+        "CertificateSplitBatchItem", back_populates="batch", cascade="all, delete-orphan"
+    )
+
+    @property
+    def has_sk_file(self) -> bool:
+        return self.sk_file_name is not None
+
+    def __repr__(self) -> str:
+        return f"<SplitBatch {self.batch_number} [{self.status}]>"
+
+
+class CertificateSplitBatchItem(BaseModel):
+    """Satu unit di dalam batch pemecahan — menautkan ke sertifikat PECAHAN begitu terbit."""
+    __tablename__ = "certificate_split_batch_items"
+
+    batch_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("certificate_split_batches.id", ondelete="CASCADE"),
+        nullable=False, index=True
+    )
+    unit_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("units.id", ondelete="CASCADE"),
+        nullable=False, index=True
+    )
+    result_document_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("documents.id", ondelete="SET NULL"),
+        nullable=True   # kosong sampai sertifikat pecahan unit ini diupload
+    )
+
+    batch: Mapped["CertificateSplitBatch"] = relationship("CertificateSplitBatch", back_populates="items")
+    unit: Mapped["Unit"] = relationship("Unit")
+    result_document: Mapped["Document"] = relationship("Document", foreign_keys=[result_document_id])
+
+    def __repr__(self) -> str:
+        return f"<SplitBatchItem unit={self.unit_id}>"
 
 
 class HandoverEvent(str, enum.Enum):

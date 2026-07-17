@@ -612,11 +612,14 @@ export interface DocumentItem {
   id: string
   client_id?: string
   unit_id?: string
+  project_id?: string
+  parent_document_id?: string
   doc_type: string
   name?: string
   address?: string
   status: DocStatus
   doc_date?: string
+  expiry_date?: string
   land_area?: number
   file_name?: string
   file_type?: string
@@ -633,12 +636,60 @@ export interface DocumentItem {
 export interface DocumentCreate {
   client_id?: string
   unit_id?: string
+  project_id?: string
+  parent_document_id?: string
   doc_type: string
   name?: string
   address?: string
   status?: DocStatus
   doc_date?: string
+  expiry_date?: string
   land_area?: number
+  notes?: string
+}
+
+// ── Legal: batch pemecahan sertifikat induk (BPN) ──────────────────
+export type SplitBatchStatus = 'diajukan' | 'pengukuran' | 'sk_terbit' | 'selesai' | 'ditolak'
+
+export interface SplitBatchItem {
+  id: string
+  unit_id: string
+  unit_number?: string
+  block?: string
+  result_document_id?: string
+  result_status?: DocStatus
+}
+
+export interface SplitBatch {
+  id: string
+  project_id: string
+  master_document_id: string
+  master_document_name?: string
+  batch_number?: string
+  status: SplitBatchStatus
+  submitted_date?: string
+  sk_number?: string
+  sk_date?: string
+  has_sk_file: boolean
+  sk_file_name?: string
+  notes?: string
+  items: SplitBatchItem[]
+  created_at: string
+  updated_at: string
+}
+
+export interface SplitBatchCreate {
+  master_document_id: string
+  unit_ids: string[]
+  submitted_date?: string
+  notes?: string
+}
+
+export interface SplitBatchUpdate {
+  status?: SplitBatchStatus
+  submitted_date?: string
+  sk_number?: string
+  sk_date?: string
   notes?: string
 }
 export interface DocumentBulkItem {

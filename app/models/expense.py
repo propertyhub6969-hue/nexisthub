@@ -41,6 +41,9 @@ class Expense(BaseModel, SoftDeleteMixin):
     work_item_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("contract_work_items.id", ondelete="SET NULL"), nullable=True, index=True
     )  # opname ditautkan ke bagian pekerjaan (opsional; NULL = umum/tak terinci)
+    split_batch_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("certificate_split_batches.id", ondelete="SET NULL"), nullable=True, index=True
+    )  # biaya pemecahan sertifikat (PNBP/ukur/notaris) ditautkan ke batch (opsional)
     category: Mapped[ExpenseCategory] = mapped_column(
         SAEnum(ExpenseCategory), default=ExpenseCategory.LAIN, nullable=False
     )

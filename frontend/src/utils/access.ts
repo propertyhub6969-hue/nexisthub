@@ -45,6 +45,7 @@ const PATH_FEATURE: [string, string][] = [
 ]
 
 export function featureForPath(path: string): string | null {
+  if (path.includes('/legal-splitting')) return 'dokumen'  // sub-halaman proyek, gerbang backend = feat("dokumen")
   const hit = PATH_FEATURE.find(([p]) => path.startsWith(p))
   return hit ? hit[1] : null
 }

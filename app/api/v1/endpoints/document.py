@@ -13,14 +13,19 @@ from app.core.files import file_etag, not_modified_response, cached_file_respons
 from app.core import storage
 from app.api.deps import get_current_context, AuthContext, require_role
 from app.models.user import UserRole, User
-from app.models.document import Document, DocumentHandover, HandoverEvent
-from app.models.property import Unit
+from app.models.document import (
+    Document, DocumentHandover, HandoverEvent,
+    CertificateSplitBatch, CertificateSplitBatchItem, SplitBatchStatus,
+)
+from app.models.property import Unit, Project
 from app.models.marketing import Client
 from app.models.tax import Notary
 from app.models.kpr import Bank
 from app.schemas.document import (
     DocumentCreate, DocumentUpdate, DocumentResponse, DocumentBulkCreate,
     HandoverCreate, HandoverResponse, UnitHandoverResult,
+    SplitBatchCreate, SplitBatchUpdate, SplitBatchAddUnits, SplitBatchLinkResult,
+    SplitBatchResponse, SplitBatchItemResponse,
 )
 
 router = APIRouter()
@@ -82,17 +87,21 @@ async def _get_doc(db, tenant_id, doc_id) -> Document:
 async def list_documents(
     client_id: uuid.UUID = Query(None),
     unit_id: uuid.UUID = Query(None),
+    project_id: uuid.UUID = Query(None),
     ctx: AuthContext = Depends(get_current_context),
     db: AsyncSession = Depends(get_db),
 ):
-    """Daftar dokumen — beri client_id (berkas pembeli) ATAU unit_id (legalitas unit)."""
-    if not client_id and not unit_id:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Sertakan client_id atau unit_id")
+    """Daftar dokumen — beri client_id (berkas pembeli), unit_id (legalitas unit),
+    ATAU project_id (perizinan proyek & sertifikat induk)."""
+    if not client_id and not unit_id and not project_id:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Sertakan client_id, unit_id, atau project_id")
     conds = [Document.tenant_id == ctx.tenant_id, Document.is_deleted == False]  # noqa: E712
     if client_id:
         conds.append(Document.client_id == client_id)
     if unit_id:
         conds.append(Document.unit_id == unit_id)
+    if project_id:
+        conds.append(Document.project_id == project_id)
     r = await db.execute(select(Document).where(*conds).order_by(Document.created_at))
     docs = r.scalars().all()
     await _attach_custody(db, ctx.tenant_id, docs)
@@ -267,6 +276,247 @@ async def download_file(
     if data is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="File tidak ditemukan")
     return cached_file_response(data, ctype, fname, etag)
+
+
+# ═══════════ BATCH PEMECAHAN SERTIFIKAT INDUK (BPN) ═══════════
+async def _get_batch(db, tenant_id, batch_id) -> CertificateSplitBatch:
+    b = (await db.execute(
+        select(CertificateSplitBatch).where(
+            CertificateSplitBatch.id == batch_id, CertificateSplitBatch.tenant_id == tenant_id,
+            CertificateSplitBatch.is_deleted == False)  # noqa: E712
+    )).scalar_one_or_none()
+    if b is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Batch pemecahan tidak ditemukan")
+    return b
+
+
+async def _batch_response(db, tenant_id, batch: CertificateSplitBatch) -> SplitBatchResponse:
+    master = (await db.execute(
+        select(Document.name).where(Document.id == batch.master_document_id, Document.tenant_id == tenant_id)
+    )).scalar_one_or_none()
+    rows = (await db.execute(
+        select(CertificateSplitBatchItem, Unit.unit_number, Unit.block, Document.status)
+        .join(Unit, Unit.id == CertificateSplitBatchItem.unit_id)
+        .outerjoin(Document, Document.id == CertificateSplitBatchItem.result_document_id)
+        .where(CertificateSplitBatchItem.batch_id == batch.id)
+        .order_by(Unit.block, Unit.unit_number)
+    )).all()
+    items = [
+        SplitBatchItemResponse(
+            id=it.id, unit_id=it.unit_id, unit_number=unum, block=blk,
+            result_document_id=it.result_document_id, result_status=dstatus,
+        ) for it, unum, blk, dstatus in rows
+    ]
+    return SplitBatchResponse(
+        id=batch.id, project_id=batch.project_id, master_document_id=batch.master_document_id,
+        master_document_name=master, batch_number=batch.batch_number, status=batch.status,
+        submitted_date=batch.submitted_date, sk_number=batch.sk_number, sk_date=batch.sk_date,
+        has_sk_file=batch.has_sk_file, sk_file_name=batch.sk_file_name, notes=batch.notes,
+        items=items, created_at=batch.created_at, updated_at=batch.updated_at,
+    )
+
+
+async def _validate_units_in_project(db, tenant_id, project_id, unit_ids: list[uuid.UUID]) -> None:
+    found = (await db.execute(
+        select(Unit.id).where(Unit.id.in_(unit_ids), Unit.tenant_id == tenant_id, Unit.project_id == project_id)
+    )).scalars().all()
+    missing = set(unit_ids) - set(found)
+    if missing:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=f"{len(missing)} unit tidak ditemukan di proyek ini")
+
+
+@router.get("/projects/{project_id}/split-batches", response_model=list[SplitBatchResponse])
+async def list_split_batches(
+    project_id: uuid.UUID,
+    ctx: AuthContext = Depends(get_current_context),
+    db: AsyncSession = Depends(get_db),
+):
+    """Daftar batch pemecahan sertifikat untuk satu proyek (terbaru dulu)."""
+    rows = (await db.execute(
+        select(CertificateSplitBatch).where(
+            CertificateSplitBatch.project_id == project_id, CertificateSplitBatch.tenant_id == ctx.tenant_id,
+            CertificateSplitBatch.is_deleted == False)  # noqa: E712
+        .order_by(CertificateSplitBatch.created_at.desc())
+    )).scalars().all()
+    return [await _batch_response(db, ctx.tenant_id, b) for b in rows]
+
+
+@router.post("/split-batches", response_model=SplitBatchResponse, status_code=status.HTTP_201_CREATED)
+async def create_split_batch(
+    payload: SplitBatchCreate,
+    ctx: AuthContext = Depends(get_current_context),
+    db: AsyncSession = Depends(get_db),
+):
+    """Ajukan batch pemecahan: pilih sertifikat INDUK + unit-unit yang diikutkan."""
+    master = (await db.execute(
+        select(Document).where(Document.id == payload.master_document_id, Document.tenant_id == ctx.tenant_id,
+                               Document.is_deleted == False)  # noqa: E712
+    )).scalar_one_or_none()
+    if master is None or master.project_id is None:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Sertifikat induk tidak valid (harus dokumen level proyek)")
+    await _validate_units_in_project(db, ctx.tenant_id, master.project_id, payload.unit_ids)
+
+    n = (await db.execute(select(func.count()).select_from(CertificateSplitBatch).where(
+        CertificateSplitBatch.tenant_id == ctx.tenant_id))).scalar()
+    batch = CertificateSplitBatch(
+        tenant_id=ctx.tenant_id, project_id=master.project_id, master_document_id=master.id,
+        batch_number=f"SPLIT-{(n or 0) + 1:06d}",
+        submitted_date=payload.submitted_date, notes=payload.notes,
+    )
+    db.add(batch)
+    await db.flush()
+    for uid in payload.unit_ids:
+        db.add(CertificateSplitBatchItem(batch_id=batch.id, unit_id=uid))
+    await db.flush()
+    await record_audit(db, ctx.tenant_id, ctx.user_id, "CREATE", "certificate_split_batches", batch.id,
+                       new_data={"batch_number": batch.batch_number, "units": len(payload.unit_ids)})
+    await db.refresh(batch)
+    return await _batch_response(db, ctx.tenant_id, batch)
+
+
+@router.patch("/split-batches/{batch_id}", response_model=SplitBatchResponse)
+async def update_split_batch(
+    batch_id: uuid.UUID,
+    payload: SplitBatchUpdate,
+    ctx: AuthContext = Depends(get_current_context),
+    db: AsyncSession = Depends(get_db),
+):
+    """Perbarui status pipeline (diajukan → pengukuran → SK terbit → selesai) & nomor SK."""
+    b = await _get_batch(db, ctx.tenant_id, batch_id)
+    for f, v in payload.model_dump(exclude_unset=True).items():
+        setattr(b, f, v)
+    await db.flush()
+    await record_audit(db, ctx.tenant_id, ctx.user_id, "UPDATE", "certificate_split_batches", batch_id,
+                       new_data={"status": b.status.value})
+    await db.refresh(b)
+    return await _batch_response(db, ctx.tenant_id, b)
+
+
+@router.post("/split-batches/{batch_id}/units", response_model=SplitBatchResponse)
+async def add_split_batch_units(
+    batch_id: uuid.UUID,
+    payload: SplitBatchAddUnits,
+    ctx: AuthContext = Depends(get_current_context),
+    db: AsyncSession = Depends(get_db),
+):
+    """Tambah unit ke batch yang sudah ada (unit yang sudah ada di batch ini diabaikan)."""
+    b = await _get_batch(db, ctx.tenant_id, batch_id)
+    await _validate_units_in_project(db, ctx.tenant_id, b.project_id, payload.unit_ids)
+    existing = (await db.execute(
+        select(CertificateSplitBatchItem.unit_id).where(CertificateSplitBatchItem.batch_id == batch_id)
+    )).scalars().all()
+    new_ids = [uid for uid in payload.unit_ids if uid not in set(existing)]
+    for uid in new_ids:
+        db.add(CertificateSplitBatchItem(batch_id=batch_id, unit_id=uid))
+    await db.flush()
+    await record_audit(db, ctx.tenant_id, ctx.user_id, "UPDATE", "certificate_split_batches", batch_id,
+                       new_data={"units_added": len(new_ids)})
+    return await _batch_response(db, ctx.tenant_id, b)
+
+
+@router.delete("/split-batches/{batch_id}/items/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def remove_split_batch_item(
+    batch_id: uuid.UUID,
+    item_id: uuid.UUID,
+    ctx: AuthContext = Depends(get_current_context),
+    db: AsyncSession = Depends(get_db),
+):
+    """Keluarkan satu unit dari batch (mis. salah pilih sebelum diajukan)."""
+    await _get_batch(db, ctx.tenant_id, batch_id)
+    item = (await db.execute(
+        select(CertificateSplitBatchItem).where(
+            CertificateSplitBatchItem.id == item_id, CertificateSplitBatchItem.batch_id == batch_id)
+    )).scalar_one_or_none()
+    if item is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Baris unit tidak ditemukan")
+    await db.delete(item)
+    await record_audit(db, ctx.tenant_id, ctx.user_id, "DELETE", "certificate_split_batch_items", item_id)
+
+
+@router.patch("/split-batches/{batch_id}/items/{item_id}", response_model=SplitBatchResponse)
+async def link_split_batch_result(
+    batch_id: uuid.UUID,
+    item_id: uuid.UUID,
+    payload: SplitBatchLinkResult,
+    ctx: AuthContext = Depends(get_current_context),
+    db: AsyncSession = Depends(get_db),
+):
+    """Tautkan sertifikat PECAHAN (Document unit yang sudah diupload) ke satu unit dalam batch."""
+    b = await _get_batch(db, ctx.tenant_id, batch_id)
+    item = (await db.execute(
+        select(CertificateSplitBatchItem).where(
+            CertificateSplitBatchItem.id == item_id, CertificateSplitBatchItem.batch_id == batch_id)
+    )).scalar_one_or_none()
+    if item is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Baris unit tidak ditemukan")
+    doc = (await db.execute(
+        select(Document).where(Document.id == payload.result_document_id, Document.tenant_id == ctx.tenant_id,
+                               Document.unit_id == item.unit_id)
+    )).scalar_one_or_none()
+    if doc is None:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Dokumen tidak ditemukan atau bukan milik unit ini")
+    doc.parent_document_id = b.master_document_id  # jejak silsilah induk → pecahan
+    item.result_document_id = doc.id
+    await db.flush()
+    await record_audit(db, ctx.tenant_id, ctx.user_id, "UPDATE", "certificate_split_batch_items", item_id,
+                       new_data={"result_document_id": str(doc.id)})
+    return await _batch_response(db, ctx.tenant_id, b)
+
+
+@router.post("/split-batches/{batch_id}/sk-file", response_model=SplitBatchResponse)
+async def upload_split_batch_sk_file(
+    batch_id: uuid.UUID,
+    file: UploadFile = File(...),
+    ctx: AuthContext = Depends(get_current_context),
+    db: AsyncSession = Depends(get_db),
+):
+    """Unggah scan SK pemecahan BPN untuk batch ini."""
+    b = await _get_batch(db, ctx.tenant_id, batch_id)
+    data = await file.read()
+    if len(data) > MAX_FILE_BYTES:
+        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Ukuran file maksimal 10 MB")
+    b.sk_file_key = storage.build_key(ctx.tenant_id, "split-batches", b.id, file.filename)
+    await storage.put(b.sk_file_key, data, file.content_type)
+    b.sk_file_name = file.filename
+    b.sk_file_type = file.content_type or "application/octet-stream"
+    b.sk_file_size = len(data)
+    await db.flush()
+    await record_audit(db, ctx.tenant_id, ctx.user_id, "UPLOAD", "certificate_split_batches", batch_id,
+                       new_data={"sk_file_name": file.filename})
+    return await _batch_response(db, ctx.tenant_id, b)
+
+
+@router.get("/split-batches/{batch_id}/sk-file")
+async def download_split_batch_sk_file(
+    batch_id: uuid.UUID,
+    request: Request,
+    ctx: AuthContext = Depends(get_current_context),
+    db: AsyncSession = Depends(get_db),
+):
+    b = await _get_batch(db, ctx.tenant_id, batch_id)
+    if not b.sk_file_key:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="File SK tidak ditemukan")
+    etag = file_etag(b.sk_file_size or 0, b.updated_at)
+    nm = not_modified_response(request, etag)
+    if nm is not None:
+        return nm
+    data = await storage.get(b.sk_file_key)
+    return cached_file_response(data, b.sk_file_type, b.sk_file_name, etag)
+
+
+@router.delete("/split-batches/{batch_id}", status_code=status.HTTP_204_NO_CONTENT,
+               dependencies=[Depends(require_role(UserRole.OWNER, UserRole.ADMIN))])
+async def delete_split_batch(
+    batch_id: uuid.UUID,
+    ctx: AuthContext = Depends(get_current_context),
+    db: AsyncSession = Depends(get_db),
+):
+    """Hapus (arsipkan) batch pemecahan. Owner/admin saja."""
+    b = await _get_batch(db, ctx.tenant_id, batch_id)
+    b.is_deleted = True
+    b.deleted_at = datetime.utcnow()
+    await record_audit(db, ctx.tenant_id, ctx.user_id, "DELETE", "certificate_split_batches", batch_id,
+                       new_data={"batch_number": b.batch_number})
 
 
 # ═══════════ SERAH-TERIMA DOKUMEN ASLI (fisik) ═══════════

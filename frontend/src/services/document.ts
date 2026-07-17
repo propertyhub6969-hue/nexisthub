@@ -1,5 +1,8 @@
 import api from './api'
-import type { DocumentItem, DocumentCreate, DocumentBulkCreate, DocumentHandover, HandoverCreate, UnitHandoverResult } from '../types'
+import type {
+  DocumentItem, DocumentCreate, DocumentBulkCreate, DocumentHandover, HandoverCreate, UnitHandoverResult,
+  SplitBatch, SplitBatchCreate, SplitBatchUpdate,
+} from '../types'
 
 export const documentService = {
   async bulkCreate(payload: DocumentBulkCreate): Promise<DocumentItem[]> {
@@ -12,6 +15,10 @@ export const documentService = {
   },
   async listByUnit(unitId: string): Promise<DocumentItem[]> {
     const { data } = await api.get<DocumentItem[]>('/legal/documents', { params: { unit_id: unitId } })
+    return data
+  },
+  async listByProject(projectId: string): Promise<DocumentItem[]> {
+    const { data } = await api.get<DocumentItem[]>('/legal/documents', { params: { project_id: projectId } })
     return data
   },
   async create(payload: DocumentCreate): Promise<DocumentItem> {
@@ -82,5 +89,49 @@ export const documentService = {
   },
   async deleteHandover(handoverId: string): Promise<void> {
     await api.delete(`/legal/handovers/${handoverId}`)
+  },
+
+  // ── Batch pemecahan sertifikat induk (BPN) ──
+  async listSplitBatches(projectId: string): Promise<SplitBatch[]> {
+    const { data } = await api.get<SplitBatch[]>(`/legal/projects/${projectId}/split-batches`)
+    return data
+  },
+  async createSplitBatch(payload: SplitBatchCreate): Promise<SplitBatch> {
+    const { data } = await api.post<SplitBatch>('/legal/split-batches', payload)
+    return data
+  },
+  async updateSplitBatch(batchId: string, payload: SplitBatchUpdate): Promise<SplitBatch> {
+    const { data } = await api.patch<SplitBatch>(`/legal/split-batches/${batchId}`, payload)
+    return data
+  },
+  async addSplitBatchUnits(batchId: string, unitIds: string[]): Promise<SplitBatch> {
+    const { data } = await api.post<SplitBatch>(`/legal/split-batches/${batchId}/units`, { unit_ids: unitIds })
+    return data
+  },
+  async removeSplitBatchItem(batchId: string, itemId: string): Promise<void> {
+    await api.delete(`/legal/split-batches/${batchId}/items/${itemId}`)
+  },
+  async linkSplitBatchResult(batchId: string, itemId: string, resultDocumentId: string): Promise<SplitBatch> {
+    const { data } = await api.patch<SplitBatch>(
+      `/legal/split-batches/${batchId}/items/${itemId}`, { result_document_id: resultDocumentId }
+    )
+    return data
+  },
+  async uploadSplitBatchSkFile(batchId: string, file: File): Promise<SplitBatch> {
+    const fd = new FormData()
+    fd.append('file', file)
+    const { data } = await api.post<SplitBatch>(`/legal/split-batches/${batchId}/sk-file`, fd, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    return data
+  },
+  async openSplitBatchSkFile(batchId: string): Promise<void> {
+    const res = await api.get(`/legal/split-batches/${batchId}/sk-file`, { responseType: 'blob' })
+    const url = URL.createObjectURL(res.data as Blob)
+    window.open(url, '_blank')
+    setTimeout(() => URL.revokeObjectURL(url), 60000)
+  },
+  async deleteSplitBatch(batchId: string): Promise<void> {
+    await api.delete(`/legal/split-batches/${batchId}`)
   },
 }

@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Plus, Search, Trash2, Pencil, Loader2, Building2, LayoutGrid } from 'lucide-react'
+import { Plus, Search, Trash2, Pencil, Loader2, Building2, LayoutGrid, Landmark } from 'lucide-react'
 import Badge from '../../components/ui/Badge'
 import Modal from '../../components/ui/Modal'
 import { propertyService } from '../../services/property'
@@ -159,6 +159,9 @@ export default function Projects() {
                       <div className="flex items-center justify-end gap-3">
                         <button onClick={() => navigate(`/property/projects/${p.id}/units`)} className="text-slate-400 hover:text-brand-600 transition-colors" title="Kelola Unit">
                           <LayoutGrid size={15} />
+                        </button>
+                        <button onClick={() => navigate(`/property/projects/${p.id}/legal-splitting`)} className="text-slate-400 hover:text-brand-600 transition-colors" title="Legal & Perizinan">
+                          <Landmark size={15} />
                         </button>
                         <button onClick={() => openEdit(p)} className="text-slate-400 hover:text-brand-600 transition-colors" title="Edit">
                           <Pencil size={15} />

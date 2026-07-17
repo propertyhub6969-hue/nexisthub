@@ -17,6 +17,7 @@ import Projects from './pages/property/Projects'
 import ProjectUnits from './pages/property/ProjectUnits'
 import Siteplan from './pages/property/Siteplan'
 import LegalDocuments from './pages/property/LegalDocuments'
+import LegalSplitting from './pages/property/LegalSplitting'
 import Procurement from './pages/procurement/Procurement'
 import Construction from './pages/construction/Construction'
 import Team from './pages/settings/Team'
@@ -59,6 +60,7 @@ export default function App() {
           <Route path="/property/legal-docs"               element={<LegalDocuments />} />
           <Route path="/property/projects/:projectId/units" element={<ProjectUnits />} />
           <Route path="/property/projects/:projectId/siteplan" element={<Siteplan />} />
+          <Route path="/property/projects/:projectId/legal-splitting" element={<LegalSplitting />} />
           <Route path="/construction"        element={<Construction />} />
           <Route path="/procurement"         element={<Procurement />} />
           <Route path="/legal"               element={<Notaries />} />
