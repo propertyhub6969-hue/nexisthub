@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Plus, Loader2, FileCheck, Upload, Download, Trash2, Pencil, Link2, Layers } from 'lucide-react'
+import { ArrowLeft, Plus, Loader2, FileCheck, Upload, Download, Trash2, Pencil, Link2, Layers, History } from 'lucide-react'
 import Badge from '../../components/ui/Badge'
 import Modal from '../../components/ui/Modal'
 import DateInput from '../../components/ui/DateInput'
@@ -9,6 +9,7 @@ import { documentService } from '../../services/document'
 import type {
   Project, Unit, DocumentItem, DocumentCreate, DocStatus,
   SplitBatch, SplitBatchStatus, SplitBatchUpdate,
+  DocumentProgressLog, ProgressLogCreate, ProgressEvent,
 } from '../../types'
 
 const docStatusCfg: Record<DocStatus, { label: string; variant: 'gray' | 'yellow' | 'green' }> = {
@@ -16,6 +17,16 @@ const docStatusCfg: Record<DocStatus, { label: string; variant: 'gray' | 'yellow
   proses: { label: 'Proses',    variant: 'yellow' },
   terbit: { label: 'Terbit',    variant: 'green' },
 }
+
+const progressEventCfg: Record<ProgressEvent, { label: string; variant: 'gray' | 'yellow' | 'orange' | 'red' | 'green' }> = {
+  diajukan: { label: 'Diajukan', variant: 'gray' },
+  diproses: { label: 'Diproses', variant: 'yellow' },
+  revisi:   { label: 'Revisi',   variant: 'orange' },
+  ditolak:  { label: 'Ditolak',  variant: 'red' },
+  terbit:   { label: 'Terbit',   variant: 'green' },
+}
+
+const emptyProgressForm = (): ProgressLogCreate => ({ event: 'diajukan', event_date: '', institution: '', notes: '' })
 
 const batchStatusCfg: Record<SplitBatchStatus, { label: string; variant: 'gray' | 'yellow' | 'blue' | 'green' | 'red' }> = {
   diajukan:   { label: 'Diajukan',    variant: 'gray' },
@@ -56,6 +67,13 @@ export default function LegalSplitting() {
   // ── modal: detail batch ──
   const [detailBatch, setDetailBatch] = useState<SplitBatch | null>(null)
   const [unitDocsCache, setUnitDocsCache] = useState<Record<string, DocumentItem[]>>({})
+
+  // ── modal: riwayat tahapan proses dokumen ──
+  const [progressDoc, setProgressDoc] = useState<DocumentItem | null>(null)
+  const [progressLogs, setProgressLogs] = useState<DocumentProgressLog[]>([])
+  const [progressForm, setProgressForm] = useState<ProgressLogCreate>(emptyProgressForm())
+  const [loadingProgress, setLoadingProgress] = useState(false)
+  const [savingProgress, setSavingProgress] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -129,6 +147,52 @@ export default function LegalSplitting() {
       setDocs((prev) => prev.map((d) => (d.id === id ? updated : d)))
     } catch {
       setError('Gagal mengunggah file.')
+    }
+  }
+
+  // ── Riwayat tahapan proses ──
+  async function openProgress(d: DocumentItem) {
+    setProgressDoc(d)
+    setProgressForm(emptyProgressForm())
+    setLoadingProgress(true)
+    try {
+      setProgressLogs(await documentService.listProgress(d.id))
+    } catch {
+      setError('Gagal memuat riwayat.')
+    } finally {
+      setLoadingProgress(false)
+    }
+  }
+  async function handleAddProgress(e: React.FormEvent) {
+    e.preventDefault()
+    if (!progressDoc) return
+    setSavingProgress(true)
+    try {
+      const payload: ProgressLogCreate = { ...progressForm }
+      const rec = payload as unknown as Record<string, unknown>
+      ;['event_date', 'institution', 'notes'].forEach((k) => { if (rec[k] === '') delete rec[k] })
+      await documentService.addProgress(progressDoc.id, payload)
+      const [logs, freshDocs] = await Promise.all([documentService.listProgress(progressDoc.id), documentService.listByProject(projectId)])
+      setProgressLogs(logs)
+      setDocs(freshDocs)
+      setProgressDoc(freshDocs.find((d) => d.id === progressDoc.id) ?? progressDoc)
+      setProgressForm(emptyProgressForm())
+    } catch {
+      setError('Gagal mencatat tahapan.')
+    } finally {
+      setSavingProgress(false)
+    }
+  }
+  async function handleDeleteProgress(logId: string) {
+    if (!confirm('Hapus catatan tahapan ini?') || !progressDoc) return
+    try {
+      await documentService.deleteProgress(logId)
+      const [logs, freshDocs] = await Promise.all([documentService.listProgress(progressDoc.id), documentService.listByProject(projectId)])
+      setProgressLogs(logs)
+      setDocs(freshDocs)
+      setProgressDoc(freshDocs.find((d) => d.id === progressDoc.id) ?? progressDoc)
+    } catch {
+      setError('Gagal menghapus catatan tahapan.')
     }
   }
 
@@ -282,6 +346,7 @@ export default function LegalSplitting() {
                     </td>
                     <td className="px-4 py-2.5">
                       <div className="flex items-center justify-end gap-3">
+                        <button onClick={() => openProgress(d)} className="text-slate-400 hover:text-brand-600 transition-colors" title="Riwayat Tahapan"><History size={14} /></button>
                         <button onClick={() => openEditDoc(d)} className="text-slate-400 hover:text-brand-600 transition-colors" title="Edit"><Pencil size={14} /></button>
                         <button onClick={() => handleDeleteDoc(d.id)} className="text-slate-400 hover:text-red-600 transition-colors" title="Hapus"><Trash2 size={14} /></button>
                       </div>
@@ -489,6 +554,87 @@ export default function LegalSplitting() {
               <p className="text-xs text-slate-400 mt-1 flex items-center gap-1">
                 <Link2 size={11} /> Belum ada pilihan? Unggah dulu dokumen legalitas unit di halaman Dokumen Legalitas.
               </p>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* ── Modal: riwayat tahapan proses ── */}
+      <Modal open={!!progressDoc} onClose={() => setProgressDoc(null)}
+             title={progressDoc ? `Riwayat — ${progressDoc.doc_type}${progressDoc.name ? ` (${progressDoc.name})` : ''}` : ''} size="lg">
+        {progressDoc && (
+          <div className="space-y-4">
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-slate-500">Status saat ini:</span>
+              <Badge label={docStatusCfg[progressDoc.status].label} variant={docStatusCfg[progressDoc.status].variant} />
+              {progressDoc.doc_date && <span className="text-xs text-slate-400">— terbit {progressDoc.doc_date}</span>}
+            </div>
+
+            <form onSubmit={handleAddProgress} className="border border-slate-200 rounded-lg p-3 space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="label">Tahapan *</label>
+                  <select className="input" required value={progressForm.event}
+                          onChange={(e) => setProgressForm({ ...progressForm, event: e.target.value as ProgressEvent })}>
+                    {(Object.keys(progressEventCfg) as ProgressEvent[]).map((k) => <option key={k} value={k}>{progressEventCfg[k].label}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="label">Tanggal (kosong = hari ini)</label>
+                  <DateInput value={progressForm.event_date} onChange={(v) => setProgressForm({ ...progressForm, event_date: v })} />
+                </div>
+              </div>
+              <div>
+                <label className="label">Tujuan Instansi</label>
+                <input className="input" placeholder="mis. Dinas PTSP Kota X, Kantor BPN" value={progressForm.institution ?? ''}
+                       onChange={(e) => setProgressForm({ ...progressForm, institution: e.target.value })} />
+              </div>
+              <div>
+                <label className="label">Keterangan</label>
+                <textarea className="input" rows={2} placeholder="sedang proses apa..." value={progressForm.notes ?? ''}
+                          onChange={(e) => setProgressForm({ ...progressForm, notes: e.target.value })} />
+              </div>
+              {progressForm.event === 'terbit' && (
+                <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5">
+                  Tanggal ini akan otomatis mengisi "Tanggal Terbit" dokumen. Jangan lupa unggah file dokumennya di tabel utama.
+                </p>
+              )}
+              <div className="flex justify-end">
+                <button type="submit" className="btn-primary text-sm flex items-center gap-2" disabled={savingProgress}>
+                  {savingProgress && <Loader2 size={14} className="animate-spin" />} Catat Tahapan
+                </button>
+              </div>
+            </form>
+
+            <div>
+              <label className="label">Riwayat</label>
+              {loadingProgress ? (
+                <div className="flex justify-center py-6"><Loader2 size={16} className="animate-spin text-slate-400" /></div>
+              ) : progressLogs.length === 0 ? (
+                <p className="text-sm text-slate-400 text-center py-4">Belum ada riwayat tahapan.</p>
+              ) : (
+                <div className="border border-slate-200 rounded-lg divide-y divide-slate-100">
+                  {progressLogs.map((p) => {
+                    const cfg = progressEventCfg[p.event]
+                    return (
+                      <div key={p.id} className="flex items-start justify-between gap-3 px-3 py-2.5 text-sm">
+                        <div className="space-y-0.5">
+                          <div className="flex items-center gap-2">
+                            <Badge label={cfg.label} variant={cfg.variant} />
+                            <span className="text-slate-500 text-xs">{p.event_date}</span>
+                            {p.institution && <span className="text-slate-500 text-xs">— {p.institution}</span>}
+                          </div>
+                          {p.notes && <p className="text-slate-600 text-xs">{p.notes}</p>}
+                          {p.by_user_name && <p className="text-slate-400 text-xs">dicatat oleh {p.by_user_name}</p>}
+                        </div>
+                        <button onClick={() => handleDeleteProgress(p.id)} className="text-slate-400 hover:text-red-600 shrink-0" title="Hapus">
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
             </div>
           </div>
         )}

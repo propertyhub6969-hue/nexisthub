@@ -14,8 +14,9 @@ from app.core import storage
 from app.api.deps import get_current_context, AuthContext, require_role
 from app.models.user import UserRole, User
 from app.models.document import (
-    Document, DocumentHandover, HandoverEvent,
+    Document, DocumentHandover, HandoverEvent, DocStatus,
     CertificateSplitBatch, CertificateSplitBatchItem, SplitBatchStatus,
+    DocumentProgressLog, ProgressEvent,
 )
 from app.models.property import Unit, Project
 from app.models.marketing import Client
@@ -26,6 +27,7 @@ from app.schemas.document import (
     HandoverCreate, HandoverResponse, UnitHandoverResult,
     SplitBatchCreate, SplitBatchUpdate, SplitBatchAddUnits, SplitBatchLinkResult,
     SplitBatchResponse, SplitBatchItemResponse,
+    ProgressLogCreate, ProgressLogResponse,
 )
 
 router = APIRouter()
@@ -276,6 +278,87 @@ async def download_file(
     if data is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="File tidak ditemukan")
     return cached_file_response(data, ctype, fname, etag)
+
+
+# ═══════════ RIWAYAT TAHAPAN PROSES (perizinan proyek/sertifikat) ═══════════
+# Status Document = turunan event TERAKHIR di sini (pola sama custody_status/DocumentHandover).
+# DITOLAK tetap dianggap "proses" (masih berjalan, mis. tinggal revisi) — bukan reset ke "belum".
+_PROGRESS_TO_STATUS = {
+    ProgressEvent.DIAJUKAN: DocStatus.PROSES,
+    ProgressEvent.DIPROSES: DocStatus.PROSES,
+    ProgressEvent.REVISI: DocStatus.PROSES,
+    ProgressEvent.DITOLAK: DocStatus.PROSES,
+    ProgressEvent.TERBIT: DocStatus.TERBIT,
+}
+
+
+async def _progress_rows(db, tenant_id, doc_id) -> list[ProgressLogResponse]:
+    rows = (await db.execute(
+        select(DocumentProgressLog, User.full_name)
+        .outerjoin(User, User.id == DocumentProgressLog.by_user_id)
+        .where(DocumentProgressLog.document_id == doc_id, DocumentProgressLog.tenant_id == tenant_id)
+        .order_by(DocumentProgressLog.event_date.desc(), DocumentProgressLog.created_at.desc())
+    )).all()
+    return [
+        ProgressLogResponse(
+            id=p.id, event=p.event, event_date=p.event_date, institution=p.institution,
+            notes=p.notes, by_user_name=uname, created_at=p.created_at,
+        ) for p, uname in rows
+    ]
+
+
+@router.get("/documents/{doc_id}/progress", response_model=list[ProgressLogResponse])
+async def list_progress(doc_id: uuid.UUID, ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db)):
+    """Riwayat tahapan proses dokumen (terbaru dulu)."""
+    await _get_doc(db, ctx.tenant_id, doc_id)
+    return await _progress_rows(db, ctx.tenant_id, doc_id)
+
+
+@router.post("/documents/{doc_id}/progress", response_model=ProgressLogResponse, status_code=status.HTTP_201_CREATED)
+async def add_progress(doc_id: uuid.UUID, payload: ProgressLogCreate,
+                       ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db)):
+    """Catat satu tahapan (diajukan/diproses/revisi/ditolak/terbit). Status dokumen ikut disinkron;
+    TERBIT juga mengisi doc_date otomatis dari tanggal kejadian ini."""
+    d = await _get_doc(db, ctx.tenant_id, doc_id)
+    when = payload.event_date or date.today()
+    p = DocumentProgressLog(
+        tenant_id=ctx.tenant_id, document_id=doc_id, event=payload.event, event_date=when,
+        institution=payload.institution, notes=payload.notes, by_user_id=ctx.user_id,
+    )
+    db.add(p)
+    d.status = _PROGRESS_TO_STATUS[payload.event]
+    if payload.event == ProgressEvent.TERBIT:
+        d.doc_date = when
+    await db.flush()
+    await record_audit(db, ctx.tenant_id, ctx.user_id, "CREATE", "document_progress_logs", p.id,
+                       new_data={"document": str(doc_id), "event": p.event.value, "at": str(when)})
+    rows = await _progress_rows(db, ctx.tenant_id, doc_id)
+    return next(r for r in rows if r.id == p.id)
+
+
+@router.delete("/progress/{log_id}", status_code=status.HTTP_204_NO_CONTENT,
+               dependencies=[Depends(require_role(UserRole.OWNER, UserRole.ADMIN))])
+async def delete_progress(log_id: uuid.UUID, ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db)):
+    """Hapus catatan tahapan yang salah. Status dokumen dihitung ulang dari sisa riwayat terbaru
+    (kosong sama sekali = status dibiarkan apa adanya, tidak direset). Owner/admin saja."""
+    p = (await db.execute(
+        select(DocumentProgressLog).where(DocumentProgressLog.id == log_id, DocumentProgressLog.tenant_id == ctx.tenant_id)
+    )).scalar_one_or_none()
+    if p is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Riwayat tidak ditemukan")
+    doc_id = p.document_id
+    await db.delete(p)
+    await db.flush()
+    remaining = (await db.execute(
+        select(DocumentProgressLog).where(DocumentProgressLog.document_id == doc_id, DocumentProgressLog.tenant_id == ctx.tenant_id)
+        .order_by(DocumentProgressLog.event_date.desc(), DocumentProgressLog.created_at.desc())
+    )).scalars().first()
+    if remaining is not None:
+        d = await _get_doc(db, ctx.tenant_id, doc_id)
+        d.status = _PROGRESS_TO_STATUS[remaining.event]
+        if remaining.event == ProgressEvent.TERBIT:
+            d.doc_date = remaining.event_date
+    await record_audit(db, ctx.tenant_id, ctx.user_id, "DELETE", "document_progress_logs", log_id)
 
 
 # ═══════════ BATCH PEMECAHAN SERTIFIKAT INDUK (BPN) ═══════════

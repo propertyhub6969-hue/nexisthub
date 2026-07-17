@@ -2,6 +2,7 @@ import api from './api'
 import type {
   DocumentItem, DocumentCreate, DocumentBulkCreate, DocumentHandover, HandoverCreate, UnitHandoverResult,
   SplitBatch, SplitBatchCreate, SplitBatchUpdate,
+  DocumentProgressLog, ProgressLogCreate,
 } from '../types'
 
 export const documentService = {
@@ -89,6 +90,19 @@ export const documentService = {
   },
   async deleteHandover(handoverId: string): Promise<void> {
     await api.delete(`/legal/handovers/${handoverId}`)
+  },
+
+  // ── Riwayat tahapan proses dokumen (perizinan/sertifikat) ──
+  async listProgress(docId: string): Promise<DocumentProgressLog[]> {
+    const { data } = await api.get<DocumentProgressLog[]>(`/legal/documents/${docId}/progress`)
+    return data
+  },
+  async addProgress(docId: string, payload: ProgressLogCreate): Promise<DocumentProgressLog> {
+    const { data } = await api.post<DocumentProgressLog>(`/legal/documents/${docId}/progress`, payload)
+    return data
+  },
+  async deleteProgress(logId: string): Promise<void> {
+    await api.delete(`/legal/progress/${logId}`)
   },
 
   // ── Batch pemecahan sertifikat induk (BPN) ──

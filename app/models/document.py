@@ -63,6 +63,39 @@ class Document(BaseModel, SoftDeleteMixin):
         return f"<Document {self.doc_type} [{self.status}]>"
 
 
+class ProgressEvent(str, enum.Enum):
+    """Tahapan pengajuan perizinan/sertifikat. Status Document = turunan event TERAKHIR di sini."""
+    DIAJUKAN = "diajukan"
+    DIPROSES = "diproses"
+    REVISI = "revisi"
+    DITOLAK = "ditolak"
+    TERBIT = "terbit"
+
+
+class DocumentProgressLog(BaseModel):
+    """Riwayat tahapan proses satu Document (perizinan proyek/sertifikat induk).
+    Document.status & doc_date disinkron dari event TERAKHIR di sini (mis. custody_status
+    di DocumentHandover) — bukan diedit manual lagi setelah dokumen punya riwayat."""
+    __tablename__ = "document_progress_logs"
+
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    document_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("documents.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    event: Mapped[ProgressEvent] = mapped_column(SAEnum(ProgressEvent), nullable=False)
+    event_date: Mapped[Date] = mapped_column(Date, nullable=False)
+    institution: Mapped[str] = mapped_column(String(200), nullable=True)  # tujuan instansi — teks bebas
+    notes: Mapped[str] = mapped_column(Text, nullable=True)               # keterangan: sedang proses apa
+    by_user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+
+    def __repr__(self) -> str:
+        return f"<DocumentProgressLog {self.event} {self.event_date}>"
+
+
 class SplitBatchStatus(str, enum.Enum):
     """Pipeline pengajuan pemecahan sertifikat induk ke BPN."""
     DIAJUKAN = "diajukan"        # submit ke BPN

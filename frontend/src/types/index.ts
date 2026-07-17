@@ -692,6 +692,26 @@ export interface SplitBatchUpdate {
   sk_date?: string
   notes?: string
 }
+
+// ── Riwayat tahapan proses dokumen (perizinan/sertifikat) ──────────
+export type ProgressEvent = 'diajukan' | 'diproses' | 'revisi' | 'ditolak' | 'terbit'
+
+export interface DocumentProgressLog {
+  id: string
+  event: ProgressEvent
+  event_date: string
+  institution?: string
+  notes?: string
+  by_user_name?: string
+  created_at: string
+}
+
+export interface ProgressLogCreate {
+  event: ProgressEvent
+  event_date?: string
+  institution?: string
+  notes?: string
+}
 export interface DocumentBulkItem {
   doc_type: string
   name?: string

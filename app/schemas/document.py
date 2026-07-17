@@ -4,7 +4,7 @@ from datetime import datetime, date
 from decimal import Decimal
 import uuid
 
-from app.models.document import DocStatus, HandoverEvent, SplitBatchStatus
+from app.models.document import DocStatus, HandoverEvent, SplitBatchStatus, ProgressEvent
 
 
 class DocumentBase(BaseModel):
@@ -180,3 +180,21 @@ class SplitBatchResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# ── Riwayat tahapan proses (Document: perizinan proyek/sertifikat) ──
+class ProgressLogCreate(BaseModel):
+    event: ProgressEvent
+    event_date: Optional[date] = None    # kosong = hari ini
+    institution: Optional[str] = Field(None, max_length=200)
+    notes: Optional[str] = None
+
+
+class ProgressLogResponse(BaseModel):
+    id: uuid.UUID
+    event: ProgressEvent
+    event_date: date
+    institution: Optional[str] = None
+    notes: Optional[str] = None
+    by_user_name: Optional[str] = None
+    created_at: datetime
