@@ -1,15 +1,18 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Plus, Loader2, FileCheck, Upload, Download, Trash2, Pencil, Link2, Layers, History } from 'lucide-react'
+import { ArrowLeft, Plus, Loader2, FileCheck, Upload, Download, Trash2, Pencil, Link2, Layers, History, Wallet } from 'lucide-react'
 import Badge from '../../components/ui/Badge'
 import Modal from '../../components/ui/Modal'
 import DateInput from '../../components/ui/DateInput'
+import MoneyInput from '../../components/ui/MoneyInput'
 import { propertyService } from '../../services/property'
 import { documentService } from '../../services/document'
+import { procurementService } from '../../services/procurement'
 import type {
   Project, Unit, DocumentItem, DocumentCreate, DocStatus,
   SplitBatch, SplitBatchStatus, SplitBatchUpdate,
   DocumentProgressLog, ProgressLogCreate, ProgressEvent,
+  Expense,
 } from '../../types'
 
 const docStatusCfg: Record<DocStatus, { label: string; variant: 'gray' | 'yellow' | 'green' }> = {
@@ -74,6 +77,14 @@ export default function LegalSplitting() {
   const [progressForm, setProgressForm] = useState<ProgressLogCreate>(emptyProgressForm())
   const [loadingProgress, setLoadingProgress] = useState(false)
   const [savingProgress, setSavingProgress] = useState(false)
+
+  // ── biaya per tahapan (ditautkan ke progress log) ──
+  const [logExpenses, setLogExpenses] = useState<Expense[]>([])
+  const [costFormLogId, setCostFormLogId] = useState<string | null>(null)
+  const [costDescription, setCostDescription] = useState('')
+  const [costAmount, setCostAmount] = useState<number>()
+  const [costDate, setCostDate] = useState('')
+  const [savingCost, setSavingCost] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -156,11 +167,52 @@ export default function LegalSplitting() {
     setProgressForm(emptyProgressForm())
     setLoadingProgress(true)
     try {
-      setProgressLogs(await documentService.listProgress(d.id))
+      const [logs, expenses] = await Promise.all([
+        documentService.listProgress(d.id),
+        procurementService.listExpenses(projectId),
+      ])
+      setProgressLogs(logs)
+      setLogExpenses(expenses.filter((e) => !!e.permit_log_id))
     } catch {
       setError('Gagal memuat riwayat.')
     } finally {
       setLoadingProgress(false)
+    }
+  }
+  function costsForLog(logId: string): Expense[] {
+    return logExpenses.filter((e) => e.permit_log_id === logId)
+  }
+  function openCostForm(logId: string) {
+    setCostFormLogId(logId)
+    setCostDescription('')
+    setCostAmount(undefined)
+    setCostDate('')
+  }
+  async function handleAddCost(e: React.FormEvent, logId: string) {
+    e.preventDefault()
+    if (!costAmount) return
+    setSavingCost(true)
+    try {
+      await procurementService.createExpense({
+        project_id: projectId, category: 'perizinan', permit_log_id: logId,
+        description: costDescription || 'Biaya perizinan', amount: costAmount,
+        expense_date: costDate || undefined,
+      })
+      setLogExpenses(await procurementService.listExpenses(projectId).then((all) => all.filter((x) => !!x.permit_log_id)))
+      setCostFormLogId(null)
+    } catch {
+      setError('Gagal mencatat biaya.')
+    } finally {
+      setSavingCost(false)
+    }
+  }
+  async function handleDeleteCost(id: string) {
+    if (!confirm('Hapus catatan biaya ini?')) return
+    try {
+      await procurementService.deleteExpense(id)
+      setLogExpenses((prev) => prev.filter((e) => e.id !== id))
+    } catch {
+      setError('Gagal menghapus biaya.')
     }
   }
   async function handleAddProgress(e: React.FormEvent) {
@@ -616,20 +668,56 @@ export default function LegalSplitting() {
                 <div className="border border-slate-200 rounded-lg divide-y divide-slate-100">
                   {progressLogs.map((p) => {
                     const cfg = progressEventCfg[p.event]
+                    const costs = costsForLog(p.id)
+                    const totalCost = costs.reduce((sum, c) => sum + c.amount, 0)
                     return (
-                      <div key={p.id} className="flex items-start justify-between gap-3 px-3 py-2.5 text-sm">
-                        <div className="space-y-0.5">
-                          <div className="flex items-center gap-2">
-                            <Badge label={cfg.label} variant={cfg.variant} />
-                            <span className="text-slate-500 text-xs">{p.event_date}</span>
-                            {p.institution && <span className="text-slate-500 text-xs">— {p.institution}</span>}
+                      <div key={p.id} className="px-3 py-2.5 text-sm space-y-2">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="space-y-0.5">
+                            <div className="flex items-center gap-2">
+                              <Badge label={cfg.label} variant={cfg.variant} />
+                              <span className="text-slate-500 text-xs">{p.event_date}</span>
+                              {p.institution && <span className="text-slate-500 text-xs">— {p.institution}</span>}
+                            </div>
+                            {p.notes && <p className="text-slate-600 text-xs">{p.notes}</p>}
+                            {p.by_user_name && <p className="text-slate-400 text-xs">dicatat oleh {p.by_user_name}</p>}
                           </div>
-                          {p.notes && <p className="text-slate-600 text-xs">{p.notes}</p>}
-                          {p.by_user_name && <p className="text-slate-400 text-xs">dicatat oleh {p.by_user_name}</p>}
+                          <button onClick={() => handleDeleteProgress(p.id)} className="text-slate-400 hover:text-red-600 shrink-0" title="Hapus">
+                            <Trash2 size={13} />
+                          </button>
                         </div>
-                        <button onClick={() => handleDeleteProgress(p.id)} className="text-slate-400 hover:text-red-600 shrink-0" title="Hapus">
-                          <Trash2 size={13} />
-                        </button>
+
+                        {costs.length > 0 && (
+                          <div className="pl-1 space-y-1">
+                            {costs.map((c) => (
+                              <div key={c.id} className="flex items-center justify-between text-xs text-slate-500">
+                                <span>{c.description} — Rp {c.amount.toLocaleString('id-ID')}</span>
+                                <button onClick={() => handleDeleteCost(c.id)} className="text-slate-300 hover:text-red-600"><Trash2 size={11} /></button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {costFormLogId === p.id ? (
+                          <form onSubmit={(e) => handleAddCost(e, p.id)} className="flex items-end gap-2 bg-slate-50 rounded p-2">
+                            <div className="flex-1">
+                              <input className="input text-xs py-1" placeholder="Keterangan biaya" value={costDescription}
+                                     onChange={(ev) => setCostDescription(ev.target.value)} />
+                            </div>
+                            <div className="w-28">
+                              <MoneyInput className="input text-xs py-1" value={costAmount} onChange={setCostAmount} placeholder="Jumlah" required />
+                            </div>
+                            <div className="w-32">
+                              <DateInput className="input text-xs py-1" value={costDate} onChange={setCostDate} />
+                            </div>
+                            <button type="submit" className="btn-primary text-xs py-1 px-2" disabled={savingCost || !costAmount}>Simpan</button>
+                            <button type="button" className="btn-secondary text-xs py-1 px-2" onClick={() => setCostFormLogId(null)}>Batal</button>
+                          </form>
+                        ) : (
+                          <button onClick={() => openCostForm(p.id)} className="text-xs text-slate-400 hover:text-brand-600 flex items-center gap-1">
+                            <Wallet size={12} /> {totalCost > 0 ? `Rp ${totalCost.toLocaleString('id-ID')} tercatat — tambah` : 'Catat biaya di tahap ini'}
+                          </button>
+                        )}
                       </div>
                     )
                   })}

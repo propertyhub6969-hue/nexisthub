@@ -1149,6 +1149,7 @@ export interface Expense {
   unit_id?: string
   vendor_id?: string
   vendor_name?: string
+  permit_log_id?: string
   category: ExpenseCategory
   description: string
   amount: number
@@ -1162,6 +1163,7 @@ export interface ExpenseCreate {
   project_id: string
   unit_id?: string
   vendor_id?: string
+  permit_log_id?: string
   category?: ExpenseCategory
   description: string
   amount: number

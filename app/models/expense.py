@@ -44,6 +44,9 @@ class Expense(BaseModel, SoftDeleteMixin):
     split_batch_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("certificate_split_batches.id", ondelete="SET NULL"), nullable=True, index=True
     )  # biaya pemecahan sertifikat (PNBP/ukur/notaris) ditautkan ke batch (opsional)
+    permit_log_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("document_progress_logs.id", ondelete="SET NULL"), nullable=True, index=True
+    )  # biaya perizinan ditautkan ke tahapan tertentu (opsional) — mis. biaya ukur di tahap "diproses"
     category: Mapped[ExpenseCategory] = mapped_column(
         SAEnum(ExpenseCategory), default=ExpenseCategory.LAIN, nullable=False
     )

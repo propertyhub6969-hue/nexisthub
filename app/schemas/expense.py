@@ -11,6 +11,7 @@ class ExpenseBase(BaseModel):
     project_id: uuid.UUID
     unit_id: Optional[uuid.UUID] = None
     vendor_id: Optional[uuid.UUID] = None
+    permit_log_id: Optional[uuid.UUID] = None   # biaya perizinan ditautkan ke tahapan tertentu
     category: ExpenseCategory = ExpenseCategory.LAIN
     description: str = Field(..., min_length=1, max_length=200)
     amount: Decimal = Field(..., ge=0)
@@ -26,6 +27,7 @@ class ExpenseCreate(ExpenseBase):
 class ExpenseUpdate(BaseModel):
     unit_id: Optional[uuid.UUID] = None
     vendor_id: Optional[uuid.UUID] = None
+    permit_log_id: Optional[uuid.UUID] = None
     category: Optional[ExpenseCategory] = None
     description: Optional[str] = Field(None, min_length=1, max_length=200)
     amount: Optional[Decimal] = Field(None, ge=0)
