@@ -8,7 +8,7 @@ import { propertyService } from '../../services/property'
 import { documentService } from '../../services/document'
 import type {
   Project, Unit, DocumentItem, DocumentCreate, DocStatus,
-  SplitBatch, SplitBatchStatus,
+  SplitBatch, SplitBatchStatus, SplitBatchUpdate,
 } from '../../types'
 
 const docStatusCfg: Record<DocStatus, { label: string; variant: 'gray' | 'yellow' | 'green' }> = {
@@ -98,10 +98,13 @@ export default function LegalSplitting() {
     e.preventDefault()
     setSavingDoc(true)
     try {
+      const payload: DocumentCreate = { ...docForm, project_id: projectId }
+      const rec = payload as unknown as Record<string, unknown>
+      ;['name', 'doc_date', 'expiry_date', 'notes'].forEach((k) => { if (rec[k] === '') delete rec[k] })
       if (editingDocId) {
-        await documentService.update(editingDocId, docForm)
+        await documentService.update(editingDocId, payload)
       } else {
-        await documentService.create({ ...docForm, project_id: projectId })
+        await documentService.create(payload)
       }
       setDocModalOpen(false)
       await load()
@@ -172,8 +175,10 @@ export default function LegalSplitting() {
     setDetailBatch(fresh.find((b) => b.id === batchId) ?? null)
   }
   async function handleUpdateBatchField(batch: SplitBatch, field: 'status' | 'sk_number' | 'sk_date' | 'submitted_date', value: string) {
+    const isDateField = field === 'sk_date' || field === 'submitted_date'
+    const sendValue = isDateField && value === '' ? null : value
     try {
-      await documentService.updateSplitBatch(batch.id, { [field]: value } as Record<string, string>)
+      await documentService.updateSplitBatch(batch.id, { [field]: sendValue } as unknown as SplitBatchUpdate)
       await refreshDetail(batch.id)
     } catch {
       setError('Gagal memperbarui batch.')
