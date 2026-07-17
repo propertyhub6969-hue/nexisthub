@@ -34,11 +34,16 @@ class ConstructionSummary(BaseModel):
     avg_percent: float
     done_count: int
     stage_counts: Dict[str, int]
+    late_count: int = 0   # unit belum update progres > 7 hari — dihitung dari SELURUH proyek, bukan hanya halaman aktif
 
 
 class ConstructionList(BaseModel):
     rows: List[UnitConstructionRow]
     summary: ConstructionSummary
+    total: int = 0
+    page: int = 1
+    size: int = 25
+    pages: int = 0
 
 
 class UpahResumeRow(BaseModel):

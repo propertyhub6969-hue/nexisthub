@@ -5,6 +5,7 @@ import Badge from '../../components/ui/Badge'
 import DateInput from '../../components/ui/DateInput'
 import Modal from '../../components/ui/Modal'
 import MoneyInput from '../../components/ui/MoneyInput'
+import Pagination from '../../components/ui/Pagination'
 import { constructionService } from '../../services/construction'
 import { propertyService } from '../../services/property'
 import { procurementService } from '../../services/procurement'
@@ -56,7 +57,11 @@ export default function Construction() {
   const [pModalOpen, setPModalOpen] = useState(false)
   const [editRow, setEditRow] = useState<UnitConstructionRow | null>(null)
   const [pForm, setPForm] = useState<ConstructionUpsert>({})
-  const [progresFilter, setProgresFilter] = useState('')
+  const [progresSearch, setProgresSearch] = useState('')      // yang diketik
+  const [progresSearchQ, setProgresSearchQ] = useState('')    // yang dikirim ke server (ditunda)
+  const [progresPage, setProgresPage] = useState(1)
+  const [progresTotal, setProgresTotal] = useState(0)
+  const [progresPages, setProgresPages] = useState(1)
   const [logModal, setLogModal] = useState(false)
   const [logUnit, setLogUnit] = useState<UnitConstructionRow | null>(null)
   const [logList, setLogList] = useState<ProgressLog[]>([])
@@ -109,20 +114,27 @@ export default function Construction() {
     }).catch(() => {}).finally(() => setLoading(false))
   }, [])
 
-  const loadProgres = useCallback(async (pid: string) => {
-    if (!pid) { setRows([]); setSummary(null); return }
-    const res = await constructionService.list(pid); setRows(res.rows); setSummary(res.summary)
+  const loadProgres = useCallback(async (pid: string, q: string, pg: number) => {
+    if (!pid) { setRows([]); setSummary(null); setProgresTotal(0); setProgresPages(1); return }
+    const res = await constructionService.list(pid, { search: q || undefined, page: pg, size: 25 })
+    setRows(res.rows); setSummary(res.summary); setProgresTotal(res.total); setProgresPages(res.pages)
   }, [])
   const loadBorongan = useCallback(async (pid: string) => {
     if (!pid) { setContracts([]); setRows([]); setUpahResume([]); return }
     const [c, u, v, con, ur, tpls] = await Promise.all([
       constructionService.listContracts(pid), propertyService.listUnits({ project_id: pid, size: 500 }),
-      procurementService.listVendors(undefined, 'Kontraktor'), constructionService.list(pid), constructionService.getUpahResume(pid),
+      procurementService.listVendors(undefined, 'Kontraktor'), constructionService.list(pid, { size: 500 }), constructionService.getUpahResume(pid),
       constructionService.listStageTemplates(),
     ])
     setContracts(c); setUnits(u.items); setVendors(v); setRows(con.rows); setSummary(con.summary); setUpahResume(ur); setStageTemplates(tpls)
   }, [])
-  useEffect(() => { if (project && tab === 'progres') loadProgres(project) }, [project, tab, loadProgres])
+  // tunda 300ms setelah ketikan berhenti → tak membanjiri server tiap huruf
+  useEffect(() => {
+    const t = setTimeout(() => setProgresSearchQ(progresSearch.trim()), 300)
+    return () => clearTimeout(t)
+  }, [progresSearch])
+  useEffect(() => { setProgresPage(1) }, [progresSearchQ])   // ganti kata kunci → balik ke halaman 1
+  useEffect(() => { if (project && tab === 'progres') loadProgres(project, progresSearchQ, progresPage) }, [project, tab, progresSearchQ, progresPage, loadProgres])
   useEffect(() => { if (project && (tab === 'borongan' || tab === 'resume')) loadBorongan(project) }, [project, tab, loadBorongan])
 
   // Sisa upah (RAB kebocoran unit, kategori upah) — hanya saat kategori RAB opname = upah
@@ -145,7 +157,7 @@ export default function Construction() {
     try {
       const p = { ...pForm }; const rec = p as unknown as Record<string, unknown>
       ;['start_date', 'target_date', 'finish_date'].forEach((k) => { if (rec[k] === '') delete rec[k] })
-      await constructionService.upsert(editRow.unit_id, p); setPModalOpen(false); await loadProgres(project)
+      await constructionService.upsert(editRow.unit_id, p); setPModalOpen(false); await loadProgres(project, progresSearchQ, progresPage)
     } catch { setError('Gagal menyimpan progres.') } finally { setSaving(false) }
   }
   async function openLog(r: UnitConstructionRow) {
@@ -165,14 +177,14 @@ export default function Construction() {
       await constructionService.addProgressLog(logUnit.unit_id, fd)
       setLogList(await constructionService.listProgressLogs(logUnit.unit_id))
       setLogDate(''); setLogStage(''); setLogPercent(undefined); setLogNotes(''); setLogFile(null)
-      await loadProgres(project)
+      await loadProgres(project, progresSearchQ, progresPage)
     } catch { setError('Gagal mencatat log progres.') } finally { setSaving(false) }
   }
   async function delLog(id: string) {
     if (!logUnit) return
     try {
       await constructionService.deleteProgressLog(id)
-      setLogList(await constructionService.listProgressLogs(logUnit.unit_id)); await loadProgres(project)
+      setLogList(await constructionService.listProgressLogs(logUnit.unit_id)); await loadProgres(project, progresSearchQ, progresPage)
     } catch { /* noop */ }
   }
 
@@ -332,30 +344,34 @@ export default function Construction() {
               <div className="card p-4"><p className="text-xs text-slate-500 flex items-center gap-1"><CheckCircle2 size={12} /> Selesai</p><p className="text-lg font-semibold text-emerald-600">{summary.done_count} / {summary.total_units}</p></div>
             </div>
           )}
-          {(() => { const lateCount = rows.filter(isLate).length; return lateCount > 0 && (
+          {summary && summary.late_count > 0 && (
             <div className="flex items-center gap-2 rounded-lg bg-amber-50 border border-amber-200 px-4 py-2.5 text-sm text-amber-800">
               <AlertTriangle size={15} />
-              {lateCount} unit belum update progres minggu ini (lewat {REMINDER_DAYS} hari).
+              {summary.late_count} unit belum update progres minggu ini (lewat {REMINDER_DAYS} hari).
             </div>
-          ) })()}
+          )}
           <div className="card overflow-hidden">
             <div className="px-4 py-2.5 border-b border-slate-100 flex items-center justify-between gap-3">
               <span className="text-sm font-semibold text-slate-900 flex items-center gap-2"><HardHat size={15} /> Progres per Unit</span>
               <div className="relative max-w-[220px] w-full">
                 <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
-                <input className="input h-8 pl-8 text-sm" placeholder="Filter kavling…" value={progresFilter} onChange={(e) => setProgresFilter(e.target.value)} />
+                <input className="input h-8 pl-8 text-sm" placeholder="Cari no. unit / blok…" list="construction-unit-suggest"
+                  value={progresSearch} onChange={(e) => setProgresSearch(e.target.value)} />
+                {/* autofill: saran dari unit yang sedang tampil (menyempit saat mengetik) */}
+                <datalist id="construction-unit-suggest">
+                  {rows.map((r) => <option key={r.unit_id} value={r.unit_label} />)}
+                </datalist>
               </div>
             </div>
             <table className="w-full text-sm">
               <thead className="bg-slate-50 border-b border-slate-200"><tr>{['Unit', 'Tipe', 'Tahap', 'Progres', 'Mulai', 'Selesai', ''].map((h, i) => (
                 <th key={i} className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">{h}</th>))}</tr></thead>
               <tbody className="divide-y divide-slate-100">
-                {(() => {
-                  const q = progresFilter.trim().toLowerCase()
-                  const filtered = q ? rows.filter((r) => r.unit_label.toLowerCase().includes(q)) : rows
-                  if (rows.length === 0) return <tr><td colSpan={7} className="px-4 py-8 text-center text-slate-400 text-sm">{project ? 'Belum ada unit.' : 'Pilih proyek dulu.'}</td></tr>
-                  if (filtered.length === 0) return <tr><td colSpan={7} className="px-4 py-8 text-center text-slate-400 text-sm">Tidak ada kavling cocok "{progresFilter}".</td></tr>
-                  return filtered.map((r) => {
+                {rows.length === 0 ? (
+                  <tr><td colSpan={7} className="px-4 py-8 text-center text-slate-400 text-sm">
+                    {!project ? 'Pilih proyek dulu.' : progresSearchQ ? `Tidak ada kavling cocok "${progresSearchQ}".` : 'Belum ada unit.'}
+                  </td></tr>
+                ) : rows.map((r) => {
                   const s = stageCfg(r.stage)
                   return (
                     <tr key={r.unit_id} className="hover:bg-slate-50">
@@ -374,10 +390,10 @@ export default function Construction() {
                       </div></td>
                     </tr>
                   )
-                  })
-                })()}
+                })}
               </tbody>
             </table>
+            <Pagination page={progresPage} pages={progresPages} total={progresTotal} onPage={setProgresPage} />
           </div>
         </>
       )}

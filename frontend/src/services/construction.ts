@@ -6,8 +6,8 @@ import type {
 } from '../types'
 
 export const constructionService = {
-  async list(projectId: string): Promise<ConstructionList> {
-    const { data } = await api.get<ConstructionList>('/construction/', { params: { project_id: projectId } })
+  async list(projectId: string, params: { search?: string; page?: number; size?: number } = {}): Promise<ConstructionList> {
+    const { data } = await api.get<ConstructionList>('/construction/', { params: { project_id: projectId, ...params } })
     return data
   },
   async getUpahResume(projectId: string): Promise<UpahResume[]> {

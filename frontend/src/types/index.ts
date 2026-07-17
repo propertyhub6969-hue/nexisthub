@@ -1216,8 +1216,16 @@ export interface ConstructionSummary {
   avg_percent: number
   done_count: number
   stage_counts: Record<string, number>
+  late_count: number
 }
-export interface ConstructionList { rows: UnitConstructionRow[]; summary: ConstructionSummary }
+export interface ConstructionList {
+  rows: UnitConstructionRow[]
+  summary: ConstructionSummary
+  total: number
+  page: number
+  size: number
+  pages: number
+}
 export interface ConstructionUpsert {
   stage?: ConstructionStage
   percent?: number

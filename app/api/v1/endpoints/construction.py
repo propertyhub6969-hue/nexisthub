@@ -1,3 +1,4 @@
+import math
 import uuid
 from collections import defaultdict
 from datetime import date, datetime, timedelta
@@ -5,7 +6,7 @@ from decimal import Decimal
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status, Form, UploadFile, File
-from sqlalchemy import select, func
+from sqlalchemy import select, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import storage
@@ -43,11 +44,17 @@ async def _get_or_create(db, tenant_id, project_id, unit_id) -> UnitConstruction
 
 
 @router.get("/", response_model=ConstructionList)
-async def list_construction(project_id: uuid.UUID = Query(...), ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db)):
-    units = (await db.execute(
-        select(Unit).where(Unit.project_id == project_id, Unit.tenant_id == ctx.tenant_id)
-        .order_by(Unit.block, Unit.unit_number)
-    )).scalars().all()
+async def list_construction(
+    project_id: uuid.UUID = Query(...),
+    search: Optional[str] = Query(None),
+    page: int = Query(1, ge=1),
+    size: int = Query(25, ge=1, le=500),
+    ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db),
+):
+    base_conds = [Unit.project_id == project_id, Unit.tenant_id == ctx.tenant_id]
+
+    # ── Ringkasan: SELURUH unit proyek, tak terpengaruh pencarian/paginasi di bawah ──
+    all_units = (await db.execute(select(Unit).where(*base_conds))).scalars().all()
     cons = (await db.execute(
         select(UnitConstruction).where(UnitConstruction.project_id == project_id, UnitConstruction.tenant_id == ctx.tenant_id)
     )).scalars().all()
@@ -60,11 +67,12 @@ async def list_construction(project_id: uuid.UUID = Query(...), ctx: AuthContext
     )).all()
     last_log = {r[0]: r[1] for r in log_rows}
 
-    rows = []
     stage_counts = defaultdict(int)
     total_pct = 0
     done = 0
-    for u in units:
+    late = 0
+    today_ = date.today()
+    for u in all_units:
         c = cmap.get(u.id)
         stage = c.stage if c else ConstructionStage.PERSIAPAN
         pct = c.percent if c else 0
@@ -72,6 +80,31 @@ async def list_construction(project_id: uuid.UUID = Query(...), ctx: AuthContext
         total_pct += pct
         if stage == ConstructionStage.SELESAI or pct >= 100:
             done += 1
+        ref = last_log.get(u.id) or (c.start_date if c else None)
+        if stage != ConstructionStage.SELESAI and ref and (today_ - ref).days > 7:
+            late += 1
+    n = len(all_units)
+    summary = ConstructionSummary(
+        total_units=n, avg_percent=round(total_pct / n, 1) if n else 0.0,
+        done_count=done, stage_counts=dict(stage_counts), late_count=late,
+    )
+
+    # ── Baris tabel: dicari (no. unit/blok) & dipaginasi ──
+    row_conds = list(base_conds)
+    if search:
+        term = f"%{search}%"
+        row_conds.append(or_(Unit.unit_number.ilike(term), Unit.block.ilike(term)))
+    total = await db.scalar(select(func.count()).select_from(Unit).where(*row_conds))
+    page_units = (await db.execute(
+        select(Unit).where(*row_conds).order_by(Unit.block, Unit.unit_number)
+        .offset((page - 1) * size).limit(size)
+    )).scalars().all()
+
+    rows = []
+    for u in page_units:
+        c = cmap.get(u.id)
+        stage = c.stage if c else ConstructionStage.PERSIAPAN
+        pct = c.percent if c else 0
         rows.append(UnitConstructionRow(
             unit_id=u.id, unit_label=_label(u), unit_type=u.unit_type,
             stage=stage, percent=pct,
@@ -79,12 +112,11 @@ async def list_construction(project_id: uuid.UUID = Query(...), ctx: AuthContext
             finish_date=c.finish_date if c else None, notes=c.notes if c else None,
             last_log_date=last_log.get(u.id),
         ))
-    n = len(units)
-    summary = ConstructionSummary(
-        total_units=n, avg_percent=round(total_pct / n, 1) if n else 0.0,
-        done_count=done, stage_counts=dict(stage_counts),
+
+    return ConstructionList(
+        rows=rows, summary=summary,
+        total=total or 0, page=page, size=size, pages=math.ceil((total or 0) / size) if size else 0,
     )
-    return ConstructionList(rows=rows, summary=summary)
 
 
 @router.put("/unit/{unit_id}", response_model=UnitConstructionRow)
