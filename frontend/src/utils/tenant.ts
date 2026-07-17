@@ -8,3 +8,9 @@ export function currentTenantSlug(): string | null {
   const slug = m[1].toLowerCase()
   return GENERIC.has(slug) ? null : slug
 }
+
+/** URL absolut ke subdomain tenant. Null bila bukan di *.nexisthub.id (dev/localhost) → jangan alihkan. */
+export function tenantUrl(slug: string, path = '/login'): string | null {
+  if (!/\.nexisthub\.id$/i.test(window.location.hostname)) return null
+  return `${window.location.protocol}//${slug}.nexisthub.id${path}`
+}

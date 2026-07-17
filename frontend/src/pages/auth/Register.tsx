@@ -1,17 +1,33 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { Loader2, CheckCircle2 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
+import { tenantUrl } from '../../utils/tenant'
 import type { RegisterPayload } from '../../types'
 import { INDONESIA_CITIES } from '../../data/indonesiaCities'
 import BrandPanel from './BrandPanel'
+
+const REDIRECT_SECONDS = 4
 
 export default function Register() {
   const { register: registerUser } = useAuth()
   const navigate = useNavigate()
   const [error, setError] = useState('')
   const [doneSlug, setDoneSlug] = useState<string | null | undefined>(undefined)
+  const [doneEmail, setDoneEmail] = useState('')
+  const [countdown, setCountdown] = useState(REDIRECT_SECONDS)
+
+  // URL login di alamat khusus tenant (null saat dev/localhost → tak dialihkan)
+  const homeUrl = doneSlug ? tenantUrl(doneSlug, `/login?baru=1&email=${encodeURIComponent(doneEmail)}`) : null
+
+  // Antar otomatis ke alamat outletnya sendiri — sesi tak bisa dibawa lintas origin, jadi mereka masuk sekali di sana
+  useEffect(() => {
+    if (!homeUrl) return
+    if (countdown <= 0) { window.location.href = homeUrl; return }
+    const t = setTimeout(() => setCountdown((c) => c - 1), 1000)
+    return () => clearTimeout(t)
+  }, [homeUrl, countdown])
 
   const {
     register,
@@ -23,6 +39,7 @@ export default function Register() {
     setError('')
     try {
       const me = await registerUser(data)
+      setDoneEmail(data.email)
       setDoneSlug(me.tenant_slug ?? null)
     } catch (err: any) {
       setError(err.response?.data?.detail ?? 'Pendaftaran gagal. Coba lagi.')
@@ -46,9 +63,17 @@ export default function Register() {
                 <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 mb-5 text-left">
                   <p className="text-xs text-slate-500">Alamat khusus Anda</p>
                   <p className="font-display font-semibold text-brand-700 break-all">{doneSlug}.nexisthub.id</p>
+                  <p className="text-[11px] text-slate-400 mt-1">Simpan alamat ini — di sinilah Anda masuk setiap hari.</p>
                 </div>
               )}
-              <button onClick={() => navigate('/login')} className="btn-primary w-full py-2.5">Lanjut Masuk</button>
+              {homeUrl ? (
+                <>
+                  <a href={homeUrl} className="btn-primary w-full py-2.5 inline-block text-center">Buka Alamat Saya</a>
+                  <p className="text-xs text-slate-400 mt-2">Mengarahkan otomatis dalam {countdown} detik…</p>
+                </>
+              ) : (
+                <button onClick={() => navigate('/login')} className="btn-primary w-full py-2.5">Lanjut Masuk</button>
+              )}
             </div>
           ) : (
             <>

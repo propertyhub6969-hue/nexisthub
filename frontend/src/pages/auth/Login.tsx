@@ -5,7 +5,7 @@ import { Loader2 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { authService } from '../../services/auth'
 import { publicService } from '../../services/public'
-import { currentTenantSlug } from '../../utils/tenant'
+import { currentTenantSlug, tenantUrl } from '../../utils/tenant'
 import type { LoginPayload } from '../../types'
 import BrandPanel from './BrandPanel'
 
@@ -16,6 +16,12 @@ export default function Login() {
 
   const slug = currentTenantSlug()
   const [brand, setBrand] = useState<string | null>(null)
+  // datang dari pintu umum / baru daftar → email sudah diisikan + beri konteks
+  const params = new URLSearchParams(window.location.search)
+  const prefillEmail = params.get('email') ?? ''
+  const fromApp = params.get('from') === 'app'
+  const justRegistered = params.get('baru') === '1'
+  const [redirecting, setRedirecting] = useState(false)
 
   useEffect(() => {
     if (slug) publicService.tenantBySlug(slug).then((t) => setBrand(t?.name ?? null))
@@ -25,12 +31,23 @@ export default function Login() {
     register,
     handleSubmit,
     formState: { errors, isSubmitting },
-  } = useForm<LoginPayload>()
+  } = useForm<LoginPayload>({ defaultValues: { email: prefillEmail } })
 
   const onSubmit = async (data: LoginPayload) => {
     setError('')
     try {
       const me = await login(data)
+      // Pintu umum (app.nexisthub.id): akun tenant TIDAK dipakai di sini — antar ke alamat outletnya sendiri.
+      // Sesi tak bisa dibawa lintas origin (localStorage per-origin), jadi token dibuang & mereka masuk sekali di sana.
+      if (!slug && !me.is_platform_admin && me.tenant_slug) {
+        const url = tenantUrl(me.tenant_slug, `/login?from=app&email=${encodeURIComponent(data.email)}`)
+        if (url) {
+          authService.clearTokens()
+          setRedirecting(true)
+          window.location.href = url
+          return
+        }
+      }
       if (slug && !me.is_platform_admin && me.tenant_slug !== slug) {
         authService.clearTokens()
         setError(`Akun ini bukan milik outlet "${slug}". Masuk lewat app.nexisthub.id atau subdomain outlet Anda.`)
@@ -71,6 +88,20 @@ export default function Login() {
                 {...register('password', { required: 'Password wajib diisi' })} />
               {errors.password && <p className="text-xs text-red-500 mt-1">{errors.password.message}</p>}
             </div>
+
+            {(fromApp || justRegistered) && !error && (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-sm text-blue-700">
+                {justRegistered
+                  ? 'Akun berhasil dibuat. Ini alamat khusus Anda — silakan masuk untuk mulai.'
+                  : 'Anda diarahkan ke alamat khusus outlet Anda. Masuk di sini, lalu simpan alamat ini sebagai bookmark.'}
+              </div>
+            )}
+
+            {redirecting && (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-sm text-blue-700">
+                Mengarahkan ke alamat outlet Anda…
+              </div>
+            )}
 
             {error && (
               <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-sm text-red-600">{error}</div>
