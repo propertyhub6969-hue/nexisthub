@@ -18,5 +18,5 @@ async def tenant_by_slug(slug: str, db: AsyncSession = Depends(get_db)):
         select(Tenant).where(Tenant.slug == slug)
     )).scalar_one_or_none()
     if t is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Office Digital tidak ditemukan")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Kantor Digital tidak ditemukan")
     return {"name": t.name, "slug": t.slug}

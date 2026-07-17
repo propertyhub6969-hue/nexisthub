@@ -37,7 +37,7 @@ export default function Login() {
     setError('')
     try {
       const me = await login(data)
-      // Pintu umum (app.nexisthub.id): akun tenant TIDAK dipakai di sini — antar ke alamat Office Digital-nya sendiri.
+      // Pintu umum (app.nexisthub.id): akun tenant TIDAK dipakai di sini — antar ke alamat Kantor Digital-nya sendiri.
       // Sesi tak bisa dibawa lintas origin (localStorage per-origin), jadi token dibuang & mereka masuk sekali di sana.
       if (!slug && !me.is_platform_admin && me.tenant_slug) {
         const url = tenantUrl(me.tenant_slug, `/login?from=app&email=${encodeURIComponent(data.email)}`)
@@ -50,7 +50,7 @@ export default function Login() {
       }
       if (slug && !me.is_platform_admin && me.tenant_slug !== slug) {
         authService.clearTokens()
-        setError(`Akun ini bukan milik Office Digital "${slug}". Masuk lewat app.nexisthub.id atau subdomain Office Digital Anda.`)
+        setError(`Akun ini bukan milik Kantor Digital "${slug}". Masuk lewat app.nexisthub.id atau subdomain Kantor Digital Anda.`)
         return
       }
       navigate('/dashboard')
@@ -72,7 +72,7 @@ export default function Login() {
 
           <h1 className="text-2xl font-bold text-slate-900">{brand ? `Masuk — ${brand}` : 'Selamat datang'}</h1>
           <p className="text-sm text-slate-500 mt-1 mb-7">
-            {slug ? (brand ? `Portal ${brand}` : `Office Digital "${slug}"`) : 'Masuk untuk mengelola proyek properti Anda.'}
+            {slug ? (brand ? `Portal ${brand}` : `Kantor Digital "${slug}"`) : 'Masuk untuk mengelola proyek properti Anda.'}
           </p>
 
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
@@ -93,13 +93,13 @@ export default function Login() {
               <div className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-sm text-blue-700">
                 {justRegistered
                   ? 'Akun berhasil dibuat. Ini alamat khusus Anda — silakan masuk untuk mulai.'
-                  : 'Anda diarahkan ke alamat khusus Office Digital Anda. Masuk di sini, lalu simpan alamat ini sebagai bookmark.'}
+                  : 'Anda diarahkan ke alamat khusus Kantor Digital Anda. Masuk di sini, lalu simpan alamat ini sebagai bookmark.'}
               </div>
             )}
 
             {redirecting && (
               <div className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-sm text-blue-700">
-                Mengarahkan ke alamat Office Digital Anda…
+                Mengarahkan ke alamat Kantor Digital Anda…
               </div>
             )}
 
