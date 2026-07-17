@@ -21,7 +21,7 @@ export default function Register() {
   // URL login di alamat khusus tenant (null saat dev/localhost → tak dialihkan)
   const homeUrl = doneSlug ? tenantUrl(doneSlug, `/login?baru=1&email=${encodeURIComponent(doneEmail)}`) : null
 
-  // Antar otomatis ke alamat outletnya sendiri — sesi tak bisa dibawa lintas origin, jadi mereka masuk sekali di sana
+  // Antar otomatis ke alamat Office Digital-nya sendiri — sesi tak bisa dibawa lintas origin, jadi mereka masuk sekali di sana
   useEffect(() => {
     if (!homeUrl) return
     if (countdown <= 0) { window.location.href = homeUrl; return }
@@ -57,7 +57,7 @@ export default function Register() {
               <div className="mx-auto w-12 h-12 rounded-full bg-accent-500/10 flex items-center justify-center mb-4">
                 <CheckCircle2 size={26} className="text-accent-500" />
               </div>
-              <h1 className="text-2xl font-bold text-slate-900">Outlet Anda siap</h1>
+              <h1 className="text-2xl font-bold text-slate-900">Office Digital Anda siap</h1>
               <p className="text-sm text-slate-500 mt-1 mb-5">Trial gratis 14 hari sudah aktif.</p>
               {doneSlug && (
                 <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 mb-5 text-left">

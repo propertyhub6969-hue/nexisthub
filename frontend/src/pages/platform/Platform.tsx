@@ -219,7 +219,7 @@ export default function Platform() {
       {/* Create */}
       <Modal open={cModal} onClose={() => setCModal(false)} title="Provision Tenant Baru">
         <form onSubmit={submitCreate} className="space-y-3">
-          <div><label className="label">Nama Perusahaan/Outlet *</label><input className="input" required minLength={2} value={cForm.name} onChange={(e) => setCForm({ ...cForm, name: e.target.value })} /></div>
+          <div><label className="label">Nama Perusahaan/Office Digital *</label><input className="input" required minLength={2} value={cForm.name} onChange={(e) => setCForm({ ...cForm, name: e.target.value })} /></div>
           <div className="grid grid-cols-2 gap-3">
             <div><label className="label">Paket</label><input className="input" value={cForm.subscription_plan} onChange={(e) => setCForm({ ...cForm, subscription_plan: e.target.value })} /></div>
             <div><label className="label">Status</label>
