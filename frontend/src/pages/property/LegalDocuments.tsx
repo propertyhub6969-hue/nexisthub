@@ -71,6 +71,7 @@ export default function LegalDocuments() {
   const [units, setUnits] = useState<Unit[]>([])
   const [projectId, setProjectId] = useState('')
   const [unitId, setUnitId] = useState('')
+  const [unitQuery, setUnitQuery] = useState('')   // teks yang diketik di kolom cari unit (autofill)
   const [docs, setDocs] = useState<DocumentItem[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -119,10 +120,17 @@ export default function LegalDocuments() {
   }, [])
 
   useEffect(() => {
-    setUnitId(''); setUnits([]); setDocs([])
+    setUnitId(''); setUnitQuery(''); setUnits([]); setDocs([])
     if (!projectId) return
     propertyService.listUnits({ project_id: projectId, size: 500 }).then((r) => setUnits(r.items)).catch(() => setError('Gagal memuat unit.'))
   }, [projectId])
+
+  const unitOptionLabel = (u: Unit) => `${unitLabel(u)}${u.unit_type ? ` (${u.unit_type})` : ''}`
+  function handleUnitQueryChange(text: string) {
+    setUnitQuery(text)
+    const match = units.find((u) => unitOptionLabel(u).toLowerCase() === text.trim().toLowerCase())
+    setUnitId(match ? match.id : '')
+  }
 
   const loadDocs = useCallback(async (uid: string) => {
     setLoading(true); setError('')
@@ -322,10 +330,14 @@ export default function LegalDocuments() {
           <option value="">Pilih proyek...</option>
           {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
         </select>
-        <select className="input w-56" value={unitId} onChange={(e) => setUnitId(e.target.value)} disabled={!projectId}>
-          <option value="">{projectId ? 'Pilih unit...' : 'Pilih proyek dulu'}</option>
-          {units.map((u) => <option key={u.id} value={u.id}>{unitLabel(u)} {u.unit_type ? `(${u.unit_type})` : ''}</option>)}
-        </select>
+        <input
+          className="input w-56" list="legal-unit-suggest"
+          placeholder={projectId ? 'Cari no. unit / blok...' : 'Pilih proyek dulu'}
+          value={unitQuery} onChange={(e) => handleUnitQueryChange(e.target.value)} disabled={!projectId}
+        />
+        <datalist id="legal-unit-suggest">
+          {units.map((u) => <option key={u.id} value={unitOptionLabel(u)} />)}
+        </datalist>
       </div>
 
       {error && <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-2">{error}</div>}
