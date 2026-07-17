@@ -72,7 +72,7 @@ export default function Login() {
 
           <h1 className="text-2xl font-bold text-slate-900">{brand ? `Masuk — ${brand}` : 'Selamat datang'}</h1>
           <p className="text-sm text-slate-500 mt-1 mb-7">
-            {slug ? (brand ? `Portal ${brand}` : `Kantor Digital "${slug}"`) : 'Masuk untuk mengelola proyek properti Anda.'}
+            {slug ? (brand ? `Kantor Digital ${brand}` : `Kantor Digital "${slug}"`) : 'Masuk untuk mengelola proyek properti Anda.'}
           </p>
 
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
