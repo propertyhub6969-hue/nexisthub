@@ -39,7 +39,7 @@ const batchStatusCfg: Record<SplitBatchStatus, { label: string; variant: 'gray' 
   ditolak:    { label: 'Ditolak',     variant: 'red' },
 }
 
-const DOC_TYPE_SUGGESTIONS = ['KKPR', 'Izin Lingkungan', 'PBG', 'SLF', 'HGB Induk', 'SHM Induk']
+const DOC_TYPE_SUGGESTIONS = ['Siteplan Pengesahan', 'KKPR', 'Izin Lingkungan', 'PBG', 'SLF', 'HGB Induk', 'SHM Induk']
 
 const emptyDocForm = (): DocumentCreate => ({ project_id: '', doc_type: '', name: '', status: 'belum', doc_date: '', expiry_date: '', notes: '' })
 
