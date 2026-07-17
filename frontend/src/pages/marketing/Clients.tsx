@@ -86,6 +86,8 @@ export default function Clients() {
   const colMenuRef = useRef<HTMLDivElement>(null)
   const [projectFilter, setProjectFilter] = useState('')
   const [unitFilter, setUnitFilter] = useState('')
+  const [unitFilterQuery, setUnitFilterQuery] = useState('')   // teks yg diketik di filter unit (autofill)
+  const [unitFormQuery, setUnitFormQuery] = useState('')       // teks yg diketik di form unit (autofill)
   const [page, setPage] = useState(1)
   const [total, setTotal] = useState(0)
   const [pages, setPages] = useState(1)
@@ -95,6 +97,8 @@ export default function Clients() {
   const unitLabel = (u?: Unit) => u ? [u.block, u.unit_number].filter(Boolean).join('-') : undefined
   const unitsFor = (pid?: string) => (pid && unitsByProject[pid]) || []
   const unitNumberById = (id?: string) => unitLabel(Object.values(unitsByProject).flat().find((u) => u.id === id))
+  const formUnits = unitsFor(form.project_id)
+  const filterUnits = unitsFor(projectFilter)
 
   useEffect(() => {
     localStorage.setItem(COLS_STORAGE_KEY, JSON.stringify(visibleCols))
@@ -154,7 +158,7 @@ export default function Clients() {
     return () => clearTimeout(t)
   }, [search, projectFilter, unitFilter, page, load])
 
-  function openCreate() { setEditingId(null); setForm(emptyForm); setModalOpen(true) }
+  function openCreate() { setEditingId(null); setForm(emptyForm); setUnitFormQuery(''); setModalOpen(true) }
   function openEdit(c: Client) {
     setEditingId(c.id)
     setForm({
@@ -166,13 +170,31 @@ export default function Clients() {
     })
     setModalOpen(true)
   }
-  function closeModal() { setModalOpen(false); setEditingId(null); setForm(emptyForm) }
+  function closeModal() { setModalOpen(false); setEditingId(null); setForm(emptyForm); setUnitFormQuery('') }
 
   // pilih unit → harga otomatis dari data unit
   function onSelectUnit(unitId: string) {
     const u = unitsFor(form.project_id).find((x) => x.id === unitId)
     setForm((f) => ({ ...f, unit_id: unitId, contract_value: u?.price != null ? Number(u.price) : f.contract_value }))
   }
+  const unitOptionLabel = (u: Unit) => `${unitLabel(u) ?? ''}${u.unit_type ? ` (${u.unit_type})` : ''}`
+  function handleUnitFilterQueryChange(text: string) {
+    setUnitFilterQuery(text)
+    const match = filterUnits.find((u) => (unitLabel(u) ?? '').toLowerCase() === text.trim().toLowerCase())
+    setUnitFilter(match ? match.id : ''); setPage(1)
+  }
+  function handleUnitFormQueryChange(text: string) {
+    setUnitFormQuery(text)
+    const match = formUnits.find((u) => unitOptionLabel(u).toLowerCase() === text.trim().toLowerCase())
+    onSelectUnit(match ? match.id : '')
+  }
+  // sinkron teks tampilan form HANYA saat unit_id sudah match (mis. buka Edit sebelum unit proyeknya
+  // selesai lazy-load) — jangan pernah kosongkan di sini, supaya tak menimpa ketikan yang sedang berjalan.
+  useEffect(() => {
+    const u = formUnits.find((x) => x.id === form.unit_id)
+    if (u) setUnitFormQuery(unitOptionLabel(u))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.unit_id, formUnits])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault(); setSaving(true)
@@ -198,9 +220,6 @@ export default function Clients() {
     catch { setError('Gagal menghapus pembeli.') }
   }
 
-  const formUnits = unitsFor(form.project_id)
-
-  const filterUnits = unitsFor(projectFilter)
   const visibleColumns = ALL_COLUMNS.filter((c) => !c.toggleable || visibleCols[c.key as ToggleColKey])
 
   function renderCell(c: Client, key: ColDef['key']) {
@@ -279,14 +298,17 @@ export default function Clients() {
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input className="input pl-8 w-56" placeholder="Cari nama atau unit..." value={search} onChange={(e) => { setSearch(e.target.value); setPage(1) }} />
           </div>
-          <select className="input w-40" value={projectFilter} onChange={(e) => { setProjectFilter(e.target.value); setUnitFilter(''); setPage(1) }}>
+          <select className="input w-40" value={projectFilter} onChange={(e) => { setProjectFilter(e.target.value); setUnitFilter(''); setUnitFilterQuery(''); setPage(1) }}>
             <option value="">Semua Proyek</option>
             {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
           </select>
-          <select className="input w-40" value={unitFilter} onChange={(e) => { setUnitFilter(e.target.value); setPage(1) }}>
-            <option value="">Semua Unit</option>
-            {filterUnits.map((u) => <option key={u.id} value={u.id}>{unitLabel(u)}</option>)}
-          </select>
+          <input
+            className="input w-40" list="client-filter-unit-suggest" placeholder="Semua Unit"
+            value={unitFilterQuery} onChange={(e) => handleUnitFilterQueryChange(e.target.value)}
+          />
+          <datalist id="client-filter-unit-suggest">
+            {filterUnits.map((u) => <option key={u.id} value={unitLabel(u) ?? ''} />)}
+          </datalist>
           <div className="relative" ref={colMenuRef}>
             <button onClick={() => setColMenuOpen((v) => !v)} className="btn-secondary flex items-center gap-2 text-sm">
               <Columns3 size={14} /> Kolom
@@ -373,17 +395,21 @@ export default function Clients() {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="label">Proyek</label>
-              <select className="input" value={form.project_id} onChange={(e) => setForm({ ...form, project_id: e.target.value, unit_id: '' })}>
+              <select className="input" value={form.project_id} onChange={(e) => { setForm({ ...form, project_id: e.target.value, unit_id: '' }); setUnitFormQuery('') }}>
                 <option value="">Pilih proyek...</option>
                 {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
               </select>
             </div>
             <div>
               <label className="label">No. Unit / Kavling</label>
-              <select className="input" value={form.unit_id} onChange={(e) => onSelectUnit(e.target.value)} disabled={!form.project_id}>
-                <option value="">{form.project_id ? 'Pilih unit...' : 'Pilih proyek dulu'}</option>
-                {formUnits.map((u) => <option key={u.id} value={u.id}>{unitLabel(u)} {u.unit_type ? `(${u.unit_type})` : ''}</option>)}
-              </select>
+              <input
+                className="input" list="client-form-unit-suggest"
+                placeholder={form.project_id ? 'Cari no. unit / blok...' : 'Pilih proyek dulu'}
+                value={unitFormQuery} onChange={(e) => handleUnitFormQueryChange(e.target.value)} disabled={!form.project_id}
+              />
+              <datalist id="client-form-unit-suggest">
+                {formUnits.map((u) => <option key={u.id} value={unitOptionLabel(u)} />)}
+              </datalist>
             </div>
           </div>
           <div className="grid grid-cols-3 gap-3">

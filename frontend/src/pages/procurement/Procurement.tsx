@@ -65,6 +65,7 @@ export default function Procurement() {
   // PO modal
   const [poModal, setPoModal] = useState(false)
   const [poForm, setPoForm] = useState<POCreate>(emptyPO())
+  const [poUnitQuery, setPoUnitQuery] = useState('')   // teks yg diketik di "Unit (opsional)" (autofill)
   const [poEditId, setPoEditId] = useState<string | null>(null)
   const [poProject, setPoProject] = useState('')  // filter proyek tab PO ('' = semua)
   // Payment modal
@@ -92,6 +93,7 @@ export default function Procurement() {
   const [inForm, setInForm] = useState<StockInCreate>(emptyStockIn())
   const [outModal, setOutModal] = useState(false)
   const [outForm, setOutForm] = useState<StockOutCreate>(emptyStockOut(''))
+  const [outUnitQuery, setOutUnitQuery] = useState('')   // teks yg diketik di "Ke Unit" (autofill)
   // Transfer antar-lokasi
   const [trfModal, setTrfModal] = useState(false)
   const [trfMaterial, setTrfMaterial] = useState('|')
@@ -106,12 +108,14 @@ export default function Procurement() {
   const [retPrice, setRetPrice] = useState<number | undefined>(undefined)
   const [retDate, setRetDate] = useState('')
   const [retUnitId, setRetUnitId] = useState('')
+  const [retUnitQuery, setRetUnitQuery] = useState('')   // teks yg diketik di "Dari Unit" (autofill)
   const [retNotes, setRetNotes] = useState('')
   // Biaya
   const [expenses, setExpenses] = useState<Expense[]>([])
   const [cost, setCost] = useState<CostSummary | null>(null)
   const [expModal, setExpModal] = useState(false)
   const [expForm, setExpForm] = useState<ExpenseCreate>(emptyExpense(''))
+  const [expUnitQuery, setExpUnitQuery] = useState('')   // teks yg diketik di "Alokasi ke Unit" (autofill)
   const [expEditId, setExpEditId] = useState<string | null>(null)
   // RAB & kebocoran
   const [templates, setTemplates] = useState<RabTemplate[]>([])
@@ -161,6 +165,37 @@ export default function Procurement() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { ensureUnits(poForm.project_id) }, [poForm.project_id])
 
+  const stockUnits = unitsFor(stockLocProject)
+  const formUnits = unitsFor(poForm.project_id)
+  const unitBlockLabel = (u: Unit) => [u.block, u.unit_number].filter(Boolean).join('-')
+  function matchUnitByLabel(list: Unit[], text: string): string {
+    const m = list.find((u) => unitBlockLabel(u).toLowerCase() === text.trim().toLowerCase())
+    return m ? m.id : ''
+  }
+  function handlePoUnitQueryChange(text: string) {
+    setPoUnitQuery(text)
+    setPoForm((f) => ({ ...f, unit_id: matchUnitByLabel(formUnits, text) }))
+  }
+  function handleOutUnitQueryChange(text: string) {
+    setOutUnitQuery(text)
+    setOutForm((f) => ({ ...f, unit_id: matchUnitByLabel(stockUnits, text) }))
+  }
+  function handleRetUnitQueryChange(text: string) {
+    setRetUnitQuery(text)
+    setRetUnitId(matchUnitByLabel(stockUnits, text))
+  }
+  function handleExpUnitQueryChange(text: string) {
+    setExpUnitQuery(text)
+    setExpForm((f) => ({ ...f, unit_id: matchUnitByLabel(stockUnits, text) }))
+  }
+  // sinkron teks tampilan PO HANYA saat unit_id sudah match (mis. buka Edit sebelum unit proyeknya
+  // selesai lazy-load) — jangan pernah kosongkan di sini, supaya tak menimpa ketikan yang sedang berjalan.
+  useEffect(() => {
+    const u = formUnits.find((x) => x.id === poForm.unit_id)
+    if (u) setPoUnitQuery(unitBlockLabel(u))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [poForm.unit_id, formUnits])
+
   const reloadPO = async () => setPos(await procurementService.listPOs())
   const reloadVendor = async () => setVendors(await procurementService.listVendors())
   const reloadMaterial = async () => setMaterials(await procurementService.listMaterials())
@@ -186,7 +221,7 @@ export default function Procurement() {
   useEffect(() => { ensureUnits(stockLocProject) }, [stockLocProject])
 
   function openStockIn() { setInForm(emptyStockIn()); setInModal(true) }
-  function openStockOut() { setOutForm(emptyStockOut(stockLocProject)); setOutModal(true) }
+  function openStockOut() { setOutForm(emptyStockOut(stockLocProject)); setOutUnitQuery(''); setOutModal(true) }
   async function submitIn(e: React.FormEvent) {
     e.preventDefault(); setSaving(true)
     try {
@@ -231,7 +266,7 @@ export default function Procurement() {
   }
   function openReturn() {
     setRetDir('vendor'); setRetMaterial('|'); setRetQty(0); setRetPrice(undefined)
-    setRetDate(''); setRetUnitId(''); setRetNotes(''); setRetModal(true)
+    setRetDate(''); setRetUnitId(''); setRetUnitQuery(''); setRetNotes(''); setRetModal(true)
   }
   async function submitReturn(e: React.FormEvent) {
     e.preventDefault(); setSaving(true); setError('')
@@ -285,7 +320,6 @@ export default function Procurement() {
     if (!confirm(msg)) return
     try { await procurementService.deleteMovement(id); await loadStock(stockLoc) } catch { /* noop */ }
   }
-  const stockUnits = unitsFor(stockLocProject)
 
   const loadCost = useCallback(async (pid: string) => {
     if (!pid) { setExpenses([]); setCost(null); return }
@@ -294,10 +328,11 @@ export default function Procurement() {
   }, [])
   useEffect(() => { if (tab === 'biaya' && stockProject) loadCost(stockProject) }, [tab, stockProject, loadCost])
 
-  function openExpCreate() { setExpEditId(null); setExpForm(emptyExpense(stockProject)); setExpModal(true) }
+  function openExpCreate() { setExpEditId(null); setExpForm(emptyExpense(stockProject)); setExpUnitQuery(''); setExpModal(true) }
   function openExpEdit(x: Expense) {
     setExpEditId(x.id)
     setExpForm({ project_id: stockProject, unit_id: x.unit_id ?? '', category: x.category, description: x.description, amount: x.amount, expense_date: x.expense_date ?? '', is_paid: x.is_paid })
+    setExpUnitQuery(x.unit_id ? (unitLabel(x.unit_id) ?? '') : '')
     setExpModal(true)
   }
   async function submitExp(e: React.FormEvent) {
@@ -370,7 +405,7 @@ export default function Procurement() {
   }
 
   // ── PO ──
-  function openPoCreate() { setPoEditId(null); setPoForm(emptyPO()); setPoModal(true) }
+  function openPoCreate() { setPoEditId(null); setPoForm(emptyPO()); setPoUnitQuery(''); setPoModal(true) }
   function openPoEdit(po: PurchaseOrder) {
     setPoEditId(po.id)
     setPoForm({
@@ -480,7 +515,6 @@ export default function Procurement() {
 
   const projName = (id?: string) => projects.find((p) => p.id === id)?.name
   const unitLabel = (id?: string) => { const u = Object.values(unitsByProject).flat().find((x) => x.id === id); return u ? [u.block, u.unit_number].filter(Boolean).join('-') : undefined }
-  const formUnits = unitsFor(poForm.project_id)
 
   // Tab PO: filter proyek + ringkasan
   const poFiltered = poProject ? pos.filter((p) => p.project_id === poProject) : pos
@@ -924,6 +958,7 @@ export default function Procurement() {
                 value={poForm.warehouse_id ? locKey('w', poForm.warehouse_id) : poForm.project_id ? locKey('p', poForm.project_id) : ''}
                 onChange={(e) => {
                   const v = e.target.value
+                  setPoUnitQuery('')
                   if (!v) setPoForm({ ...poForm, project_id: '', warehouse_id: '', unit_id: '' })
                   else if (isWarehouseLoc(v)) setPoForm({ ...poForm, warehouse_id: locId(v), project_id: '', unit_id: '' })
                   else setPoForm({ ...poForm, project_id: locId(v), warehouse_id: '', unit_id: '' })
@@ -933,9 +968,10 @@ export default function Procurement() {
                 <optgroup label="Proyek">{projects.map((p) => <option key={p.id} value={locKey('p', p.id)}>{p.name}</option>)}</optgroup>
               </select></div>
             <div><label className="label">Unit (opsional)</label>
-              <select className="input" value={poForm.unit_id} onChange={(e) => setPoForm({ ...poForm, unit_id: e.target.value })} disabled={!poForm.project_id}>
-                <option value="">Umum proyek</option>{formUnits.map((u) => <option key={u.id} value={u.id}>{[u.block, u.unit_number].filter(Boolean).join('-')}</option>)}
-              </select></div>
+              <input className="input" list="po-unit-suggest" placeholder="Umum proyek"
+                value={poUnitQuery} onChange={(e) => handlePoUnitQueryChange(e.target.value)} disabled={!poForm.project_id} />
+              <datalist id="po-unit-suggest">{formUnits.map((u) => <option key={u.id} value={unitBlockLabel(u)} />)}</datalist>
+            </div>
             <div><label className="label">Status</label>
               <select className="input" value={poForm.status} onChange={(e) => setPoForm({ ...poForm, status: e.target.value as POStatus })}>
                 {(Object.keys(poStatusCfg) as POStatus[]).map((k) => <option key={k} value={k}>{poStatusCfg[k].label}</option>)}
@@ -1076,10 +1112,9 @@ export default function Procurement() {
             <div><label className="label">Tanggal</label><DateInput className="input" max={today()} value={outForm.movement_date} onChange={(v) => setOutForm({ ...outForm, movement_date: v })} /></div>
           </div>
           <div><label className="label">Ke Unit</label>
-            <select className="input" value={outForm.unit_id} onChange={(e) => setOutForm({ ...outForm, unit_id: e.target.value })}>
-              <option value="">Umum proyek (tanpa unit)</option>
-              {stockUnits.map((u) => <option key={u.id} value={u.id}>{[u.block, u.unit_number].filter(Boolean).join('-')}</option>)}
-            </select>
+            <input className="input" list="out-unit-suggest" placeholder="Umum proyek (tanpa unit)"
+              value={outUnitQuery} onChange={(e) => handleOutUnitQueryChange(e.target.value)} />
+            <datalist id="out-unit-suggest">{stockUnits.map((u) => <option key={u.id} value={unitBlockLabel(u)} />)}</datalist>
           </div>
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" className="btn-secondary text-sm" onClick={() => setOutModal(false)}>Batal</button>
@@ -1117,10 +1152,9 @@ export default function Procurement() {
           <div><label className="label">Harga/sat (opsional)</label><MoneyInput value={retPrice} onChange={(v) => setRetPrice(v)} /><p className="text-[11px] text-slate-400 mt-0.5">Kosong = pakai HPP rata² saat ini.</p></div>
           {retDir === 'unit' && (
             <div><label className="label">Dari Unit *</label>
-              <select className="input" required value={retUnitId} onChange={(e) => setRetUnitId(e.target.value)}>
-                <option value="">Pilih unit...</option>
-                {stockUnits.map((u) => <option key={u.id} value={u.id}>{[u.block, u.unit_number].filter(Boolean).join('-')}</option>)}
-              </select>
+              <input className="input" list="ret-unit-suggest" required placeholder="Pilih unit..."
+                value={retUnitQuery} onChange={(e) => handleRetUnitQueryChange(e.target.value)} />
+              <datalist id="ret-unit-suggest">{stockUnits.map((u) => <option key={u.id} value={unitBlockLabel(u)} />)}</datalist>
             </div>
           )}
           <div><label className="label">Alasan Retur *</label><input className="input" required value={retNotes} onChange={(e) => setRetNotes(e.target.value)} placeholder="mis. barang cacat, kelebihan kirim..." /></div>
@@ -1190,10 +1224,10 @@ export default function Procurement() {
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div><label className="label">Alokasi ke Unit</label>
-              <select className="input" value={expForm.unit_id} onChange={(e) => setExpForm({ ...expForm, unit_id: e.target.value })}>
-                <option value="">Umum proyek (tanpa unit)</option>
-                {stockUnits.map((u) => <option key={u.id} value={u.id}>{[u.block, u.unit_number].filter(Boolean).join('-')}</option>)}
-              </select></div>
+              <input className="input" list="exp-unit-suggest" placeholder="Umum proyek (tanpa unit)"
+                value={expUnitQuery} onChange={(e) => handleExpUnitQueryChange(e.target.value)} />
+              <datalist id="exp-unit-suggest">{stockUnits.map((u) => <option key={u.id} value={unitBlockLabel(u)} />)}</datalist>
+            </div>
             <div><label className="label">Tanggal</label><DateInput className="input" max={today()} value={expForm.expense_date} onChange={(v) => setExpForm({ ...expForm, expense_date: v })} /></div>
           </div>
           <div className="flex justify-end gap-2 pt-2">
