@@ -1,6 +1,7 @@
 import uuid
 from collections import defaultdict
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
+from decimal import Decimal
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status, Form, UploadFile, File
@@ -15,8 +16,11 @@ from app.api.deps import get_current_context, AuthContext
 from app.models.construction import UnitConstruction, ConstructionStage, ConstructionProgressLog
 from app.models.property import Unit
 from app.models.user import User
+from app.models.expense import Expense, ExpenseCategory
+from app.models.rab import RabTemplateLine, UnitRabAdjustment
 from app.schemas.construction import (
     ConstructionUpsert, UnitConstructionRow, ConstructionSummary, ConstructionList, ProgressLogResponse,
+    UpahResumeRow,
 )
 
 router = APIRouter()
@@ -199,3 +203,66 @@ async def delete_progress_log(log_id: uuid.UUID, ctx: AuthContext = Depends(get_
     log.is_deleted = True; log.deleted_at = datetime.utcnow()
     await db.flush()
     await record_audit(db, ctx.tenant_id, ctx.user_id, "DELETE", "construction_progress_logs", log_id)
+
+
+# ═══════════════════════ RESUME UPAH per KAVLING (upah vs RAB tenaga kerja) ═══════════════════════
+@router.get("/upah-resume", response_model=list[UpahResumeRow])
+async def upah_resume(project_id: uuid.UUID = Query(...), ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db)):
+    """Per kavling: realisasi upah (minggu berjalan + kumulatif akrual) vs RAB tenaga kerja (kategori upah).
+    Selisih = upah_total − RAB (minus = di bawah anggaran = aman)."""
+    t = ctx.tenant_id
+    units = (await db.execute(select(Unit).where(Unit.project_id == project_id, Unit.tenant_id == t))).scalars().all()
+    if not units:
+        return []
+
+    # RAB upah per unit = baris template (kategori upah) + penyesuaian (kategori upah)
+    tpl_ids = {u.rab_template_id for u in units if u.rab_template_id}
+    tpl_upah: dict = defaultdict(Decimal)
+    if tpl_ids:
+        lines = (await db.execute(
+            select(RabTemplateLine).where(RabTemplateLine.template_id.in_(tpl_ids), RabTemplateLine.category == ExpenseCategory.UPAH)
+        )).scalars().all()
+        for ln in lines:
+            tpl_upah[ln.template_id] += Decimal(ln.amount)
+    adj_upah: dict = defaultdict(Decimal)
+    adjs = (await db.execute(
+        select(UnitRabAdjustment).where(
+            UnitRabAdjustment.tenant_id == t, UnitRabAdjustment.category == ExpenseCategory.UPAH,
+            UnitRabAdjustment.is_deleted == False)  # noqa: E712
+    )).scalars().all()
+    for a in adjs:
+        adj_upah[a.unit_id] += Decimal(a.amount)
+
+    # Realisasi upah per unit (akrual: semua opname upah, dibayar/diajukan) + bucket minggu berjalan
+    today = date.today()
+    week_start = today - timedelta(days=today.weekday())  # Senin minggu ini
+    rows = (await db.execute(
+        select(
+            Expense.unit_id,
+            func.coalesce(func.sum(Expense.amount), 0),
+            func.coalesce(func.sum(Expense.amount).filter(Expense.expense_date >= week_start), 0),
+        ).where(
+            Expense.tenant_id == t, Expense.project_id == project_id,
+            Expense.category == ExpenseCategory.UPAH, Expense.is_deleted == False)  # noqa: E712
+        .group_by(Expense.unit_id)
+    )).all()
+    real_total: dict = {}
+    real_week: dict = {}
+    for uid, tot, wk in rows:
+        real_total[uid] = Decimal(tot); real_week[uid] = Decimal(wk)
+
+    out = []
+    for u in units:
+        rab = tpl_upah.get(u.rab_template_id, Decimal(0)) + adj_upah.get(u.id, Decimal(0))
+        total = real_total.get(u.id, Decimal(0))
+        week = real_week.get(u.id, Decimal(0))
+        if rab == 0 and total == 0:
+            continue  # kavling tanpa RAB upah & tanpa realisasi → tak relevan
+        selisih = total - rab
+        out.append(UpahResumeRow(
+            unit_id=u.id, unit_label=_label(u),
+            upah_minggu=week, upah_total=total, rab_tenaga_kerja=rab,
+            selisih=selisih, status=("lewat" if (rab > 0 and total > rab) else "aman"),
+        ))
+    out.sort(key=lambda r: r.unit_label)
+    return out

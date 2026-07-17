@@ -51,3 +51,56 @@ class Document(BaseModel, SoftDeleteMixin):
 
     def __repr__(self) -> str:
         return f"<Document {self.doc_type} [{self.status}]>"
+
+
+class HandoverEvent(str, enum.Enum):
+    """Kejadian penguasaan dokumen ASLI (fisik). Siklus: arsip → notaris → (pembeli | bank)."""
+    AMBIL = "ambil"                    # diambil dari arsip oleh pegawai
+    SERAH_NOTARIS = "serah_notaris"    # diserahkan ke notaris untuk diproses (AJB/balik nama)
+    TERIMA_PEMBELI = "terima_pembeli"  # diserahkan ke pembeli (CASH) — penutup, keluar permanen
+    TAHAN_BANK = "tahan_bank"          # ditahan bank sbg agunan (KPR) — penutup, tak kembali
+    KEMBALI_ARSIP = "kembali_arsip"    # kembali ke arsip
+
+
+class DocumentHandover(BaseModel, SoftDeleteMixin):
+    """Log serah-terima dokumen ASLI (kertas fisik) — BUKAN file scan (file tetap di MinIO).
+    Status penguasaan dokumen = kejadian TERAKHIR (tak ada kejadian = masih di arsip).
+    Mencegah sertifikat asli hilang/nyangkut di notaris."""
+    __tablename__ = "document_handovers"
+
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    document_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("documents.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    event: Mapped[HandoverEvent] = mapped_column(SAEnum(HandoverEvent), nullable=False)
+    at: Mapped[Date] = mapped_column(Date, nullable=False)
+    by_user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )  # PIC pencatat — otomatis dari user login
+    # tujuan (diisi sesuai event)
+    notary_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("notaries.id", ondelete="SET NULL"), nullable=True
+    )
+    bank_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("banks.id", ondelete="SET NULL"), nullable=True
+    )
+    client_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("clients.id", ondelete="SET NULL"), nullable=True
+    )
+    received_by: Mapped[str] = mapped_column(String(200), nullable=True)  # PIC penerima (mis. staf notaris yg ttd) — isian bebas, tanpa akun
+    signature: Mapped[str] = mapped_column(Text, nullable=True)           # tanda tangan digital PIC penerima (data URL base64) — pola sama Client.signature
+    notes: Mapped[str] = mapped_column(Text, nullable=True)
+    # bukti serah-terima (foto berita acara bertanda tangan) — pola sama ConstructionProgressLog
+    proof_key: Mapped[str] = mapped_column(String(600), nullable=True)
+    proof_name: Mapped[str] = mapped_column(String(255), nullable=True)
+    proof_type: Mapped[str] = mapped_column(String(100), nullable=True)
+    proof_size: Mapped[int] = mapped_column(Integer, nullable=True)
+
+    @property
+    def has_proof(self) -> bool:
+        return self.proof_name is not None
+
+    def __repr__(self) -> str:
+        return f"<DocumentHandover {self.event} {self.at}>"

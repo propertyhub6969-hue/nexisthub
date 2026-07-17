@@ -1,6 +1,7 @@
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict
 from datetime import date, datetime
+from decimal import Decimal
 import uuid
 
 from app.models.construction import ConstructionStage
@@ -38,6 +39,16 @@ class ConstructionSummary(BaseModel):
 class ConstructionList(BaseModel):
     rows: List[UnitConstructionRow]
     summary: ConstructionSummary
+
+
+class UpahResumeRow(BaseModel):
+    unit_id: uuid.UUID
+    unit_label: str
+    upah_minggu: Decimal      # realisasi upah minggu berjalan (Senin s/d kini)
+    upah_total: Decimal       # realisasi upah kumulatif (akrual: opname diajukan + dibayar)
+    rab_tenaga_kerja: Decimal  # RAB kategori upah unit (template + penyesuaian)
+    selisih: Decimal          # upah_total − rab (minus = di bawah anggaran = aman)
+    status: str               # 'aman' | 'lewat'
 
 
 class ProgressLogResponse(BaseModel):

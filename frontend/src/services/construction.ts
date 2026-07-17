@@ -1,12 +1,17 @@
 import api from './api'
 import type {
   ConstructionList, UnitConstructionRow, ConstructionUpsert,
-  ContractorContract, ContractCreate, Opname, OpnameCreate, ProgressLog, PendingOpname,
+  ContractorContract, ContractCreate, Opname, OpnameCreate, ProgressLog, PendingOpname, UpahResume,
+  StageTemplate, StageTemplateCreate,
 } from '../types'
 
 export const constructionService = {
   async list(projectId: string): Promise<ConstructionList> {
     const { data } = await api.get<ConstructionList>('/construction/', { params: { project_id: projectId } })
+    return data
+  },
+  async getUpahResume(projectId: string): Promise<UpahResume[]> {
+    const { data } = await api.get<UpahResume[]>('/construction/upah-resume', { params: { project_id: projectId } })
     return data
   },
   async upsert(unitId: string, payload: ConstructionUpsert): Promise<UnitConstructionRow> {
@@ -69,5 +74,21 @@ export const constructionService = {
   async markOpnamePaid(ids: string[], paidDate?: string): Promise<{ marked: number; paid_date: string }> {
     const { data } = await api.post('/construction/opname/mark-paid', { ids, paid_date: paidDate || undefined })
     return data
+  },
+  // Template tahapan borongan (reusable, %+Rp)
+  async listStageTemplates(): Promise<StageTemplate[]> {
+    const { data } = await api.get<StageTemplate[]>('/construction/stage-templates')
+    return data
+  },
+  async createStageTemplate(payload: StageTemplateCreate): Promise<StageTemplate> {
+    const { data } = await api.post<StageTemplate>('/construction/stage-templates', payload)
+    return data
+  },
+  async updateStageTemplate(id: string, payload: Partial<StageTemplateCreate>): Promise<StageTemplate> {
+    const { data } = await api.patch<StageTemplate>(`/construction/stage-templates/${id}`, payload)
+    return data
+  },
+  async deleteStageTemplate(id: string): Promise<void> {
+    await api.delete(`/construction/stage-templates/${id}`)
   },
 }

@@ -3,6 +3,7 @@ import { today } from '../../utils/date'
 import { useParams, Link } from 'react-router-dom'
 import { ArrowLeft, Loader2, Landmark, CheckCircle2, Banknote, Check, Plus, Trash2, XCircle, BellRing, Scale, HardHat, FileCheck } from 'lucide-react'
 import Modal from '../../components/ui/Modal'
+import DateInput from '../../components/ui/DateInput'
 import MoneyInput from '../../components/ui/MoneyInput'
 import { marketingService } from '../../services/marketing'
 import { kprService } from '../../services/kpr'
@@ -247,7 +248,7 @@ export default function ClientKpr() {
             </div>
             <div>
               <label className="label">Tgl Collect Berkas</label>
-              <input className="input max-w-[240px]" type="date" max={today()} value={kpr.submitted_date ?? ''} onChange={(e) => set('submitted_date', e.target.value)} />
+              <DateInput className="input max-w-[240px]" max={today()} value={kpr.submitted_date ?? ''} onChange={(v) => set('submitted_date', v)} />
               <p className="text-xs text-slate-400 mt-1">Default terisi otomatis dari tanggal pembeli pertama kali dientri.</p>
             </div>
             <div>
@@ -262,7 +263,7 @@ export default function ClientKpr() {
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="label">Tgl Pengajuan ke Bank</label>
-                    <input className="input" type="date" max={today()} value={kpr.bank_submission_date ?? ''} onChange={(e) => set('bank_submission_date', e.target.value)} />
+                    <DateInput className="input" max={today()} value={kpr.bank_submission_date ?? ''} onChange={(v) => set('bank_submission_date', v)} />
                   </div>
                   <div>
                     <label className="label">No. SiKasep/SiKumbang</label>
@@ -277,7 +278,7 @@ export default function ClientKpr() {
                 <p className="text-xs font-medium text-slate-400 mb-2">SP3K</p>
                 <div className="grid grid-cols-2 gap-3">
                   <div><label className="label">No. SP3K</label><input className="input" value={kpr.sp3k_number ?? ''} onChange={(e) => set('sp3k_number', e.target.value)} /></div>
-                  <div><label className="label">Tgl SP3K</label><input className="input" type="date" max={today()} value={kpr.sp3k_date ?? ''} onChange={(e) => set('sp3k_date', e.target.value)} /></div>
+                  <div><label className="label">Tgl SP3K</label><DateInput className="input" max={today()} value={kpr.sp3k_date ?? ''} onChange={(v) => set('sp3k_date', v)} /></div>
                 </div>
               </div>
             )}
@@ -287,7 +288,7 @@ export default function ClientKpr() {
                 <p className="text-xs font-medium text-slate-400 mb-2">Akad Kredit</p>
                 <div className="max-w-[240px]">
                   <label className="label">Tgl Akad</label>
-                  <input className="input" type="date" max={today()} value={kpr.akad_date ?? ''} onChange={(e) => set('akad_date', e.target.value)} />
+                  <DateInput className="input" max={today()} value={kpr.akad_date ?? ''} onChange={(v) => set('akad_date', v)} />
                 </div>
               </div>
             )}
@@ -354,7 +355,7 @@ export default function ClientKpr() {
         <form onSubmit={submitDisburse} className="space-y-3">
           <div className="grid grid-cols-2 gap-3">
             <div><label className="label">Jumlah Pencairan (Rp) *</label><MoneyInput required value={disAmount} onChange={(v) => setDisAmount(v)} /></div>
-            <div><label className="label">Tanggal Pencairan</label><input className="input" type="date" max={today()} value={disDate} onChange={(e) => setDisDate(e.target.value)} /></div>
+            <div><label className="label">Tanggal Pencairan</label><DateInput className="input" max={today()} value={disDate} onChange={(v) => setDisDate(v)} /></div>
           </div>
           <div><label className="label">Keterangan</label><input className="input" placeholder="mis. Pencairan tahap 1 / retensi" value={disNotes} onChange={(e) => setDisNotes(e.target.value)} /></div>
           <p className="text-xs text-slate-400">Menandai tahap Pencairan & membuat 1 uang masuk (sumber Bank) di menu Pembayaran. Bisa dicatat beberapa kali (bertahap).</p>
@@ -369,7 +370,7 @@ export default function ClientKpr() {
       <Modal open={rejModal} onClose={() => setRejModal(false)} title="Tolak Pengajuan KPR">
         <form onSubmit={submitReject} className="space-y-3">
           <div className="grid grid-cols-2 gap-3">
-            <div><label className="label">Tanggal Ditolak</label><input className="input" type="date" max={today()} value={rejDate} onChange={(e) => setRejDate(e.target.value)} /></div>
+            <div><label className="label">Tanggal Ditolak</label><DateInput className="input" max={today()} value={rejDate} onChange={(v) => setRejDate(v)} /></div>
           </div>
           <div>
             <label className="label">Alasan Penolakan</label>

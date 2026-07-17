@@ -4,6 +4,7 @@ import { Plus, Search, Trash2, Pencil, Loader2, Building2, LayoutGrid } from 'lu
 import Badge from '../../components/ui/Badge'
 import Modal from '../../components/ui/Modal'
 import { propertyService } from '../../services/property'
+import { useAuth } from '../../context/AuthContext'
 import type { Project, ProjectCreate, ProjectStatus } from '../../types'
 
 const statusConfig: Record<ProjectStatus, { label: string; variant: 'blue' | 'green' | 'gray' | 'yellow' }> = {
@@ -17,6 +18,8 @@ const emptyForm: ProjectCreate = { name: '', city: '', province: '', address: ''
 
 export default function Projects() {
   const navigate = useNavigate()
+  const { user } = useAuth()
+  const canDelete = user?.role === 'owner' || user?.role === 'admin'  // hapus data properti = owner/admin
   const [projects, setProjects] = useState<Project[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -160,9 +163,11 @@ export default function Projects() {
                         <button onClick={() => openEdit(p)} className="text-slate-400 hover:text-brand-600 transition-colors" title="Edit">
                           <Pencil size={15} />
                         </button>
-                        <button onClick={() => handleDelete(p.id)} className="text-slate-400 hover:text-red-600 transition-colors" title="Hapus">
-                          <Trash2 size={15} />
-                        </button>
+                        {canDelete && (
+                          <button onClick={() => handleDelete(p.id)} className="text-slate-400 hover:text-red-600 transition-colors" title="Hapus">
+                            <Trash2 size={15} />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>

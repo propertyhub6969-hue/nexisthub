@@ -3,6 +3,7 @@ import { today } from '../../utils/date'
 import { useParams, Link } from 'react-router-dom'
 import { Plus, Trash2, Pencil, Loader2, ArrowLeft, Map, FileSignature, Printer, Boxes, X } from 'lucide-react'
 import Badge from '../../components/ui/Badge'
+import DateInput from '../../components/ui/DateInput'
 import MoneyInput from '../../components/ui/MoneyInput'
 import Modal from '../../components/ui/Modal'
 import Pagination from '../../components/ui/Pagination'
@@ -31,6 +32,7 @@ const emptyForm = (projectId: string): UnitCreate => ({
 export default function ProjectUnits() {
   const { projectId = '' } = useParams()
   const { user } = useAuth()
+  const canDelete = user?.role === 'owner' || user?.role === 'admin'  // hapus data properti = owner/admin
   const [project, setProject] = useState<Project | null>(null)
   const [units, setUnits] = useState<Unit[]>([])
   const [loading, setLoading] = useState(true)
@@ -292,9 +294,11 @@ export default function ProjectUnits() {
                         <button onClick={() => openEdit(u)} className="text-slate-400 hover:text-brand-600 transition-colors" title="Edit">
                           <Pencil size={15} />
                         </button>
-                        <button onClick={() => handleDelete(u.id)} className="text-slate-400 hover:text-red-600 transition-colors" title="Hapus">
-                          <Trash2 size={15} />
-                        </button>
+                        {canDelete && (
+                          <button onClick={() => handleDelete(u.id)} className="text-slate-400 hover:text-red-600 transition-colors" title="Hapus">
+                            <Trash2 size={15} />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -380,7 +384,7 @@ export default function ProjectUnits() {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="label">Tanggal BAST</label>
-              <input className="input" type="date" max={today()} value={bastDate} onChange={(e) => setBastDate(e.target.value)} />
+              <DateInput className="input" max={today()} value={bastDate} onChange={(v) => setBastDate(v)} />
             </div>
             <div>
               <label className="label">No. BAST</label>

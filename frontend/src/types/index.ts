@@ -574,6 +574,40 @@ export interface NotaryFeeCreate {
 // ── Dokumen & Legalitas ───────────────────────────────────────────
 export type DocStatus = 'belum' | 'proses' | 'terbit'
 
+// ── Serah-terima dokumen ASLI (fisik) ──
+export type CustodyStatus = 'arsip' | 'diambil' | 'notaris' | 'pembeli' | 'bank'
+export type HandoverEvent = 'ambil' | 'serah_notaris' | 'terima_pembeli' | 'tahan_bank' | 'kembali_arsip'
+export interface DocumentHandover {
+  id: string
+  event: HandoverEvent
+  at: string
+  by_user_name?: string     // pencatat (akun sistem)
+  notary_name?: string
+  bank_name?: string
+  client_name?: string
+  received_by?: string      // PIC penerima yang ttd (mis. staf notaris)
+  signature?: string        // ttd digital PIC penerima (data URL)
+  notes?: string
+  has_proof: boolean
+  proof_name?: string
+  created_at: string
+}
+export interface HandoverCreate {
+  event: HandoverEvent
+  at?: string
+  notary_id?: string
+  bank_id?: string
+  client_id?: string
+  received_by?: string
+  signature?: string
+  notes?: string
+}
+export interface UnitHandoverResult {
+  affected: number
+  doc_types: string[]
+  has_proof: boolean
+}
+
 export interface DocumentItem {
   id: string
   client_id?: string
@@ -588,6 +622,10 @@ export interface DocumentItem {
   file_type?: string
   file_size?: number
   has_file: boolean
+  // penguasaan dokumen ASLI (fisik) — turunan kejadian serah-terima terakhir
+  custody_status?: CustodyStatus
+  custody_holder?: string
+  custody_since?: string
   notes?: string
   created_at: string
   updated_at: string
@@ -1117,6 +1155,14 @@ export interface ConstructionUpsert {
 }
 
 // ── Kontraktor Borongan ───────────────────────────────────────────
+export interface WorkItemBreakdown {
+  id: string
+  name: string
+  value: number
+  paid: number
+  submitted: number
+  remaining: number
+}
 export interface ContractorContract {
   id: string
   project_id: string
@@ -1131,10 +1177,14 @@ export interface ContractorContract {
   paid: number
   submitted: number
   remaining: number
+  items?: WorkItemBreakdown[]
+  unassigned_paid?: number
+  unassigned_submitted?: number
   notes?: string
   created_at: string
   updated_at: string
 }
+export interface WorkItemIn { name: string; value: number }
 export interface ContractCreate {
   unit_id: string
   vendor_id?: string
@@ -1143,18 +1193,42 @@ export interface ContractCreate {
   title?: string
   total_value: number
   notes?: string
+  items?: WorkItemIn[]
 }
-export interface Opname { id: string; amount: number; expense_date?: string; description: string; is_paid: boolean; paid_at?: string }
-export interface OpnameCreate { amount: number; expense_date?: string; description?: string }
+export interface Opname { id: string; amount: number; expense_date?: string; description: string; is_paid: boolean; paid_at?: string; work_item_id?: string; work_item_name?: string }
+export interface OpnameCreate { amount: number; expense_date?: string; description?: string; work_item_id?: string }
 export interface PendingOpname {
   id: string
   unit_id: string
   unit_label: string
   contractor_name?: string
   title?: string
+  work_item_name?: string
   expense_date?: string
   description: string
   amount: number
+}
+export interface UpahResume {
+  unit_id: string
+  unit_label: string
+  upah_minggu: number
+  upah_total: number
+  rab_tenaga_kerja: number
+  selisih: number
+  status: 'aman' | 'lewat'
+}
+export interface StageTemplateLine { id: string; name: string; value: number }
+export interface StageTemplate {
+  id: string
+  name: string
+  mode: 'rp' | 'percent'
+  lines: StageTemplateLine[]
+  total: number
+}
+export interface StageTemplateCreate {
+  name: string
+  mode: 'rp' | 'percent'
+  lines: { name: string; value: number }[]
 }
 
 // ── Log Progres Mingguan (riwayat berfoto) ──

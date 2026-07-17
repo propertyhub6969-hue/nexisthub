@@ -13,10 +13,10 @@ from datetime import date
 from app.core.database import get_db
 from app.core.audit import record_audit
 from app.core import storage
-from app.api.deps import get_current_context, AuthContext
+from app.api.deps import get_current_context, AuthContext, require_role
 from app.models.property import Project, Unit, UnitStatus
 from app.models.marketing import Client, ClientStatus
-from app.models.user import User
+from app.models.user import User, UserRole
 from app.schemas.marketing import Paginated
 from app.schemas.property import (
     ProjectCreate, ProjectUpdate, ProjectResponse,
@@ -112,7 +112,8 @@ async def update_project(
     return project
 
 
-@router.delete("/projects/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/projects/{project_id}", status_code=status.HTTP_204_NO_CONTENT,
+               dependencies=[Depends(require_role(UserRole.OWNER, UserRole.ADMIN))])  # hapus data properti = owner/admin
 async def delete_project(
     project_id: uuid.UUID,
     ctx: AuthContext = Depends(get_current_context),
@@ -180,7 +181,8 @@ async def get_siteplan(
     return Response(content=data, media_type=ctype or "image/png", headers=cache_headers)
 
 
-@router.delete("/projects/{project_id}/siteplan", response_model=ProjectResponse)
+@router.delete("/projects/{project_id}/siteplan", response_model=ProjectResponse,
+               dependencies=[Depends(require_role(UserRole.OWNER, UserRole.ADMIN))])  # hapus siteplan = owner/admin
 async def delete_siteplan(
     project_id: uuid.UUID,
     ctx: AuthContext = Depends(get_current_context),
@@ -440,7 +442,8 @@ async def create_bast(
     return unit
 
 
-@router.delete("/units/{unit_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/units/{unit_id}", status_code=status.HTTP_204_NO_CONTENT,
+               dependencies=[Depends(require_role(UserRole.OWNER, UserRole.ADMIN))])  # hapus unit = owner/admin
 async def delete_unit(
     unit_id: uuid.UUID,
     ctx: AuthContext = Depends(get_current_context),

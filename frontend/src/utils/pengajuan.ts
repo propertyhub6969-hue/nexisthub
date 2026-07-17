@@ -3,6 +3,7 @@ import { terbilang } from './receipt'
 export interface PengajuanRow {
   unit_label: string
   contractor_name?: string
+  work_item_name?: string
   expense_date?: string
   description: string
   amount: number
@@ -34,7 +35,7 @@ export function printPengajuan(data: PengajuanData): void {
     const lines = g.rows.map((r) => `
       <tr>
         <td class="c">${fmtDate(r.expense_date)}</td>
-        <td>${esc(r.description)}</td>
+        <td>${esc(r.description)}${r.work_item_name ? ` — ${esc(r.work_item_name)}` : ''}</td>
         <td class="r">${fmtRp(r.amount)}</td>
       </tr>`).join('')
     return `

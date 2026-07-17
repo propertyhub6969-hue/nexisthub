@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Loader2, Plus, Pencil, KeyRound, Building2, Receipt, Trash2, CheckCircle2, Wallet } from 'lucide-react'
 import { Navigate } from 'react-router-dom'
 import Modal from '../../components/ui/Modal'
+import DateInput from '../../components/ui/DateInput'
 import Badge from '../../components/ui/Badge'
 import MoneyInput from '../../components/ui/MoneyInput'
 import { useAuth } from '../../context/AuthContext'
@@ -226,7 +227,7 @@ export default function Platform() {
                 <option value="trial">Trial</option><option value="active">Aktif</option><option value="suspended">Suspended</option>
               </select></div>
           </div>
-          <div><label className="label">Aktif s/d (opsional)</label><input className="input" type="date" value={cForm.expires_at ?? ''} onChange={(e) => setCForm({ ...cForm, expires_at: e.target.value })} /></div>
+          <div><label className="label">Aktif s/d (opsional)</label><DateInput className="input" value={cForm.expires_at ?? ''} onChange={(v) => setCForm({ ...cForm, expires_at: v })} /></div>
           <div className="border-t border-slate-100 pt-3">
             <p className="text-sm font-medium text-slate-700 mb-1">Akun Owner</p>
             <div className="grid grid-cols-2 gap-3">
@@ -256,7 +257,7 @@ export default function Platform() {
                 </select></div>
             </div>
             <div className="grid grid-cols-2 gap-3 items-end">
-              <div><label className="label">Aktif s/d</label><input className="input" type="date" value={eForm.expires_at ?? ''} onChange={(e) => setEForm({ ...eForm, expires_at: e.target.value })} /></div>
+              <div><label className="label">Aktif s/d</label><DateInput className="input" value={eForm.expires_at ?? ''} onChange={(v) => setEForm({ ...eForm, expires_at: v })} /></div>
               <label className="flex items-center gap-2 text-sm text-slate-700 pb-2"><input type="checkbox" checked={!!eForm.is_active} onChange={(e) => setEForm({ ...eForm, is_active: e.target.checked })} /> Akun aktif (bisa login)</label>
             </div>
             <FlagEditor modules={modules} all={eAllModules} setAll={setEAllModules} flags={eForm.feature_flags ?? []} onToggle={(m) => setEForm({ ...eForm, feature_flags: toggleFlag(eForm.feature_flags, m, eAllModules) })} onCustom={() => setEAllModules(false)} />
@@ -298,8 +299,8 @@ export default function Platform() {
             <form onSubmit={submitInvoice} className="border-t border-slate-100 pt-3 space-y-2">
               <p className="text-sm font-medium text-slate-700">Buat Tagihan Baru</p>
               <div className="grid grid-cols-2 gap-2">
-                <div><label className="label">Periode Mulai *</label><input className="input" type="date" value={invForm.period_start} onChange={(e) => setInvForm({ ...invForm, period_start: e.target.value })} /></div>
-                <div><label className="label">Periode Akhir *</label><input className="input" type="date" value={invForm.period_end} onChange={(e) => setInvForm({ ...invForm, period_end: e.target.value })} /></div>
+                <div><label className="label">Periode Mulai *</label><DateInput className="input" value={invForm.period_start} onChange={(v) => setInvForm({ ...invForm, period_start: v })} /></div>
+                <div><label className="label">Periode Akhir *</label><DateInput className="input" value={invForm.period_end} onChange={(v) => setInvForm({ ...invForm, period_end: v })} /></div>
               </div>
               <div className="grid grid-cols-2 gap-2">
                 <div><label className="label">Paket</label><input className="input" value={invForm.plan} onChange={(e) => setInvForm({ ...invForm, plan: e.target.value })} /></div>

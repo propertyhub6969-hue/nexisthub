@@ -3,6 +3,7 @@ import { today } from '../../utils/date'
 import { Link } from 'react-router-dom'
 import { Plus, Search, Trash2, Pencil, Loader2, Wallet, Scale, Landmark, Columns3, MoreVertical } from 'lucide-react'
 import Badge from '../../components/ui/Badge'
+import DateInput from '../../components/ui/DateInput'
 import MoneyInput from '../../components/ui/MoneyInput'
 import Modal from '../../components/ui/Modal'
 import SignaturePad from '../../components/ui/SignaturePad'
@@ -392,7 +393,7 @@ export default function Clients() {
             </div>
             <div>
               <label className="label">Tanggal *</label>
-              <input className="input" type="date" max={today()} required value={form.contract_date} onChange={(e) => setForm({ ...form, contract_date: e.target.value })} />
+              <DateInput className="input" max={today()} required value={form.contract_date} onChange={(v) => setForm({ ...form, contract_date: v })} />
             </div>
             <div>
               <label className="label">Cara Beli</label>

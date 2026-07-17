@@ -4,6 +4,7 @@ import { useParams, Link } from 'react-router-dom'
 import { ArrowLeft, Plus, Trash2, Pencil, Loader2, CalendarClock, Wallet, History, Eye, Printer, Landmark } from 'lucide-react'
 import { printReceipt } from '../../utils/receipt'
 import MoneyInput from '../../components/ui/MoneyInput'
+import DateInput from '../../components/ui/DateInput'
 import Badge from '../../components/ui/Badge'
 import Modal from '../../components/ui/Modal'
 import { marketingService } from '../../services/marketing'
@@ -387,7 +388,7 @@ export default function ClientPayments() {
             </div>
             <div>
               <label className="label">Jatuh Tempo</label>
-              <input className="input" type="date" value={schForm.due_date} onChange={(e) => setSchForm({ ...schForm, due_date: e.target.value })} />
+              <DateInput className="input" value={schForm.due_date} onChange={(v) => setSchForm({ ...schForm, due_date: v })} />
             </div>
           </div>
           {schEditId && (
@@ -412,7 +413,7 @@ export default function ClientPayments() {
             </div>
             <div>
               <label className="label">Tanggal Bayar</label>
-              <input className="input" type="date" max={today()} value={payForm.payment_date} onChange={(e) => setPayForm({ ...payForm, payment_date: e.target.value })} />
+              <DateInput className="input" max={today()} value={payForm.payment_date} onChange={(v) => setPayForm({ ...payForm, payment_date: v })} />
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">

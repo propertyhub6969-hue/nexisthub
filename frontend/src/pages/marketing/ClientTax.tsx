@@ -3,6 +3,7 @@ import { today } from '../../utils/date'
 import { useParams, Link } from 'react-router-dom'
 import { ArrowLeft, Plus, Trash2, Pencil, Loader2, Receipt, Scale, FileText, Upload, Eye, Contact, FileSignature, ListChecks, Paperclip, X } from 'lucide-react'
 import Badge from '../../components/ui/Badge'
+import DateInput from '../../components/ui/DateInput'
 import MoneyInput from '../../components/ui/MoneyInput'
 import Modal from '../../components/ui/Modal'
 import { marketingService } from '../../services/marketing'
@@ -582,7 +583,7 @@ export default function ClientTax() {
             </div>
             <div>
               <label className="label">Tanggal</label>
-              <input className="input" type="date" max={today()} value={docForm.doc_date} onChange={(e) => setDocForm({ ...docForm, doc_date: e.target.value })} />
+              <DateInput className="input" max={today()} value={docForm.doc_date} onChange={(v) => setDocForm({ ...docForm, doc_date: v })} />
             </div>
           </div>
           <p className="text-xs text-slate-400">File bisa diupload dari tombol Upload di tabel setelah dokumen dibuat (maks 10 MB).</p>
@@ -680,7 +681,7 @@ export default function ClientTax() {
             </div>
             <div>
               <label className="label">Tanggal</label>
-              <input className="input" type="date" max={today()} value={taxForm.tax_date} onChange={(e) => setTaxForm({ ...taxForm, tax_date: e.target.value })} />
+              <DateInput className="input" max={today()} value={taxForm.tax_date} onChange={(v) => setTaxForm({ ...taxForm, tax_date: v })} />
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
@@ -721,7 +722,7 @@ export default function ClientTax() {
             </div>
             <div>
               <label className="label">Tanggal</label>
-              <input className="input" type="date" max={today()} value={feeForm.fee_date} onChange={(e) => setFeeForm({ ...feeForm, fee_date: e.target.value })} />
+              <DateInput className="input" max={today()} value={feeForm.fee_date} onChange={(v) => setFeeForm({ ...feeForm, fee_date: v })} />
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">

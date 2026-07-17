@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { today } from '../../utils/date'
 import { Plus, Trash2, Pencil, Loader2, Wallet, X, PackageCheck, ArrowDownToLine, ArrowUpFromLine, ClipboardList, Undo2, ArrowLeftRight, Warehouse as WarehouseIcon } from 'lucide-react'
 import Badge from '../../components/ui/Badge'
+import DateInput from '../../components/ui/DateInput'
 import Modal from '../../components/ui/Modal'
 import MoneyInput from '../../components/ui/MoneyInput'
 import { procurementService } from '../../services/procurement'
@@ -992,7 +993,7 @@ export default function Procurement() {
           </div>
           <form onSubmit={addPayment} className="flex items-end gap-2 border-t border-slate-100 pt-3">
             <div className="flex-1"><label className="label">Nominal (Rp)</label><MoneyInput required value={payAmount} onChange={(v) => setPayAmount(v)} /></div>
-            <div className="flex-1"><label className="label">Tanggal</label><input className="input" type="date" max={today()} value={payDate} onChange={(e) => setPayDate(e.target.value)} /></div>
+            <div className="flex-1"><label className="label">Tanggal</label><DateInput className="input" max={today()} value={payDate} onChange={(v) => setPayDate(v)} /></div>
             <button type="submit" className="btn-primary text-sm h-[38px]" disabled={saving}>Bayar</button>
           </form>
         </div>
@@ -1004,7 +1005,7 @@ export default function Procurement() {
           <form onSubmit={submitReceive} className="space-y-3">
             <div className="grid grid-cols-2 gap-3">
               <div><label className="label">No. DO / Surat Jalan</label><input className="input" placeholder="dari vendor" value={recvDo} onChange={(e) => setRecvDo(e.target.value)} /></div>
-              <div><label className="label">Tanggal Terima</label><input className="input" type="date" max={today()} value={recvDate} onChange={(e) => setRecvDate(e.target.value)} /></div>
+              <div><label className="label">Tanggal Terima</label><DateInput className="input" max={today()} value={recvDate} onChange={(v) => setRecvDate(v)} /></div>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -1053,7 +1054,7 @@ export default function Procurement() {
             <div><label className="label">Qty *</label><input className="input" type="number" min={0} step="0.01" required value={inForm.quantity || ''} onChange={(e) => setInForm({ ...inForm, quantity: Number(e.target.value) })} /></div>
             <div><label className="label">Harga/sat</label><MoneyInput value={inForm.unit_price || undefined} onChange={(v) => setInForm({ ...inForm, unit_price: v ?? 0 })} /></div>
           </div>
-          <div><label className="label">Tanggal</label><input className="input" type="date" max={today()} value={inForm.movement_date} onChange={(e) => setInForm({ ...inForm, movement_date: e.target.value })} /></div>
+          <div><label className="label">Tanggal</label><DateInput className="input" max={today()} value={inForm.movement_date} onChange={(v) => setInForm({ ...inForm, movement_date: v })} /></div>
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" className="btn-secondary text-sm" onClick={() => setInModal(false)}>Batal</button>
             <button type="submit" className="btn-primary text-sm flex items-center gap-2" disabled={saving}>{saving && <Loader2 size={14} className="animate-spin" />}Simpan</button>
@@ -1072,7 +1073,7 @@ export default function Procurement() {
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div><label className="label">Qty *</label><input className="input" type="number" min={0} step="0.01" required value={outForm.quantity || ''} onChange={(e) => setOutForm({ ...outForm, quantity: Number(e.target.value) })} /></div>
-            <div><label className="label">Tanggal</label><input className="input" type="date" max={today()} value={outForm.movement_date} onChange={(e) => setOutForm({ ...outForm, movement_date: e.target.value })} /></div>
+            <div><label className="label">Tanggal</label><DateInput className="input" max={today()} value={outForm.movement_date} onChange={(v) => setOutForm({ ...outForm, movement_date: v })} /></div>
           </div>
           <div><label className="label">Ke Unit</label>
             <select className="input" value={outForm.unit_id} onChange={(e) => setOutForm({ ...outForm, unit_id: e.target.value })}>
@@ -1111,7 +1112,7 @@ export default function Procurement() {
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div><label className="label">Qty *</label><input className="input" type="number" min={0} step="0.01" required value={retQty || ''} onChange={(e) => setRetQty(Number(e.target.value))} /></div>
-            <div><label className="label">Tanggal</label><input className="input" type="date" max={today()} value={retDate} onChange={(e) => setRetDate(e.target.value)} /></div>
+            <div><label className="label">Tanggal</label><DateInput className="input" max={today()} value={retDate} onChange={(v) => setRetDate(v)} /></div>
           </div>
           <div><label className="label">Harga/sat (opsional)</label><MoneyInput value={retPrice} onChange={(v) => setRetPrice(v)} /><p className="text-[11px] text-slate-400 mt-0.5">Kosong = pakai HPP rata² saat ini.</p></div>
           {retDir === 'unit' && (
@@ -1144,7 +1145,7 @@ export default function Procurement() {
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div><label className="label">Qty *</label><input className="input" type="number" min={0} step="0.01" required value={trfQty || ''} onChange={(e) => setTrfQty(Number(e.target.value))} /></div>
-            <div><label className="label">Tanggal</label><input className="input" type="date" max={today()} value={trfDate} onChange={(e) => setTrfDate(e.target.value)} /></div>
+            <div><label className="label">Tanggal</label><DateInput className="input" max={today()} value={trfDate} onChange={(v) => setTrfDate(v)} /></div>
           </div>
           <div><label className="label">Lokasi Tujuan *</label>
             <select className="input" required value={trfTo} onChange={(e) => setTrfTo(e.target.value)}>
@@ -1193,7 +1194,7 @@ export default function Procurement() {
                 <option value="">Umum proyek (tanpa unit)</option>
                 {stockUnits.map((u) => <option key={u.id} value={u.id}>{[u.block, u.unit_number].filter(Boolean).join('-')}</option>)}
               </select></div>
-            <div><label className="label">Tanggal</label><input className="input" type="date" max={today()} value={expForm.expense_date} onChange={(e) => setExpForm({ ...expForm, expense_date: e.target.value })} /></div>
+            <div><label className="label">Tanggal</label><DateInput className="input" max={today()} value={expForm.expense_date} onChange={(v) => setExpForm({ ...expForm, expense_date: v })} /></div>
           </div>
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" className="btn-secondary text-sm" onClick={() => setExpModal(false)}>Batal</button>
