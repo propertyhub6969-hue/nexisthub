@@ -669,7 +669,7 @@ export default function LegalSplitting() {
                   {progressLogs.map((p) => {
                     const cfg = progressEventCfg[p.event]
                     const costs = costsForLog(p.id)
-                    const totalCost = costs.reduce((sum, c) => sum + c.amount, 0)
+                    const totalCost = costs.reduce((sum, c) => sum + Number(c.amount), 0)
                     return (
                       <div key={p.id} className="px-3 py-2.5 text-sm space-y-2">
                         <div className="flex items-start justify-between gap-3">
@@ -691,7 +691,7 @@ export default function LegalSplitting() {
                           <div className="pl-1 space-y-1">
                             {costs.map((c) => (
                               <div key={c.id} className="flex items-center justify-between text-xs text-slate-500">
-                                <span>{c.description} — Rp {c.amount.toLocaleString('id-ID')}</span>
+                                <span>{c.description} — Rp {Number(c.amount).toLocaleString('id-ID')}</span>
                                 <button onClick={() => handleDeleteCost(c.id)} className="text-slate-300 hover:text-red-600"><Trash2 size={11} /></button>
                               </div>
                             ))}
