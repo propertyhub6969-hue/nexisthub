@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
-import { FileCheck, Plus, Trash2, Pencil, Loader2, Upload, Eye, ListChecks, Paperclip, X, ArrowLeftRight, AlertTriangle } from 'lucide-react'
+import { FileCheck, Plus, Trash2, Pencil, Loader2, Upload, Eye, ListChecks, Paperclip, X, ArrowLeftRight, AlertTriangle, User } from 'lucide-react'
 import Badge from '../../components/ui/Badge'
 import DateInput from '../../components/ui/DateInput'
 import Modal from '../../components/ui/Modal'
@@ -308,6 +308,8 @@ export default function LegalDocuments() {
 
   // LT sertifikat (SHM/HGB) = sumber sah; baris PBB ikut menampilkan nilai ini (tak disimpan di PBB)
   const shmLT = docs.find((d) => isSertifikat(d.doc_type) && d.land_area != null)?.land_area
+  // Pembeli kavling ini (dari data Pembeli via unit_id) — konteks agar admin tak salah kavling
+  const unitBuyer = clients.find((c) => c.unit_id === unitId)
 
   return (
     <div className="space-y-4">
@@ -487,6 +489,11 @@ export default function LegalDocuments() {
               {custodyDoc.custody_since && <span className="text-xs text-slate-400">sejak {fmtDate(custodyDoc.custody_since)} · {daysSince(custodyDoc.custody_since)} hari</span>}
             </div>
             <p className="text-[11px] text-slate-400">Yang dilacak di sini adalah <b>kertas aslinya</b> — file scan yang diunggah tetap tersimpan di sistem.</p>
+            <div className={`rounded-lg border px-3 py-1.5 text-xs flex items-center gap-2 ${unitBuyer ? 'bg-blue-50 border-blue-200 text-blue-800' : 'bg-amber-50 border-amber-200 text-amber-800'}`}>
+              <User size={12} className="shrink-0" />
+              {unitBuyer ? <span>Pembeli kavling: <b>{unitBuyer.full_name}</b>{unitBuyer.payment_type ? ` · ${unitBuyer.payment_type === 'kpr' ? 'KPR' : 'Cash'}` : ''}</span>
+                         : <span>Kavling ini belum ada pembeli.</span>}
+            </div>
 
             {/* Riwayat */}
             <div className="space-y-1 max-h-56 overflow-y-auto">
@@ -526,7 +533,10 @@ export default function LegalDocuments() {
             <form onSubmit={submitHandover} className="border-t border-slate-100 pt-3 space-y-2">
               <div className="grid grid-cols-2 gap-2">
                 <div><label className="label">Kejadian *</label>
-                  <select className="input" value={hForm.event} onChange={(e) => setHForm({ ...hForm, event: e.target.value as HandoverEvent })}>
+                  <select className="input" value={hForm.event} onChange={(e) => {
+                    const ev = e.target.value as HandoverEvent
+                    setHForm({ ...hForm, event: ev, client_id: ev === 'terima_pembeli' ? (unitBuyer?.id ?? '') : hForm.client_id })
+                  }}>
                     {(Object.keys(eventCfg) as HandoverEvent[]).map((k) => <option key={k} value={k}>{eventCfg[k]}</option>)}
                   </select></div>
                 <div><label className="label">Tanggal</label><DateInput className="input" max={today()} value={hForm.at} onChange={(v) => setHForm({ ...hForm, at: v })} /></div>
@@ -550,7 +560,7 @@ export default function LegalDocuments() {
                 <div><label className="label">Pembeli *</label>
                   <select className="input" required value={hForm.client_id} onChange={(e) => setHForm({ ...hForm, client_id: e.target.value })}>
                     <option value="">Pilih pembeli...</option>
-                    {clients.map((c) => <option key={c.id} value={c.id}>{c.full_name}</option>)}
+                    {clients.map((c) => <option key={c.id} value={c.id}>{c.full_name}{c.unit_id === unitId ? ' — pembeli kavling ini' : ''}</option>)}
                   </select></div>
               )}
 
@@ -587,6 +597,18 @@ export default function LegalDocuments() {
       {/* Modal Serah-Terima 1 PAKET (semua dokumen asli unit) */}
       <Modal open={pkgModal} onClose={() => setPkgModal(false)} title={`Serah-Terima Dokumen Asli — ${unitLabel(units.find((u) => u.id === unitId))}`} size="lg">
         <form onSubmit={submitPkg} className="space-y-3">
+          {/* Konteks pembeli — pengaman agar admin tak salah kavling */}
+          <div className={`rounded-lg border px-3 py-2 text-sm flex items-center gap-2 ${unitBuyer ? 'bg-blue-50 border-blue-200 text-blue-800' : 'bg-amber-50 border-amber-200 text-amber-800'}`}>
+            <User size={14} className="shrink-0" />
+            {unitBuyer ? (
+              <span>Pembeli kavling <b>{unitLabel(units.find((u) => u.id === unitId))}</b>: <b>{unitBuyer.full_name}</b>
+                {unitBuyer.payment_type && <span className="text-xs"> · {unitBuyer.payment_type === 'kpr' ? 'KPR' : 'Cash'}</span>}
+              </span>
+            ) : (
+              <span>Kavling ini <b>belum ada pembeli</b> — pastikan dokumen yang diserahkan sudah benar.</span>
+            )}
+          </div>
+
           <div className="rounded-lg bg-slate-50 border border-slate-200 p-3">
             <div className="flex items-center justify-between mb-1.5">
               <p className="text-xs font-semibold text-slate-500">Dokumen asli yang ikut paket ({pkgDocIds.length}/{docs.length})</p>
@@ -616,7 +638,11 @@ export default function LegalDocuments() {
 
           <div className="grid grid-cols-2 gap-2">
             <div><label className="label">Kejadian *</label>
-              <select className="input" value={pkgForm.event} onChange={(e) => setPkgForm({ ...pkgForm, event: e.target.value as HandoverEvent })}>
+              <select className="input" value={pkgForm.event} onChange={(e) => {
+                const ev = e.target.value as HandoverEvent
+                // auto-pilih pembeli kavling ini → admin tak perlu cari di daftar panjang & tak salah orang
+                setPkgForm({ ...pkgForm, event: ev, client_id: ev === 'terima_pembeli' ? (unitBuyer?.id ?? '') : pkgForm.client_id })
+              }}>
                 {(Object.keys(eventCfg) as HandoverEvent[]).map((k) => <option key={k} value={k}>{eventCfg[k]}</option>)}
               </select></div>
             <div><label className="label">Tanggal</label><DateInput className="input" max={today()} value={pkgForm.at} onChange={(v) => setPkgForm({ ...pkgForm, at: v })} /></div>
@@ -640,8 +666,11 @@ export default function LegalDocuments() {
             <div><label className="label">Pembeli *</label>
               <select className="input" required value={pkgForm.client_id} onChange={(e) => setPkgForm({ ...pkgForm, client_id: e.target.value })}>
                 <option value="">Pilih pembeli...</option>
-                {clients.map((c) => <option key={c.id} value={c.id}>{c.full_name}</option>)}
-              </select></div>
+                {clients.map((c) => <option key={c.id} value={c.id}>{c.full_name}{c.unit_id === unitId ? ' — pembeli kavling ini' : ''}</option>)}
+              </select>
+              {unitBuyer && pkgForm.client_id && pkgForm.client_id !== unitBuyer.id && (
+                <p className="text-[11px] text-amber-600 mt-1">⚠ Bukan pembeli kavling ini ({unitBuyer.full_name}) — pastikan benar.</p>
+              )}</div>
           )}
 
           <div className="grid grid-cols-2 gap-2">
