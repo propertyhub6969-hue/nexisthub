@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { today } from '../../utils/date'
 import { useParams, Link } from 'react-router-dom'
-import { Plus, Trash2, Pencil, Loader2, ArrowLeft, Map, FileSignature, Printer, Boxes, X } from 'lucide-react'
+import { Plus, Trash2, Pencil, Loader2, ArrowLeft, Map, FileSignature, Printer, Boxes, X, Search } from 'lucide-react'
 import Badge from '../../components/ui/Badge'
 import DateInput from '../../components/ui/DateInput'
 import MoneyInput from '../../components/ui/MoneyInput'
@@ -38,6 +38,8 @@ export default function ProjectUnits() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
+  const [search, setSearch] = useState('')      // yang diketik
+  const [searchQ, setSearchQ] = useState('')    // yang dikirim ke server (ditunda)
   const [modalOpen, setModalOpen] = useState(false)
   const [form, setForm] = useState<UnitCreate>(emptyForm(projectId))
   const [priceRows, setPriceRows] = useState<PriceItem[]>([{ label: 'Harga Dasar', amount: 0 }])
@@ -64,13 +66,14 @@ export default function ProjectUnits() {
   const [pages, setPages] = useState(1)
   const [counts, setCounts] = useState<Record<string, number>>({})
 
-  const load = useCallback(async (pg: number, status: string) => {
+  const load = useCallback(async (pg: number, status: string, q: string) => {
     setLoading(true)
     setError('')
     try {
       const [proj, res, stats] = await Promise.all([
         propertyService.getProject(projectId),
-        propertyService.listUnits({ project_id: projectId, status: status || undefined, page: pg, size: 25 }),
+        // cari di server — paginasi server-side, jadi filter sisi-klien hanya akan menyaring 25 baris yang tampil
+        propertyService.listUnits({ project_id: projectId, status: status || undefined, search: q || undefined, page: pg, size: 25 }),
         propertyService.unitStats(projectId),
       ])
       setProject(proj)
@@ -83,7 +86,14 @@ export default function ProjectUnits() {
     }
   }, [projectId])
 
-  useEffect(() => { load(page, statusFilter) }, [load, page, statusFilter])
+  // tunda 300ms setelah ketikan berhenti → tak membanjiri server tiap huruf
+  useEffect(() => {
+    const t = setTimeout(() => setSearchQ(search.trim()), 300)
+    return () => clearTimeout(t)
+  }, [search])
+  useEffect(() => { setPage(1) }, [searchQ])   // ganti kata kunci → balik ke halaman 1
+
+  useEffect(() => { load(page, statusFilter, searchQ) }, [load, page, statusFilter, searchQ])
 
   function openCreate() {
     setEditingId(null)
@@ -137,7 +147,7 @@ export default function ProjectUnits() {
         await propertyService.createUnit(payload)
       }
       closeModal()
-      await load(page, statusFilter)
+      await load(page, statusFilter, searchQ)
     } catch {
       setError('Gagal menyimpan unit.')
     } finally {
@@ -149,7 +159,7 @@ export default function ProjectUnits() {
     if (!confirm('Hapus unit ini?')) return
     try {
       await propertyService.deleteUnit(id)
-      await load(page, statusFilter)
+      await load(page, statusFilter, searchQ)
     } catch {
       setError('Gagal menghapus unit.')
     }
@@ -175,7 +185,7 @@ export default function ProjectUnits() {
       const rec = payload as unknown as Record<string, unknown>
       ;['unit_type', 'land_area', 'building_area', 'price'].forEach((k) => { if (!rec[k]) delete rec[k] })
       const res = await propertyService.bulkGenerateUnits(payload)
-      await load(page, statusFilter)
+      await load(page, statusFilter, searchQ)
       setGenMsg(`${res.created} unit dibuat${res.skipped ? `, ${res.skipped} dilewati (nomor sudah ada)` : ''}.`)
       // reset jumlah agar tidak sengaja generate ganda; biarkan modal terbuka menampilkan hasil
       setGenForm((f) => ({ ...f, start_number: f.start_number + f.count }))
@@ -197,7 +207,7 @@ export default function ProjectUnits() {
     try {
       await propertyService.createBast(bastUnit.id, { bast_date: bastDate || undefined })
       setBastModal(false)
-      await load(page, statusFilter)
+      await load(page, statusFilter, searchQ)
     } catch { setError('Gagal membuat BAST.') } finally { setSavingBast(false) }
   }
   function doPrintBast(u: Unit) {
@@ -232,6 +242,23 @@ export default function ProjectUnits() {
             Tambah Unit
           </button>
         </div>
+      </div>
+
+      {/* Cari no. unit / blok — dicari di server (semua halaman), bukan cuma 25 baris yang tampil */}
+      <div className="relative max-w-xs">
+        <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+        <input className="input pl-9 pr-8" placeholder="Cari no. unit / blok…" list="unit-suggest"
+          value={search} onChange={(e) => setSearch(e.target.value)} />
+        {search && (
+          <button type="button" onClick={() => setSearch('')} title="Bersihkan"
+            className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+            <X size={14} />
+          </button>
+        )}
+        {/* autofill: saran dari unit yang cocok (menyempit saat mengetik) */}
+        <datalist id="unit-suggest">
+          {units.map((u) => <option key={u.id} value={u.unit_number} />)}
+        </datalist>
       </div>
 
       {/* Ringkasan status (klik untuk filter) */}
