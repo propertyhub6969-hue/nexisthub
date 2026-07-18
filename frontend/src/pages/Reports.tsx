@@ -2,9 +2,11 @@ import { useEffect, useState } from 'react'
 import {
   Loader2, Landmark, TrendingDown, CheckCircle2, XCircle, FileStack,
   Wallet, Users, Building2, PiggyBank, HandCoins, Home, AlertTriangle, Clock, HardHat, CalendarClock, Receipt,
+  Printer, FileDown,
 } from 'lucide-react'
 import { reportingService } from '../services/reporting'
 import { propertyService } from '../services/property'
+import { printMonthlyTax, downloadMonthlyTaxCsv } from '../utils/monthlyTax'
 import type { KprRejectionReport, CashflowReport, SalesRecapReport, AgingReport, ConstructionProgressReport, MonthlyTaxReport, Project } from '../types'
 
 const fmtRp = (n?: number | null) =>
@@ -494,12 +496,30 @@ function MonthlyTaxTab() {
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-center gap-2">
-        <input type="month" className="input w-40" value={month} onChange={(e) => setMonth(e.target.value)} />
-        <select className="input w-56" value={projectId} onChange={(e) => setProjectId(e.target.value)}>
-          <option value="">Semua Proyek</option>
-          {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-        </select>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <input type="month" className="input w-40" value={month} onChange={(e) => setMonth(e.target.value)} />
+          <select className="input w-56" value={projectId} onChange={(e) => setProjectId(e.target.value)}>
+            <option value="">Semua Proyek</option>
+            {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+        </div>
+        {rep && (
+          <div className="flex items-center gap-2">
+            <button
+              className="btn-secondary text-sm flex items-center gap-1.5"
+              onClick={() => printMonthlyTax(rep, fmtMonth(month), projects.find((p) => p.id === projectId)?.name ?? 'Semua Proyek')}
+            >
+              <Printer size={14} /> Print
+            </button>
+            <button
+              className="btn-secondary text-sm flex items-center gap-1.5"
+              onClick={() => downloadMonthlyTaxCsv(rep, fmtMonth(month))}
+            >
+              <FileDown size={14} /> Excel (CSV)
+            </button>
+          </div>
+        )}
       </div>
 
       {loading ? (
