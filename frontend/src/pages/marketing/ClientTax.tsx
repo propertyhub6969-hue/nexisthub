@@ -43,12 +43,12 @@ const taxStatusCfg: Record<TaxStatus, { label: string; variant: 'gray' | 'blue' 
 }
 
 const emptyDoc = (cid: string): DocumentCreate => ({ client_id: cid, doc_type: '', name: '', status: 'belum', doc_date: '' })
-const emptyTax = (cid: string): TaxCreate => ({ client_id: cid, tax_type: 'pph', category: 'komersial', base_amount: undefined, amount: undefined, id_billing: '', ntpn: '', tax_date: '', status: 'belum', notary_id: '' })
+const emptyTax = (cid: string): TaxCreate => ({ client_id: cid, tax_type: 'pph', category: 'subsidi', base_amount: undefined, amount: undefined, id_billing: '', ntpn: '', tax_date: '', status: 'belum', notary_id: '' })
 
-// Hitung jumlah pajak dari Nilai AJB. PPh: 1% (fokus rumah subsidi). PPN 11%. BPHTB (AJB−80jt)×5%.
-function calcTax(type: TaxType, ajb?: number, category: SaleCategory = 'komersial'): number | undefined {
+// Hitung jumlah pajak dari Nilai AJB. PPh: subsidi 1%, komersial 2,5% (default subsidi — fokus rumah subsidi). PPN 11%. BPHTB (AJB−80jt)×5%.
+function calcTax(type: TaxType, ajb?: number, category: SaleCategory = 'subsidi'): number | undefined {
   if (!ajb) return undefined
-  if (type === 'pph') return Math.round(ajb * 0.01)
+  if (type === 'pph') return Math.round(ajb * (category === 'subsidi' ? 0.01 : 0.025))
   if (type === 'ppn') return Math.round(ajb * 0.11)
   if (type === 'bphtb') return Math.max(0, Math.round((ajb - 80_000_000) * 0.05))
   return undefined
@@ -210,12 +210,12 @@ export default function ClientTax() {
     setTaxEditId(null)
     // prefill Nilai AJB dari harga jual pembeli (bisa diubah); jumlah auto-hitung
     const ajb = client?.contract_value ? Number(client.contract_value) : undefined
-    setTaxForm({ ...emptyTax(clientId), base_amount: ajb, amount: calcTax('pph', ajb, 'komersial') })
+    setTaxForm({ ...emptyTax(clientId), base_amount: ajb, amount: calcTax('pph', ajb, 'subsidi') })
     setTaxModal(true)
   }
   function openTaxEdit(x: TaxRecord) {
     setTaxEditId(x.id)
-    setTaxForm({ client_id: clientId, tax_type: x.tax_type, category: x.category ?? 'komersial', base_amount: x.base_amount, amount: x.amount, id_billing: x.id_billing ?? '', ntpn: x.ntpn ?? '', tax_date: x.tax_date ?? '', status: x.status, notary_id: x.notary_id ?? '' })
+    setTaxForm({ client_id: clientId, tax_type: x.tax_type, category: x.category ?? 'subsidi', base_amount: x.base_amount, amount: x.amount, id_billing: x.id_billing ?? '', ntpn: x.ntpn ?? '', tax_date: x.tax_date ?? '', status: x.status, notary_id: x.notary_id ?? '' })
     setTaxModal(true)
   }
   async function submitTax(e: React.FormEvent) {
@@ -652,8 +652,8 @@ export default function ClientTax() {
                 const c = e.target.value as SaleCategory
                 setTaxForm({ ...taxForm, category: c, amount: calcTax(taxForm.tax_type, taxForm.base_amount, c) })
               }}>
-                <option value="komersial">Komersial</option>
                 <option value="subsidi">Subsidi</option>
+                <option value="komersial">Komersial</option>
               </select>
             </div>
           </div>
@@ -666,7 +666,7 @@ export default function ClientTax() {
               <label className="label">Jumlah (Rp)</label>
               <MoneyInput value={taxForm.amount} onChange={(v) => setTaxForm({ ...taxForm, amount: v })} />
               <p className="text-[11px] text-slate-400 mt-1">
-                {taxForm.tax_type === 'pph' ? 'Otomatis: AJB × 1%'
+                {taxForm.tax_type === 'pph' ? `Otomatis: AJB × ${taxForm.category === 'subsidi' ? '1%' : '2,5%'}`
                   : taxForm.tax_type === 'ppn' ? 'Otomatis: AJB × 11%'
                   : 'Otomatis: (AJB − 80jt) × 5%'} · bisa diubah manual
               </p>
