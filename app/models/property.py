@@ -73,8 +73,9 @@ class Unit(BaseModel):
     unit_type: Mapped[str] = mapped_column(String(100), nullable=True)     # Tipe (36/60, dll)
     land_area: Mapped[float] = mapped_column(Numeric(10, 2), nullable=True)     # Luas tanah (m2)
     building_area: Mapped[float] = mapped_column(Numeric(10, 2), nullable=True) # Luas bangunan (m2)
-    price: Mapped[float] = mapped_column(Numeric(15, 2), nullable=True)   # total (= Σ price_breakdown bila diisi)
+    price: Mapped[float] = mapped_column(Numeric(15, 2), nullable=True)   # total NET (= Σ price_breakdown − discount)
     price_breakdown: Mapped[list] = mapped_column(JSON, nullable=True)    # rincian harga: [{label, amount}]
+    discount: Mapped[float] = mapped_column(Numeric(15, 2), nullable=True)  # potongan harga (Rp), dikurangkan dari Σ price_breakdown
     status: Mapped[UnitStatus] = mapped_column(
         SAEnum(UnitStatus), default=UnitStatus.AVAILABLE, nullable=False
     )

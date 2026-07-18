@@ -302,6 +302,7 @@ export interface Unit {
   building_area?: number
   price?: number
   price_breakdown?: PriceItem[]
+  discount?: number
   position_x?: number
   position_y?: number
   notes?: string
@@ -323,6 +324,7 @@ export interface UnitCreate {
   building_area?: number
   price?: number
   price_breakdown?: PriceItem[]
+  discount?: number
   notes?: string
   status?: UnitStatus
 }

@@ -26,7 +26,7 @@ const fmt = (n?: number) =>
 
 const emptyForm = (projectId: string): UnitCreate => ({
   project_id: projectId, block: '', unit_number: '', unit_type: '',
-  land_area: undefined, building_area: undefined, price: undefined, status: 'available',
+  land_area: undefined, building_area: undefined, price: undefined, discount: undefined, status: 'available',
 })
 
 export default function ProjectUnits() {
@@ -46,7 +46,8 @@ export default function ProjectUnits() {
   const [saving, setSaving] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
 
-  const priceTotal = priceRows.reduce((a, r) => a + (Number(r.amount) || 0), 0)
+  const priceSubtotal = priceRows.reduce((a, r) => a + (Number(r.amount) || 0), 0)
+  const priceTotal = Math.max(0, priceSubtotal - (Number(form.discount) || 0))
 
   // BAST
   const [bastModal, setBastModal] = useState(false)
@@ -112,6 +113,7 @@ export default function ProjectUnits() {
       land_area: u.land_area,
       building_area: u.building_area,
       price: u.price,
+      discount: u.discount,
       status: u.status,
     })
     // muat rincian; kalau belum ada, satu baris 'Harga Dasar' = harga lama
@@ -379,7 +381,14 @@ export default function ProjectUnits() {
             </div>
             <div className="flex items-center justify-between mt-2">
               <button type="button" onClick={addPriceRow} className="text-sm text-brand-600 hover:underline flex items-center gap-1"><Plus size={13} /> Tambah baris</button>
-              <span className="text-sm font-semibold text-slate-900">Total: {fmt(priceTotal)}</span>
+              <span className="text-sm text-slate-500">Subtotal: {fmt(priceSubtotal)}</span>
+            </div>
+          </div>
+          <div>
+            <label className="label">Diskon (Rp)</label>
+            <div className="flex items-center gap-3">
+              <div className="w-40 shrink-0"><MoneyInput value={form.discount} onChange={(v) => setForm({ ...form, discount: v })} placeholder="0" /></div>
+              <span className="text-sm font-semibold text-slate-900">Total setelah diskon: {fmt(priceTotal)}</span>
             </div>
           </div>
           <div>

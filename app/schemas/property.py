@@ -64,8 +64,9 @@ class UnitBase(BaseModel):
     unit_type: Optional[str] = Field(None, max_length=100)
     land_area: Optional[Decimal] = Field(None, ge=0)
     building_area: Optional[Decimal] = Field(None, ge=0)
-    price: Optional[Decimal] = Field(None, ge=0)          # total (= Σ price_breakdown bila diisi)
+    price: Optional[Decimal] = Field(None, ge=0)          # total NET (= Σ price_breakdown − discount)
     price_breakdown: Optional[list[PriceItem]] = None     # rincian harga per baris
+    discount: Optional[Decimal] = Field(None, ge=0)       # potongan harga (Rp)
     position_x: Optional[Decimal] = None
     position_y: Optional[Decimal] = None
     notes: Optional[str] = None
@@ -97,6 +98,7 @@ class UnitUpdate(BaseModel):
     building_area: Optional[Decimal] = Field(None, ge=0)
     price: Optional[Decimal] = Field(None, ge=0)
     price_breakdown: Optional[list[PriceItem]] = None
+    discount: Optional[Decimal] = Field(None, ge=0)
     position_x: Optional[Decimal] = None
     position_y: Optional[Decimal] = None
     notes: Optional[str] = None

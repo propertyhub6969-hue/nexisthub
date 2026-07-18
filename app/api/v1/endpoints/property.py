@@ -298,16 +298,20 @@ async def unit_stats(
     return {"total": sum(by.values()), "by_status": by}
 
 
-def _apply_price_breakdown(data: dict) -> None:
-    """Bila `price_breakdown` diisi → simpan sbg JSON [{label, amount}] & set price = totalnya.
-    Bila kosong/None (dan key ada) → kosongkan rincian (harga pakai field manual)."""
+def _apply_price_breakdown(data: dict, current_discount: Optional[Decimal] = None) -> None:
+    """Bila `price_breakdown` diisi → simpan sbg JSON [{label, amount}] & set price = totalnya
+    DIKURANGI diskon (data["discount"] bila diisi request ini, kalau tidak pakai current_discount
+    yang sudah tersimpan). Bila kosong/None (dan key ada) → kosongkan rincian (harga pakai field manual)."""
     if "price_breakdown" not in data:
         return
     pb = data.get("price_breakdown")
     if pb:
         items = [{"label": str(i["label"]).strip(), "amount": float(i["amount"] or 0)} for i in pb]
         data["price_breakdown"] = items
-        data["price"] = sum((Decimal(str(i["amount"])) for i in items), Decimal(0))
+        total = sum((Decimal(str(i["amount"])) for i in items), Decimal(0))
+        discount = data["discount"] if "discount" in data else current_discount
+        discount = Decimal(str(discount)) if discount else Decimal(0)
+        data["price"] = max(Decimal(0), total - discount)
     else:
         data["price_breakdown"] = None
 
@@ -407,7 +411,7 @@ async def update_unit(
 ):
     unit = await _get_unit(db, ctx.tenant_id, unit_id)
     data = payload.model_dump(exclude_unset=True)
-    _apply_price_breakdown(data)
+    _apply_price_breakdown(data, current_discount=unit.discount)
     for field, value in data.items():
         setattr(unit, field, value)
     await db.flush()
