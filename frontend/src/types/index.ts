@@ -787,6 +787,7 @@ export interface MonthlyTaxRow {
   base_amount?: number
   amount?: number
   ppn_amount?: number
+  bphtb_amount?: number
   ntpn?: string
   shm_number?: string
   pbb_number?: string
@@ -801,6 +802,7 @@ export interface MonthlyTaxReport {
   total_base_amount: number
   total_amount: number
   total_ppn_amount: number
+  total_bphtb_amount: number
 }
 
 export interface CashflowMonth {
