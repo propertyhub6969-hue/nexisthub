@@ -10,7 +10,7 @@ import { marketingService } from '../../services/marketing'
 import { taxService } from '../../services/tax'
 import { documentService } from '../../services/document'
 import type {
-  Client, Notary, TaxRecord, TaxCreate, TaxType, TaxStatus, SaleCategory, NotaryFee, NotaryFeeCreate,
+  Client, Notary, TaxRecord, TaxCreate, TaxBulkItem, TaxType, TaxStatus, SaleCategory, NotaryFee, NotaryFeeCreate,
   DocumentItem, DocumentCreate, DocumentBulkItem, DocStatus,
 } from '../../types'
 
@@ -23,6 +23,12 @@ const isKTP = (t: string) => /ktp/i.test(t)
 
 interface BerkasRow { doc_type: string; name: string; status: DocStatus; doc_date: string; file?: File | null; custom?: boolean }
 const berkasFilled = (r: BerkasRow) => !!r.file
+
+interface TaxRow {
+  include: boolean; tax_type: TaxType; category: SaleCategory; amount?: number
+  status: TaxStatus; tax_date: string; id_billing: string; ntpn: string
+}
+const TAX_TYPES: TaxType[] = ['pph', 'bphtb', 'ppn']
 
 const docStatusCfg: Record<DocStatus, { label: string; variant: 'gray' | 'yellow' | 'green' }> = {
   belum:  { label: 'Belum Ada', variant: 'gray' },
@@ -82,6 +88,10 @@ export default function ClientTax() {
   const [taxModal, setTaxModal] = useState(false)
   const [taxForm, setTaxForm] = useState<TaxCreate>(emptyTax(clientId))
   const [taxEditId, setTaxEditId] = useState<string | null>(null)
+  const [taxChecklistModal, setTaxChecklistModal] = useState(false)
+  const [taxRows, setTaxRows] = useState<TaxRow[]>([])
+  const [taxChecklistSaving, setTaxChecklistSaving] = useState(false)
+  const [taxChecklistMsg, setTaxChecklistMsg] = useState('')
   const [uploadingTaxId, setUploadingTaxId] = useState<string | null>(null)
   const taxFileInput = useRef<HTMLInputElement | null>(null)
   const pendingTaxUpload = useRef<string | null>(null)
@@ -233,6 +243,54 @@ export default function ClientTax() {
   async function delTax(id: string) {
     if (!confirm('Hapus (arsipkan) data pajak ini?')) return
     try { await taxService.deleteTax(id); await reload() } catch { setError('Gagal menghapus.') }
+  }
+
+  // ── Entry cepat pajak (checklist PPh/BPHTB/PPN sekaligus) ──
+  function openTaxChecklist() {
+    const ajb = client?.contract_value ? Number(client.contract_value) : undefined
+    const byType: Partial<Record<TaxType, TaxRecord>> = {}
+    taxes.forEach((t) => { byType[t.tax_type] = t })
+    const rows: TaxRow[] = TAX_TYPES.map((tt) => {
+      const ex = byType[tt]
+      const category = ex?.category ?? 'subsidi'
+      return {
+        include: !!ex,
+        tax_type: tt,
+        category,
+        amount: ex?.amount ?? calcTax(tt, ajb, category),
+        status: ex?.status ?? 'belum',
+        tax_date: ex?.tax_date ?? '',
+        id_billing: ex?.id_billing ?? '',
+        ntpn: ex?.ntpn ?? '',
+      }
+    })
+    setTaxRows(rows)
+    setTaxChecklistMsg('')
+    setTaxChecklistModal(true)
+  }
+  function setTaxRow(i: number, patch: Partial<TaxRow>) {
+    setTaxRows((prev) => prev.map((r, idx) => (idx === i ? { ...r, ...patch } : r)))
+  }
+  async function submitTaxChecklist(e: React.FormEvent) {
+    e.preventDefault()
+    const filled = taxRows.filter((r) => r.include)
+    if (filled.length === 0) { setTaxChecklistMsg('Pilih minimal satu jenis pajak.'); return }
+    setTaxChecklistSaving(true); setError('')
+    try {
+      const ajb = client?.contract_value ? Number(client.contract_value) : undefined
+      const items: TaxBulkItem[] = filled.map((r) => {
+        const it: TaxBulkItem = { tax_type: r.tax_type, category: r.category, status: r.status }
+        if (r.amount != null) it.amount = r.amount
+        if (ajb != null) it.base_amount = ajb
+        if (r.tax_date) it.tax_date = r.tax_date
+        if (r.id_billing.trim()) it.id_billing = r.id_billing.trim()
+        if (r.ntpn.trim()) it.ntpn = r.ntpn.trim()
+        return it
+      })
+      await taxService.bulkCreateTax({ client_id: clientId, items })
+      await reload()
+      setTaxChecklistModal(false)
+    } catch { setError('Gagal menyimpan pajak.') } finally { setTaxChecklistSaving(false) }
   }
   function triggerTaxUpload(id: string) { pendingTaxUpload.current = id; taxFileInput.current?.click() }
   async function onTaxFilePicked(e: React.ChangeEvent<HTMLInputElement>) {
@@ -434,7 +492,10 @@ export default function ClientTax() {
       <div className="card overflow-hidden">
         <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
           <h2 className="text-sm font-semibold text-slate-900 flex items-center gap-2"><Receipt size={15} /> Perpajakan</h2>
-          <button className="btn-primary text-xs flex items-center gap-1" onClick={openTaxCreate}><Plus size={13} /> Tambah Pajak</button>
+          <div className="flex items-center gap-2">
+            <button className="btn-secondary text-xs flex items-center gap-1" onClick={openTaxChecklist}><ListChecks size={13} /> Entry Cepat</button>
+            <button className="btn-primary text-xs flex items-center gap-1" onClick={openTaxCreate}><Plus size={13} /> Tambah Pajak</button>
+          </div>
         </div>
         <table className="w-full text-sm">
           <thead className="bg-slate-50 border-b border-slate-200">
@@ -704,6 +765,70 @@ export default function ClientTax() {
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" className="btn-secondary text-sm" onClick={() => setTaxModal(false)}>Batal</button>
             <button type="submit" className="btn-primary text-sm flex items-center gap-2" disabled={saving}>{saving && <Loader2 size={14} className="animate-spin" />}Simpan</button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Modal Entry Cepat Pajak */}
+      <Modal open={taxChecklistModal} onClose={() => setTaxChecklistModal(false)} title="Entry Cepat Pajak" size="lg">
+        <form onSubmit={submitTaxChecklist} className="space-y-3">
+          <p className="text-sm text-slate-500">
+            Isi beberapa jenis pajak sekaligus untuk <b>{client?.full_name}</b>. Centang jenis yang berlaku — jumlah otomatis dari Nilai AJB (bisa diubah manual), jenis yang sudah ada akan diperbarui.
+          </p>
+          <div className="space-y-2">
+            {taxRows.map((r, i) => (
+              <div key={r.tax_type} className={`rounded-lg border p-3 space-y-2 ${r.include ? 'border-brand-200 bg-brand-50/30' : 'border-slate-200'}`}>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" checked={r.include} onChange={(e) => setTaxRow(i, { include: e.target.checked })} />
+                  <span className="font-medium text-slate-800 text-sm">{taxTypeLabel[r.tax_type]}</span>
+                </label>
+                {r.include && (
+                  <div className="grid grid-cols-2 gap-2 pl-6">
+                    <div>
+                      <label className="label text-xs">Kategori</label>
+                      <select className="input text-sm" value={r.category} onChange={(e) => {
+                        const c = e.target.value as SaleCategory
+                        const ajb = client?.contract_value ? Number(client.contract_value) : undefined
+                        setTaxRow(i, { category: c, amount: calcTax(r.tax_type, ajb, c) })
+                      }}>
+                        <option value="subsidi">Subsidi</option>
+                        <option value="komersial">Komersial</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="label text-xs">Jumlah (Rp)</label>
+                      <MoneyInput className="input text-sm" value={r.amount} onChange={(v) => setTaxRow(i, { amount: v })} />
+                    </div>
+                    <div>
+                      <label className="label text-xs">Status</label>
+                      <select className="input text-sm" value={r.status} onChange={(e) => setTaxRow(i, { status: e.target.value as TaxStatus })}>
+                        {(Object.keys(taxStatusCfg) as TaxStatus[]).map((k) => <option key={k} value={k}>{taxStatusCfg[k].label}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="label text-xs">Tanggal</label>
+                      <DateInput className="input text-sm" max={today()} value={r.tax_date} onChange={(v) => setTaxRow(i, { tax_date: v })} />
+                    </div>
+                    <div>
+                      <label className="label text-xs">ID Billing</label>
+                      <input className="input text-sm" placeholder="Kode billing DJP" value={r.id_billing} onChange={(e) => setTaxRow(i, { id_billing: e.target.value })} />
+                    </div>
+                    <div>
+                      <label className="label text-xs">NTPN</label>
+                      <input className="input text-sm" placeholder="Bukti setelah bayar" value={r.ntpn} onChange={(e) => setTaxRow(i, { ntpn: e.target.value })} />
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+          <p className="text-[11px] text-slate-400">Notaris & file bukti diatur belakangan lewat Edit per baris di tabel.</p>
+          {taxChecklistMsg && <div className="rounded-lg bg-amber-50 border border-amber-200 text-amber-700 text-sm px-3 py-2">{taxChecklistMsg}</div>}
+          <div className="flex justify-end gap-2 pt-1">
+            <button type="button" className="btn-secondary text-sm" onClick={() => setTaxChecklistModal(false)}>Batal</button>
+            <button type="submit" className="btn-primary text-sm flex items-center gap-2" disabled={taxChecklistSaving}>
+              {taxChecklistSaving && <Loader2 size={14} className="animate-spin" />}Simpan Semua
+            </button>
           </div>
         </form>
       </Modal>

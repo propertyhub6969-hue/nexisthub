@@ -549,6 +549,22 @@ export interface TaxCreate {
   notary_id?: string
   notes?: string
 }
+export interface TaxBulkItem {
+  tax_type: TaxType
+  category?: SaleCategory
+  base_amount?: number
+  amount?: number
+  id_billing?: string
+  ntpn?: string
+  tax_date?: string
+  status?: TaxStatus
+  notary_id?: string
+  notes?: string
+}
+export interface TaxBulkCreate {
+  client_id: string
+  items: TaxBulkItem[]
+}
 
 export interface NotaryFee {
   id: string

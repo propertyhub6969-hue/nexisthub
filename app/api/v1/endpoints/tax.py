@@ -15,7 +15,7 @@ from app.api.deps import get_current_context, AuthContext
 from app.models.tax import Notary, TaxRecord, NotaryFee
 from app.schemas.tax import (
     NotaryCreate, NotaryUpdate, NotaryResponse,
-    TaxCreate, TaxUpdate, TaxResponse,
+    TaxCreate, TaxUpdate, TaxResponse, TaxBulkCreate,
     FeeCreate, FeeUpdate, FeeResponse,
 )
 
@@ -93,6 +93,41 @@ async def create_tax(payload: TaxCreate, ctx: AuthContext = Depends(get_current_
     db.add(t); await db.flush()
     await record_audit(db, ctx.tenant_id, ctx.user_id, "CREATE", "tax_records", t.id, new_data=payload)
     return await _load_tax(db, ctx.tenant_id, t.id)
+
+
+@router.post("/tax-records/bulk", response_model=list[TaxResponse], status_code=status.HTTP_201_CREATED)
+async def bulk_upsert_tax(payload: TaxBulkCreate, ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db)):
+    """Entry cepat: checklist pajak (PPh/PPN/BPHTB) dalam satu form. Per jenis: sudah ada → update, belum → buat."""
+    existing = (await db.execute(
+        select(TaxRecord).where(TaxRecord.client_id == payload.client_id, TaxRecord.tenant_id == ctx.tenant_id, NOTDEL(TaxRecord))
+    )).scalars().all()
+    by_type = {t.tax_type: t for t in existing}
+
+    result: list[TaxRecord] = []
+    for item in payload.items:
+        data = item.model_dump()
+        t = by_type.get(item.tax_type)
+        if t is not None:                        # jenis sudah ada → update
+            for f, v in data.items():
+                setattr(t, f, v)
+            action = "UPDATE"
+        else:                                     # baru → buat
+            t = TaxRecord(tenant_id=ctx.tenant_id, client_id=payload.client_id, **data)
+            db.add(t)
+            by_type[item.tax_type] = t
+            action = "CREATE"
+        await db.flush()
+        await record_audit(db, ctx.tenant_id, ctx.user_id, action, "tax_records", t.id,
+                           new_data={"tax_type": t.tax_type.value, "amount": str(t.amount)})
+        result.append(t)
+
+    ids = [t.id for t in result]
+    rows = (await db.execute(
+        select(TaxRecord).options(selectinload(TaxRecord.notary)).where(TaxRecord.id.in_(ids))
+    )).scalars().all()
+    order = {tid: i for i, tid in enumerate(ids)}
+    rows.sort(key=lambda r: order[r.id])
+    return rows
 
 
 @router.patch("/tax-records/{tax_id}", response_model=TaxResponse)

@@ -1,6 +1,6 @@
 import api from './api'
 import type {
-  Notary, NotaryCreate, TaxRecord, TaxCreate, NotaryFee, NotaryFeeCreate,
+  Notary, NotaryCreate, TaxRecord, TaxCreate, TaxBulkCreate, NotaryFee, NotaryFeeCreate,
 } from '../types'
 
 export const taxService = {
@@ -28,6 +28,10 @@ export const taxService = {
   },
   async createTax(payload: TaxCreate): Promise<TaxRecord> {
     const { data } = await api.post<TaxRecord>('/legal/tax-records', payload)
+    return data
+  },
+  async bulkCreateTax(payload: TaxBulkCreate): Promise<TaxRecord[]> {
+    const { data } = await api.post<TaxRecord[]>('/legal/tax-records/bulk', payload)
     return data
   },
   async updateTax(id: string, payload: Partial<TaxCreate>): Promise<TaxRecord> {

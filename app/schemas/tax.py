@@ -57,6 +57,16 @@ class TaxCreate(TaxBase):
     client_id: uuid.UUID
 
 
+class TaxBulkItem(TaxBase):
+    """Satu baris pajak dalam entry cepat (checklist PPh/PPN/BPHTB)."""
+    pass
+
+
+class TaxBulkCreate(BaseModel):
+    client_id: uuid.UUID
+    items: list[TaxBulkItem] = Field(..., min_length=1, max_length=10)
+
+
 class TaxUpdate(BaseModel):
     tax_type: Optional[TaxType] = None
     category: Optional[Literal['subsidi', 'komersial']] = None
