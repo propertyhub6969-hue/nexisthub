@@ -23,6 +23,10 @@ class TeamMemberUpdate(BaseModel):
     is_active: Optional[bool] = None
 
 
+class TeamMemberResetPassword(BaseModel):
+    password: str = Field(..., min_length=8, max_length=100)
+
+
 class TeamMemberResponse(BaseModel):
     id: uuid.UUID
     email: str

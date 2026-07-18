@@ -7,7 +7,7 @@ from app.core.security import get_password_hash
 from app.api.deps import get_current_user, require_role
 from app.models.user import User, UserRole
 from app.schemas.user import (
-    TeamMemberCreate, TeamMemberUpdate, TeamMemberResponse, ASSIGNABLE_ROLES,
+    TeamMemberCreate, TeamMemberUpdate, TeamMemberResponse, TeamMemberResetPassword, ASSIGNABLE_ROLES,
 )
 
 router = APIRouter()
@@ -130,3 +130,17 @@ async def update_user(
     await db.commit()
     await db.refresh(member)
     return member
+
+
+@router.post("/users/{user_id}/reset-password", status_code=status.HTTP_204_NO_CONTENT)
+async def reset_user_password(
+    user_id: uuid.UUID,
+    payload: TeamMemberResetPassword,
+    actor: User = ManagerDep,
+    db: AsyncSession = Depends(get_db),
+):
+    """Admin/owner set ulang password anggota tim (mis. anggota lupa password) — tanpa perlu eskalasi ke platform admin."""
+    member = await _get_member(db, actor.tenant_id, user_id)
+    _assert_can_modify_target(actor, member)
+    member.hashed_password = get_password_hash(payload.password)
+    await db.commit()

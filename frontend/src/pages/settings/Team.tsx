@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react'
-import { Plus, Pencil, Loader2, UserX, UserCheck, ShieldAlert } from 'lucide-react'
+import { Plus, Pencil, Loader2, UserX, UserCheck, ShieldAlert, KeyRound } from 'lucide-react'
 import Badge from '../../components/ui/Badge'
 import Modal from '../../components/ui/Modal'
 import { usersService } from '../../services/users'
@@ -32,6 +32,12 @@ export default function Team() {
   const [saving, setSaving] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [form, setForm] = useState<TeamMemberCreate>(emptyCreate)
+
+  const [resetModal, setResetModal] = useState(false)
+  const [resetTarget, setResetTarget] = useState<TeamMember | null>(null)
+  const [resetPassword, setResetPassword] = useState('')
+  const [resetSaving, setResetSaving] = useState(false)
+  const [resetMsg, setResetMsg] = useState('')
 
   const canManage = user?.role === 'owner' || user?.role === 'admin'
   const roles = assignableRoles(user?.role)
@@ -122,6 +128,29 @@ export default function Team() {
     }
   }
 
+  function openReset(m: TeamMember) {
+    setResetTarget(m)
+    setResetPassword('')
+    setResetMsg('')
+    setResetModal(true)
+  }
+  async function submitReset(e: React.FormEvent) {
+    e.preventDefault()
+    if (!resetTarget) return
+    setResetSaving(true)
+    setResetMsg('')
+    try {
+      await usersService.resetPassword(resetTarget.id, resetPassword)
+      setResetMsg(`Password "${resetTarget.full_name}" berhasil diubah. Bagikan password baru ini ke yang bersangkutan.`)
+      setResetPassword('')
+    } catch (err: unknown) {
+      const d = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      setResetMsg(d || 'Gagal mengubah password.')
+    } finally {
+      setResetSaving(false)
+    }
+  }
+
   if (!canManage) {
     return (
       <div className="card p-8 text-center text-slate-500">
@@ -181,6 +210,9 @@ export default function Team() {
                           <>
                             <button onClick={() => openEdit(m)} className="text-slate-400 hover:text-brand-600 transition-colors" title="Edit">
                               <Pencil size={15} />
+                            </button>
+                            <button onClick={() => openReset(m)} className="text-slate-400 hover:text-brand-600 transition-colors" title="Reset Password">
+                              <KeyRound size={15} />
                             </button>
                             <button
                               onClick={() => toggleActive(m)}
@@ -242,6 +274,30 @@ export default function Team() {
             <button type="submit" className="btn-primary text-sm flex items-center gap-2" disabled={saving}>
               {saving && <Loader2 size={14} className="animate-spin" />}
               {editingId ? 'Simpan Perubahan' : 'Simpan'}
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      <Modal open={resetModal} onClose={() => setResetModal(false)} title={`Reset Password — ${resetTarget?.full_name ?? ''}`}>
+        <form onSubmit={submitReset} className="space-y-3">
+          <div>
+            <label className="label">Password Baru *</label>
+            <input className="input" type="text" required minLength={8}
+              value={resetPassword} onChange={(e) => setResetPassword(e.target.value)}
+              placeholder="Minimal 8 karakter" />
+            <p className="text-xs text-slate-400 mt-1">Bagikan password baru ini langsung ke {resetTarget?.full_name}; mereka bisa menggantinya nanti.</p>
+          </div>
+          {resetMsg && (
+            <div className={`rounded-lg border text-sm px-3 py-2 ${resetMsg.includes('berhasil') ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-red-50 border-red-200 text-red-700'}`}>
+              {resetMsg}
+            </div>
+          )}
+          <div className="flex justify-end gap-2 pt-2">
+            <button type="button" className="btn-secondary text-sm" onClick={() => setResetModal(false)}>Tutup</button>
+            <button type="submit" className="btn-primary text-sm flex items-center gap-2" disabled={resetSaving}>
+              {resetSaving && <Loader2 size={14} className="animate-spin" />}
+              Set Password
             </button>
           </div>
         </form>

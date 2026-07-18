@@ -16,4 +16,8 @@ export const usersService = {
     const { data } = await api.patch<TeamMember>(`/team/users/${id}`, payload)
     return data
   },
+
+  async resetPassword(id: string, password: string): Promise<void> {
+    await api.post(`/team/users/${id}/reset-password`, { password })
+  },
 }
