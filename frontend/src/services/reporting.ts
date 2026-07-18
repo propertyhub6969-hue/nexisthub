@@ -1,5 +1,5 @@
 import api from './api'
-import type { DashboardStats, KprRejectionReport, CashflowReport, SalesRecapReport, AgingReport, SalesMonthly, ConstructionProgressReport } from '../types'
+import type { DashboardStats, KprRejectionReport, CashflowReport, SalesRecapReport, AgingReport, SalesMonthly, ConstructionProgressReport, MonthlyTaxReport } from '../types'
 
 export const reportingService = {
   async dashboard(): Promise<DashboardStats> {
@@ -35,6 +35,13 @@ export const reportingService = {
   async salesMonthly(projectId?: string): Promise<SalesMonthly[]> {
     const { data } = await api.get<SalesMonthly[]>('/reporting/sales-monthly', {
       params: projectId ? { project_id: projectId } : {},
+    })
+    return data
+  },
+
+  async monthlyTax(month: string, projectId?: string): Promise<MonthlyTaxReport> {
+    const { data } = await api.get<MonthlyTaxReport>('/reporting/monthly-tax', {
+      params: { month, project_id: projectId || undefined },
     })
     return data
   },

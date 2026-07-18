@@ -777,6 +777,28 @@ export interface SalesMonthly {
   value: number
 }
 
+export interface MonthlyTaxRow {
+  client_id: string
+  name: string
+  nik?: string
+  location?: string
+  unit_type?: string
+  category?: string
+  base_amount?: number
+  amount?: number
+  ntpn?: string
+  sikumbang_number?: string
+  notary_name?: string
+  tax_date?: string
+}
+export interface MonthlyTaxReport {
+  month: string
+  rows: MonthlyTaxRow[]
+  total_count: number
+  total_base_amount: number
+  total_amount: number
+}
+
 export interface CashflowMonth {
   month: string
   from_buyer: number

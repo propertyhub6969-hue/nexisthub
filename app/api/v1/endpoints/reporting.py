@@ -3,7 +3,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
@@ -16,6 +16,7 @@ from app.models.property import Project, Unit, UnitStatus
 from app.models.payment import Payment, PaymentSchedule, ScheduleStatus, PaymentSource
 from app.models.kpr import KprApplication, KprStage
 from app.models.construction import UnitConstruction, ConstructionStage, ConstructionProgressLog
+from app.models.tax import TaxRecord, TaxType
 
 router = APIRouter()
 
@@ -643,3 +644,110 @@ async def sales_monthly(
         .where(*conds).group_by(ym).order_by(ym)
     )).all()
     return [SalesMonthly(month=m, count=c, value=Decimal(v)) for m, c, v in rows][-12:]
+
+
+# ═══════════════════════ LAPORAN: PAJAK BULANAN (PPh) ═══════════════════════
+class MonthlyTaxRow(BaseModel):
+    client_id: uuid.UUID
+    name: str
+    nik: Optional[str] = None
+    location: Optional[str] = None       # nama proyek
+    unit_type: Optional[str] = None
+    category: Optional[str] = None       # subsidi | komersial
+    base_amount: Optional[Decimal] = None  # Nilai AJB
+    amount: Optional[Decimal] = None       # Jumlah PPh
+    ntpn: Optional[str] = None
+    sikumbang_number: Optional[str] = None  # KIR — No. SiKasep/SiKumbang, dari KPR pembeli (kosong utk cash)
+    notary_name: Optional[str] = None
+    tax_date: Optional[date] = None
+
+
+class MonthlyTaxReport(BaseModel):
+    month: str
+    rows: list[MonthlyTaxRow]
+    total_count: int
+    total_base_amount: Decimal
+    total_amount: Decimal
+
+
+@router.get("/monthly-tax", response_model=MonthlyTaxReport)
+async def monthly_tax(
+    month: str = Query(..., description="YYYY-MM"),
+    project_id: Optional[uuid.UUID] = Query(None),
+    ctx: AuthContext = Depends(get_current_context),
+    db: AsyncSession = Depends(get_db),
+):
+    """Rekap PPh bulanan per pembeli (nama/NIK/lokasi/tipe/kategori/AJB/jumlah/NTPN/No. SiKumbang/notaris)
+    — utk lapor ke akuntan/kantor pajak. Hanya baris PPh yang SUDAH ada tanggalnya (tax_date) di bulan
+    terpilih; baris belum bayar (tanpa tanggal) sengaja tak ikut."""
+    t = ctx.tenant_id
+    try:
+        year, mon = int(month[:4]), int(month[5:7])
+    except (ValueError, IndexError):
+        year = mon = 0
+    if not (1 <= mon <= 12):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Format bulan harus YYYY-MM")
+    start = date(year, mon, 1)
+    end = date(year + 1, 1, 1) if mon == 12 else date(year, mon + 1, 1)
+
+    conds = [
+        TaxRecord.tenant_id == t, TaxRecord.is_deleted == False,  # noqa: E712
+        TaxRecord.tax_type == TaxType.PPH,
+        TaxRecord.tax_date.isnot(None), TaxRecord.tax_date >= start, TaxRecord.tax_date < end,
+    ]
+    rows = (await db.execute(
+        select(TaxRecord).options(selectinload(TaxRecord.notary)).where(*conds).order_by(TaxRecord.tax_date)
+    )).scalars().all()
+
+    client_ids = {r.client_id for r in rows}
+    clients: dict = {}
+    if client_ids:
+        cconds = [Client.id.in_(client_ids)]
+        if project_id:
+            cconds.append(Client.project_id == project_id)
+        for c in (await db.execute(select(Client).where(*cconds))).scalars().all():
+            clients[c.id] = c
+
+    unit_ids = {c.unit_id for c in clients.values() if c.unit_id}
+    units: dict = {}
+    if unit_ids:
+        for u in (await db.execute(select(Unit).where(Unit.id.in_(unit_ids)))).scalars().all():
+            units[u.id] = u
+
+    proj_ids = {c.project_id for c in clients.values() if c.project_id}
+    proj_names: dict = {}
+    if proj_ids:
+        for pid, pname in (await db.execute(select(Project.id, Project.name).where(Project.id.in_(proj_ids)))).all():
+            proj_names[pid] = pname
+
+    # KIR = No. SiKasep/SiKumbang — dari KPR TERBARU per klien (kosong utk pembeli cash)
+    sikumbang_by_client: dict = {}
+    if client_ids:
+        kpr_rows = (await db.execute(
+            select(KprApplication.client_id, KprApplication.sikasep_number, KprApplication.created_at)
+            .where(KprApplication.client_id.in_(client_ids), KprApplication.is_deleted == False)  # noqa: E712
+            .order_by(KprApplication.created_at.desc())
+        )).all()
+        for cid, sikasep, _ca in kpr_rows:
+            if cid not in sikumbang_by_client:
+                sikumbang_by_client[cid] = sikasep
+
+    result_rows: list[MonthlyTaxRow] = []
+    for r in rows:
+        c = clients.get(r.client_id)
+        if c is None:   # tersaring project_id, atau klien sudah dihapus
+            continue
+        u = units.get(c.unit_id) if c.unit_id else None
+        result_rows.append(MonthlyTaxRow(
+            client_id=r.client_id, name=c.full_name, nik=c.nik,
+            location=proj_names.get(c.project_id), unit_type=u.unit_type if u else None,
+            category=r.category, base_amount=r.base_amount, amount=r.amount, ntpn=r.ntpn,
+            sikumbang_number=sikumbang_by_client.get(r.client_id),
+            notary_name=r.notary.name if r.notary else None, tax_date=r.tax_date,
+        ))
+
+    return MonthlyTaxReport(
+        month=month, rows=result_rows, total_count=len(result_rows),
+        total_base_amount=sum((x.base_amount or Decimal(0) for x in result_rows), Decimal(0)),
+        total_amount=sum((x.amount or Decimal(0) for x in result_rows), Decimal(0)),
+    )

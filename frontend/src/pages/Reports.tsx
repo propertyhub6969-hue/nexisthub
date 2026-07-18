@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
 import {
   Loader2, Landmark, TrendingDown, CheckCircle2, XCircle, FileStack,
-  Wallet, Users, Building2, PiggyBank, HandCoins, Home, AlertTriangle, Clock, HardHat, CalendarClock,
+  Wallet, Users, Building2, PiggyBank, HandCoins, Home, AlertTriangle, Clock, HardHat, CalendarClock, Receipt,
 } from 'lucide-react'
 import { reportingService } from '../services/reporting'
-import type { KprRejectionReport, CashflowReport, SalesRecapReport, AgingReport, ConstructionProgressReport } from '../types'
+import { propertyService } from '../services/property'
+import type { KprRejectionReport, CashflowReport, SalesRecapReport, AgingReport, ConstructionProgressReport, MonthlyTaxReport, Project } from '../types'
 
 const fmtRp = (n?: number | null) =>
   n == null ? '—' : new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(Number(n))
@@ -463,6 +464,101 @@ function ConstructionProgressTab() {
   )
 }
 
+// ═══════════════════════ PAJAK BULANAN (PPh) ═══════════════════════
+const categoryLabel: Record<string, string> = { subsidi: 'Subsidi', komersial: 'Komersial' }
+
+function currentMonth(): string {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+}
+
+function MonthlyTaxTab() {
+  const [month, setMonth] = useState(currentMonth())
+  const [projects, setProjects] = useState<Project[]>([])
+  const [projectId, setProjectId] = useState('')
+  const [rep, setRep] = useState<MonthlyTaxReport | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    propertyService.listProjects({ size: 500 }).then((r) => setProjects(r.items)).catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    setLoading(true); setError('')
+    reportingService.monthlyTax(month, projectId || undefined)
+      .then(setRep)
+      .catch(() => setError('Gagal memuat laporan pajak bulanan.'))
+      .finally(() => setLoading(false))
+  }, [month, projectId])
+
+  return (
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-center gap-2">
+        <input type="month" className="input w-40" value={month} onChange={(e) => setMonth(e.target.value)} />
+        <select className="input w-56" value={projectId} onChange={(e) => setProjectId(e.target.value)}>
+          <option value="">Semua Proyek</option>
+          {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+        </select>
+      </div>
+
+      {loading ? (
+        <div className="card p-12 text-center text-slate-400"><Loader2 size={20} className="inline animate-spin" /></div>
+      ) : error ? (
+        <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-2">{error}</div>
+      ) : !rep ? null : (
+        <>
+          <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
+            <StatCard icon={<Receipt size={15} />} label="Jumlah Transaksi" value={String(rep.total_count)} />
+            <StatCard icon={<Building2 size={15} />} label="Total Nilai AJB" value={fmtRp(rep.total_base_amount)} />
+            <StatCard icon={<Wallet size={15} />} label="Total PPh" value={fmtRp(rep.total_amount)} accent="text-emerald-600" />
+          </div>
+
+          <div className="card overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 border-b border-slate-200">
+                <tr>
+                  {['Nama', 'NIK KTP', 'Lokasi', 'Tipe', 'Jenis', 'Nilai AJB', 'Jumlah PPh', 'NTPN', 'KIR', 'Notaris'].map((h, i) => (
+                    <th key={i} className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {rep.rows.length === 0 ? (
+                  <tr><td colSpan={10} className="px-4 py-8 text-center text-slate-400 text-sm">Tidak ada data PPh pada bulan ini.</td></tr>
+                ) : rep.rows.map((r) => (
+                  <tr key={r.client_id} className="hover:bg-slate-50 transition-colors">
+                    <td className="px-4 py-3 font-medium text-slate-900 whitespace-nowrap">{r.name}</td>
+                    <td className="px-4 py-3 text-slate-500 whitespace-nowrap">{r.nik ?? '—'}</td>
+                    <td className="px-4 py-3 text-slate-500 whitespace-nowrap">{r.location ?? '—'}</td>
+                    <td className="px-4 py-3 text-slate-500 whitespace-nowrap">{r.unit_type ?? '—'}</td>
+                    <td className="px-4 py-3 text-slate-500 whitespace-nowrap">{r.category ? categoryLabel[r.category] ?? r.category : '—'}</td>
+                    <td className="px-4 py-3 text-right text-slate-600 whitespace-nowrap">{fmtRp(r.base_amount)}</td>
+                    <td className="px-4 py-3 text-right text-emerald-700 whitespace-nowrap">{fmtRp(r.amount)}</td>
+                    <td className="px-4 py-3 text-slate-500 whitespace-nowrap">{r.ntpn ?? '—'}</td>
+                    <td className="px-4 py-3 text-slate-500 whitespace-nowrap">{r.sikumbang_number ?? '—'}</td>
+                    <td className="px-4 py-3 text-slate-500 whitespace-nowrap">{r.notary_name ?? '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+              {rep.rows.length > 0 && (
+                <tfoot className="bg-slate-50 border-t border-slate-200 font-semibold text-slate-900">
+                  <tr>
+                    <td className="px-4 py-3" colSpan={5}>Total</td>
+                    <td className="px-4 py-3 text-right">{fmtRp(rep.total_base_amount)}</td>
+                    <td className="px-4 py-3 text-right">{fmtRp(rep.total_amount)}</td>
+                    <td className="px-4 py-3" colSpan={3}></td>
+                  </tr>
+                </tfoot>
+              )}
+            </table>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
 // ═══════════════════════ PAGE ═══════════════════════
 const TABS = [
   { key: 'cashflow', label: 'Arus Kas', desc: 'Kas masuk dari pembeli vs bank, plus piutang & retensi.' },
@@ -470,6 +566,7 @@ const TABS = [
   { key: 'construction', label: 'Progres Konstruksi', desc: 'Progres pembangunan per proyek: tahap, % rata-rata, selesai & keterlambatan.' },
   { key: 'aging', label: 'Tunggakan', desc: 'Termin lewat jatuh tempo, dikelompokkan umur & per pembeli.' },
   { key: 'kpr', label: 'Rejection-Rate KPR', desc: 'Persentase pengajuan KPR ditolak per bank penyalur.' },
+  { key: 'tax', label: 'Pajak Bulanan', desc: 'Rekap PPh per pembeli per bulan — nama, NIK, lokasi, AJB, jumlah, NTPN, notaris.' },
 ] as const
 
 export default function Reports() {
@@ -502,6 +599,7 @@ export default function Reports() {
       {tab === 'construction' && <ConstructionProgressTab />}
       {tab === 'aging' && <AgingTab />}
       {tab === 'kpr' && <KprRejectionTab />}
+      {tab === 'tax' && <MonthlyTaxTab />}
     </div>
   )
 }
