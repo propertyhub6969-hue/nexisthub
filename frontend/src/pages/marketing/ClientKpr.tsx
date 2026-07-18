@@ -248,7 +248,9 @@ export default function ClientKpr() {
             </div>
             <div>
               <label className="label">Tgl Collect Berkas</label>
-              <DateInput className="input max-w-[240px]" max={today()} value={kpr.submitted_date ?? ''} onChange={(v) => set('submitted_date', v)} />
+              <div className="max-w-[240px]">
+                <DateInput className="input" max={today()} value={kpr.submitted_date ?? ''} onChange={(v) => set('submitted_date', v)} />
+              </div>
               <p className="text-xs text-slate-400 mt-1">Default terisi otomatis dari tanggal pembeli pertama kali dientri.</p>
             </div>
             <div>
