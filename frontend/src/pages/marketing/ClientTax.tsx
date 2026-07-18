@@ -45,10 +45,10 @@ const taxStatusCfg: Record<TaxStatus, { label: string; variant: 'gray' | 'blue' 
 const emptyDoc = (cid: string): DocumentCreate => ({ client_id: cid, doc_type: '', name: '', status: 'belum', doc_date: '' })
 const emptyTax = (cid: string): TaxCreate => ({ client_id: cid, tax_type: 'pph', category: 'komersial', base_amount: undefined, amount: undefined, id_billing: '', ntpn: '', tax_date: '', status: 'belum', notary_id: '' })
 
-// Hitung jumlah pajak dari Nilai AJB. PPh: komersial 2.5%, subsidi 1%. PPN 11%. BPHTB (AJB−80jt)×5%.
+// Hitung jumlah pajak dari Nilai AJB. PPh: 1% (fokus rumah subsidi). PPN 11%. BPHTB (AJB−80jt)×5%.
 function calcTax(type: TaxType, ajb?: number, category: SaleCategory = 'komersial'): number | undefined {
   if (!ajb) return undefined
-  if (type === 'pph') return Math.round(ajb * (category === 'subsidi' ? 0.01 : 0.025))
+  if (type === 'pph') return Math.round(ajb * 0.01)
   if (type === 'ppn') return Math.round(ajb * 0.11)
   if (type === 'bphtb') return Math.max(0, Math.round((ajb - 80_000_000) * 0.05))
   return undefined
@@ -666,7 +666,7 @@ export default function ClientTax() {
               <label className="label">Jumlah (Rp)</label>
               <MoneyInput value={taxForm.amount} onChange={(v) => setTaxForm({ ...taxForm, amount: v })} />
               <p className="text-[11px] text-slate-400 mt-1">
-                {taxForm.tax_type === 'pph' ? `Otomatis: AJB × ${taxForm.category === 'subsidi' ? '1%' : '2,5%'}`
+                {taxForm.tax_type === 'pph' ? 'Otomatis: AJB × 1%'
                   : taxForm.tax_type === 'ppn' ? 'Otomatis: AJB × 11%'
                   : 'Otomatis: (AJB − 80jt) × 5%'} · bisa diubah manual
               </p>
