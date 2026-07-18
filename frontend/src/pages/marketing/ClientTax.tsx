@@ -89,6 +89,7 @@ export default function ClientTax() {
   const [taxForm, setTaxForm] = useState<TaxCreate>(emptyTax(clientId))
   const [taxEditId, setTaxEditId] = useState<string | null>(null)
   const [taxChecklistModal, setTaxChecklistModal] = useState(false)
+  const [taxAjb, setTaxAjb] = useState<number>()
   const [taxRows, setTaxRows] = useState<TaxRow[]>([])
   const [taxChecklistSaving, setTaxChecklistSaving] = useState(false)
   const [taxChecklistMsg, setTaxChecklistMsg] = useState('')
@@ -247,9 +248,12 @@ export default function ClientTax() {
 
   // ── Entry cepat pajak (checklist PPh/BPHTB/PPN sekaligus) ──
   function openTaxChecklist() {
-    const ajb = client?.contract_value ? Number(client.contract_value) : undefined
+    // AJB per-baris bisa beda (base_amount tersimpan per record) — ambil yg sudah ada, fallback ke harga jual
+    const fallbackAjb = client?.contract_value ? Number(client.contract_value) : undefined
     const byType: Partial<Record<TaxType, TaxRecord>> = {}
     taxes.forEach((t) => { byType[t.tax_type] = t })
+    const existingAjb = taxes.find((t) => t.base_amount != null)?.base_amount
+    const ajb = existingAjb != null ? Number(existingAjb) : fallbackAjb
     const rows: TaxRow[] = TAX_TYPES.map((tt) => {
       const ex = byType[tt]
       const category = ex?.category ?? 'subsidi'
@@ -257,13 +261,14 @@ export default function ClientTax() {
         include: !!ex,
         tax_type: tt,
         category,
-        amount: ex?.amount ?? calcTax(tt, ajb, category),
+        amount: ex?.amount != null ? Number(ex.amount) : calcTax(tt, ajb, category),
         status: ex?.status ?? 'belum',
         tax_date: ex?.tax_date ?? '',
         id_billing: ex?.id_billing ?? '',
         ntpn: ex?.ntpn ?? '',
       }
     })
+    setTaxAjb(ajb)
     setTaxRows(rows)
     setTaxChecklistMsg('')
     setTaxChecklistModal(true)
@@ -271,17 +276,20 @@ export default function ClientTax() {
   function setTaxRow(i: number, patch: Partial<TaxRow>) {
     setTaxRows((prev) => prev.map((r, idx) => (idx === i ? { ...r, ...patch } : r)))
   }
+  function handleTaxAjbChange(v?: number) {
+    setTaxAjb(v)
+    setTaxRows((prev) => prev.map((r) => ({ ...r, amount: calcTax(r.tax_type, v, r.category) })))
+  }
   async function submitTaxChecklist(e: React.FormEvent) {
     e.preventDefault()
     const filled = taxRows.filter((r) => r.include)
     if (filled.length === 0) { setTaxChecklistMsg('Pilih minimal satu jenis pajak.'); return }
     setTaxChecklistSaving(true); setError('')
     try {
-      const ajb = client?.contract_value ? Number(client.contract_value) : undefined
       const items: TaxBulkItem[] = filled.map((r) => {
         const it: TaxBulkItem = { tax_type: r.tax_type, category: r.category, status: r.status }
         if (r.amount != null) it.amount = r.amount
-        if (ajb != null) it.base_amount = ajb
+        if (taxAjb != null) it.base_amount = taxAjb
         if (r.tax_date) it.tax_date = r.tax_date
         if (r.id_billing.trim()) it.id_billing = r.id_billing.trim()
         if (r.ntpn.trim()) it.ntpn = r.ntpn.trim()
@@ -775,6 +783,11 @@ export default function ClientTax() {
           <p className="text-sm text-slate-500">
             Isi beberapa jenis pajak sekaligus untuk <b>{client?.full_name}</b>. Centang jenis yang berlaku — jumlah otomatis dari Nilai AJB (bisa diubah manual), jenis yang sudah ada akan diperbarui.
           </p>
+          <div>
+            <label className="label">Nilai AJB (Dasar)</label>
+            <MoneyInput value={taxAjb} onChange={handleTaxAjbChange} />
+            <p className="text-[11px] text-slate-400 mt-1">Mengubah nilai ini menghitung ulang Jumlah di semua baris yang dicentang.</p>
+          </div>
           <div className="space-y-2">
             {taxRows.map((r, i) => (
               <div key={r.tax_type} className={`rounded-lg border p-3 space-y-2 ${r.include ? 'border-brand-200 bg-brand-50/30' : 'border-slate-200'}`}>
@@ -788,8 +801,7 @@ export default function ClientTax() {
                       <label className="label text-xs">Kategori</label>
                       <select className="input text-sm" value={r.category} onChange={(e) => {
                         const c = e.target.value as SaleCategory
-                        const ajb = client?.contract_value ? Number(client.contract_value) : undefined
-                        setTaxRow(i, { category: c, amount: calcTax(r.tax_type, ajb, c) })
+                        setTaxRow(i, { category: c, amount: calcTax(r.tax_type, taxAjb, c) })
                       }}>
                         <option value="subsidi">Subsidi</option>
                         <option value="komersial">Komersial</option>
