@@ -14,8 +14,8 @@ from app.core import storage
 from app.api.deps import get_current_context, AuthContext
 from app.models.marketing import Lead, Prospect, Client, LeadStatus, ProspectStatus, ClientStatus
 from app.models.property import Unit, UnitStatus
-from app.models.payment import Payment
-from app.models.kpr import KprApplication
+from app.models.payment import Payment, PaymentSource
+from app.models.kpr import KprApplication, KprStage
 from app.core.audit import record_audit
 from app.core.unit_status import unit_status_for_client as _unit_status_for_client, set_unit_status as _set_unit_status
 from app.schemas.marketing import (
@@ -277,29 +277,38 @@ async def convert_prospect(
 
 # ═══════════════════════ CLIENTS ═══════════════════════
 async def _attach_client_extras(db: AsyncSession, clients: list[Client]) -> None:
-    """Set atribut transien (tak disimpan) remaining & kpr_stage per klien — 2 query bulk, bukan N+1."""
+    """Set atribut transien (tak disimpan) remaining & kpr_stage per klien — 3 query bulk, bukan N+1.
+
+    `remaining` di sini = kewajiban PEMBELI sendiri (harga − uang dari pembeli − plafon KPR yang
+    sudah akad), SAMA seperti `buyer_remaining` di /payments/summary. Retensi bank yang belum cair
+    SENGAJA tidak dijumlah ke sini — itu urusan developer↔bank, bukan piutang ke pembeli, dan tetap
+    kelihatan lengkap di halaman detail pembayaran per-pembeli (retention_remaining)."""
     if not clients:
         return
     ids = [c.id for c in clients]
 
     paid_rows = (await db.execute(
         select(Payment.client_id, func.coalesce(func.sum(Payment.amount), 0))
-        .where(Payment.client_id.in_(ids), Payment.is_deleted == False)  # noqa: E712
+        .where(Payment.client_id.in_(ids), Payment.source == PaymentSource.PEMBELI, Payment.is_deleted == False)  # noqa: E712
         .group_by(Payment.client_id)
     )).all()
-    paid_by_client = {row[0]: row[1] for row in paid_rows}
+    from_buyer_by_client = {row[0]: row[1] for row in paid_rows}
 
     kpr_rows = (await db.execute(
-        select(KprApplication.client_id, KprApplication.stage, KprApplication.rejected_date, KprApplication.created_at)
+        select(KprApplication.client_id, KprApplication.stage, KprApplication.plafond,
+               KprApplication.rejected_date, KprApplication.created_at)
         .where(KprApplication.client_id.in_(ids), KprApplication.is_deleted == False)  # noqa: E712
         .order_by(KprApplication.created_at.desc())
     )).all()
     stage_by_client = {}
     rejected_by_client = {}
-    for client_id, stage, rejected_date, _created_at in kpr_rows:
+    committed_by_client = {}
+    for client_id, stage, plafond, rejected_date, _created_at in kpr_rows:
         if client_id not in stage_by_client:  # baris pertama per klien = KPR paling baru
             stage_by_client[client_id] = stage
             rejected_by_client[client_id] = rejected_date is not None
+            # plafon baru menutup kewajiban pembeli SETELAH akad kredit (samakan dgn /payments/summary)
+            committed_by_client[client_id] = (plafond or 0) if stage in (KprStage.AKAD_KREDIT, KprStage.PENCAIRAN) else 0
 
     # Label unit (blok-nomor) dari relasi unit_id — JANGAN andalkan FE memuat daftar unit
     # (unit dimuat lazy per-proyek, jadi kolom No.Unit kosong saat daftar dibuka tanpa filter).
@@ -313,7 +322,9 @@ async def _attach_client_extras(db: AsyncSession, clients: list[Client]) -> None
 
     for c in clients:
         price = c.contract_value or 0
-        c.remaining = (price - paid_by_client.get(c.id, 0)) if c.contract_value is not None else None
+        from_buyer = from_buyer_by_client.get(c.id, 0)
+        committed = committed_by_client.get(c.id, 0)
+        c.remaining = (price - from_buyer - committed) if c.contract_value is not None else None
         c.kpr_stage = stage_by_client.get(c.id)
         c.kpr_rejected = rejected_by_client.get(c.id, False)
         c.unit_label = unit_labels.get(c.unit_id) or c.unit_number  # fallback ke field teks lama
