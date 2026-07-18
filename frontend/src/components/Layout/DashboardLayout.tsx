@@ -20,6 +20,7 @@ const pageTitles: Record<string, string> = {
   '/legal': 'Master Data',
   '/pemberkasan': 'Pemberkasan',
   '/settings/team': 'Tim & Peran',
+  '/settings/profile': 'Profil Perusahaan',
   '/settings/langganan': 'Langganan',
   '/reports': 'Reports',
   '/platform/tenants': 'Control Plane — Pelanggan',

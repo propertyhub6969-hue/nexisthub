@@ -1,4 +1,5 @@
-import { NavLink } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { NavLink, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard,
   Users,
@@ -15,6 +16,7 @@ import {
   UsersRound,
   Factory,
   Server,
+  ChevronDown,
   X,
 } from 'lucide-react'
 import { clsx } from 'clsx'
@@ -75,7 +77,6 @@ const settingsItem = {
   icon: Settings,
   children: [
     { label: 'Tim', to: '/settings/team', icon: UsersRound },
-    { label: 'Profil Perusahaan', to: '/settings/profile', icon: Building2 },
   ],
 }
 
@@ -88,8 +89,17 @@ const platformItem = {
   ],
 }
 
+const allGroups = [...navItems, settingsItem, platformItem]
+
+// Grup dianggap "aktif" bila halaman yang sedang dibuka ada di dalam children-nya (termasuk sub-rute).
+function isGroupActive(item: (typeof allGroups)[number], pathname: string): boolean {
+  if (!item.children) return false
+  return item.children.some((c) => pathname === c.to || pathname.startsWith(c.to + '/'))
+}
+
 export default function Sidebar({ open = false, onClose }: { open?: boolean; onClose?: () => void }) {
   const { user } = useAuth()
+  const location = useLocation()
 
   const canManageTeam = user?.role === 'owner' || user?.role === 'admin'
   const allItems = [
@@ -103,6 +113,24 @@ export default function Sidebar({ open = false, onClose }: { open?: boolean; onC
   const items = allItems.filter((it) =>
     'to' in it ? allow(it.to) : it.children.some((c) => allow(c.to))
   )
+
+  // Grup collapsible: default terbuka hanya grup berisi halaman aktif; sisanya tertutup.
+  // Independen per grup (bukan accordion satu-buka), supaya bisa buka beberapa grup sekaligus saat kerja lintas modul.
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() => {
+    const initial: Record<string, boolean> = {}
+    for (const it of allGroups) {
+      if ('children' in it) initial[it.label] = isGroupActive(it, location.pathname)
+    }
+    return initial
+  })
+  // pindah ke halaman di dalam grup yang tertutup (mis. via tautan di luar sidebar) → buka grup itu otomatis
+  useEffect(() => {
+    const active = allGroups.find((it) => isGroupActive(it, location.pathname))
+    if (active) setOpenGroups((prev) => ({ ...prev, [active.label]: true }))
+  }, [location.pathname])
+  function toggleGroup(label: string) {
+    setOpenGroups((prev) => ({ ...prev, [label]: !prev[label] }))
+  }
 
   return (
     <>
@@ -129,10 +157,16 @@ export default function Sidebar({ open = false, onClose }: { open?: boolean; onC
         {items.map((item) =>
           item.children ? (
             <div key={item.label}>
-              <p className="px-3 py-1.5 text-xs font-semibold text-slate-400 uppercase tracking-wider mt-3 mb-1">
+              <button
+                type="button"
+                onClick={() => toggleGroup(item.label)}
+                className="w-full flex items-center justify-between px-3 py-1.5 mt-3 mb-1 text-xs font-semibold text-slate-400 uppercase tracking-wider hover:text-slate-200 transition-colors"
+                aria-expanded={!!openGroups[item.label]}
+              >
                 {item.label}
-              </p>
-              {item.children.filter((child) => allow(child.to)).map((child) => (
+                <ChevronDown size={13} className={clsx('transition-transform', openGroups[item.label] ? 'rotate-180' : '')} />
+              </button>
+              {openGroups[item.label] && item.children.filter((child) => allow(child.to)).map((child) => (
                 <NavLink
                   key={child.to}
                   to={child.to}

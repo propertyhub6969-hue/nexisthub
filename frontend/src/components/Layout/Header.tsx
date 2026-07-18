@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { Bell, ChevronDown, LogOut, Menu, CreditCard } from 'lucide-react'
+import { Bell, ChevronDown, LogOut, Menu, CreditCard, Building2 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 
 interface HeaderProps {
@@ -69,14 +69,24 @@ export default function Header({ title, onMenuClick }: HeaderProps) {
                 )}
               </div>
               {(user?.role === 'owner' || user?.role === 'admin') && !user?.is_platform_admin && (
-                <Link
-                  to="/settings/langganan"
-                  onClick={() => setOpen(false)}
-                  className="flex items-center gap-2 w-full px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
-                >
-                  <CreditCard size={15} className="text-slate-400" />
-                  Langganan
-                </Link>
+                <>
+                  <Link
+                    to="/settings/profile"
+                    onClick={() => setOpen(false)}
+                    className="flex items-center gap-2 w-full px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
+                  >
+                    <Building2 size={15} className="text-slate-400" />
+                    Profil Perusahaan
+                  </Link>
+                  <Link
+                    to="/settings/langganan"
+                    onClick={() => setOpen(false)}
+                    className="flex items-center gap-2 w-full px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
+                  >
+                    <CreditCard size={15} className="text-slate-400" />
+                    Langganan
+                  </Link>
+                </>
               )}
               <button
                 onClick={logout}
