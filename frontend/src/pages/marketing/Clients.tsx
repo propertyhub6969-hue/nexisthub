@@ -14,7 +14,7 @@ import { authService } from '../../services/auth'
 import type { Client, ClientCreate, ClientStatus, ClientPaymentType, KprStage, Project, Unit, UserResponse } from '../../types'
 
 // Kolom yang bisa disembunyikan lewat tombol "Kolom" (Nama/Status/Aksi selalu tampil)
-type ToggleColKey = 'tanggal' | 'phone' | 'proyek' | 'unit' | 'harga' | 'piutang' | 'cara_beli' | 'kpr_stage'
+type ToggleColKey = 'tanggal' | 'phone' | 'proyek' | 'unit' | 'harga' | 'terbayar' | 'piutang' | 'cara_beli' | 'kpr_stage'
 interface ColDef { key: ToggleColKey | 'nama' | 'status' | 'aksi'; label: string; toggleable: boolean }
 const ALL_COLUMNS: ColDef[] = [
   { key: 'tanggal', label: 'Tanggal', toggleable: true },
@@ -23,6 +23,7 @@ const ALL_COLUMNS: ColDef[] = [
   { key: 'proyek', label: 'Proyek', toggleable: true },
   { key: 'unit', label: 'No. Unit', toggleable: true },
   { key: 'harga', label: 'Harga Jual', toggleable: true },
+  { key: 'terbayar', label: 'Total Terbayar', toggleable: true },
   { key: 'piutang', label: 'Sisa Piutang', toggleable: true },
   { key: 'cara_beli', label: 'Cara Beli', toggleable: true },
   { key: 'kpr_stage', label: 'Status Berkas KPR', toggleable: true },
@@ -30,7 +31,7 @@ const ALL_COLUMNS: ColDef[] = [
   { key: 'aksi', label: '', toggleable: false },
 ]
 const DEFAULT_VISIBLE_COLS: Record<ToggleColKey, boolean> = {
-  tanggal: true, phone: true, proyek: true, unit: true, harga: true, piutang: true, cara_beli: true, kpr_stage: true,
+  tanggal: true, phone: true, proyek: true, unit: true, harga: true, terbayar: true, piutang: true, cara_beli: true, kpr_stage: true,
 }
 const COLS_STORAGE_KEY = 'nexisthub_clients_visible_cols'
 function loadVisibleCols(): Record<ToggleColKey, boolean> {
@@ -237,6 +238,8 @@ export default function Clients() {
         return <span className="text-slate-500">{c.unit_label ?? unitNumberById(c.unit_id) ?? c.unit_number ?? '—'}</span>
       case 'harga':
         return <span className="text-slate-600 whitespace-nowrap">{fmt(c.contract_value)}</span>
+      case 'terbayar':
+        return <span className="text-emerald-700 whitespace-nowrap">{c.contract_value == null ? '—' : fmt((c.contract_value) - (c.remaining ?? 0))}</span>
       case 'piutang':
         return <span className="text-slate-600 whitespace-nowrap">{c.contract_value == null ? '—' : fmt(c.remaining)}</span>
       case 'cara_beli': {
