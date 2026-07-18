@@ -508,34 +508,38 @@ function MonthlyTaxTab() {
         <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-2">{error}</div>
       ) : !rep ? null : (
         <>
-          <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
             <StatCard icon={<Receipt size={15} />} label="Jumlah Transaksi" value={String(rep.total_count)} />
             <StatCard icon={<Building2 size={15} />} label="Total Nilai AJB" value={fmtRp(rep.total_base_amount)} />
             <StatCard icon={<Wallet size={15} />} label="Total PPh" value={fmtRp(rep.total_amount)} accent="text-emerald-600" />
+            <StatCard icon={<Wallet size={15} />} label="Total PPN" value={fmtRp(rep.total_ppn_amount)} accent="text-brand-600" />
           </div>
 
           <div className="card overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-slate-50 border-b border-slate-200">
                 <tr>
-                  {['Nama', 'NIK KTP', 'Lokasi', 'Tipe', 'Jenis', 'Nilai AJB', 'Jumlah PPh', 'NTPN', 'KIR', 'Notaris'].map((h, i) => (
+                  {['Nama', 'NIK KTP', 'Lokasi', 'No Unit', 'Jenis', 'Nilai AJB', 'Jumlah PPh', 'Jumlah PPN', 'NTPN', 'No SHM', 'No PBB', 'KIR', 'Notaris'].map((h, i) => (
                     <th key={i} className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {rep.rows.length === 0 ? (
-                  <tr><td colSpan={10} className="px-4 py-8 text-center text-slate-400 text-sm">Tidak ada data PPh pada bulan ini.</td></tr>
+                  <tr><td colSpan={13} className="px-4 py-8 text-center text-slate-400 text-sm">Tidak ada data PPh pada bulan ini.</td></tr>
                 ) : rep.rows.map((r) => (
                   <tr key={r.client_id} className="hover:bg-slate-50 transition-colors">
                     <td className="px-4 py-3 font-medium text-slate-900 whitespace-nowrap">{r.name}</td>
                     <td className="px-4 py-3 text-slate-500 whitespace-nowrap">{r.nik ?? '—'}</td>
                     <td className="px-4 py-3 text-slate-500 whitespace-nowrap">{r.location ?? '—'}</td>
-                    <td className="px-4 py-3 text-slate-500 whitespace-nowrap">{r.unit_type ?? '—'}</td>
+                    <td className="px-4 py-3 text-slate-500 whitespace-nowrap">{r.unit_number ?? '—'}</td>
                     <td className="px-4 py-3 text-slate-500 whitespace-nowrap">{r.category ? categoryLabel[r.category] ?? r.category : '—'}</td>
                     <td className="px-4 py-3 text-right text-slate-600 whitespace-nowrap">{fmtRp(r.base_amount)}</td>
                     <td className="px-4 py-3 text-right text-emerald-700 whitespace-nowrap">{fmtRp(r.amount)}</td>
+                    <td className="px-4 py-3 text-right text-brand-600 whitespace-nowrap">{fmtRp(r.ppn_amount)}</td>
                     <td className="px-4 py-3 text-slate-500 whitespace-nowrap">{r.ntpn ?? '—'}</td>
+                    <td className="px-4 py-3 text-slate-500 whitespace-nowrap">{r.shm_number ?? '—'}</td>
+                    <td className="px-4 py-3 text-slate-500 whitespace-nowrap">{r.pbb_number ?? '—'}</td>
                     <td className="px-4 py-3 text-slate-500 whitespace-nowrap">{r.sikumbang_number ?? '—'}</td>
                     <td className="px-4 py-3 text-slate-500 whitespace-nowrap">{r.notary_name ?? '—'}</td>
                   </tr>
@@ -547,7 +551,8 @@ function MonthlyTaxTab() {
                     <td className="px-4 py-3" colSpan={5}>Total</td>
                     <td className="px-4 py-3 text-right">{fmtRp(rep.total_base_amount)}</td>
                     <td className="px-4 py-3 text-right">{fmtRp(rep.total_amount)}</td>
-                    <td className="px-4 py-3" colSpan={3}></td>
+                    <td className="px-4 py-3 text-right">{fmtRp(rep.total_ppn_amount)}</td>
+                    <td className="px-4 py-3" colSpan={5}></td>
                   </tr>
                 </tfoot>
               )}

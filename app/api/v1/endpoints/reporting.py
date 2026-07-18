@@ -1,3 +1,4 @@
+import re
 import uuid
 from datetime import date
 from decimal import Decimal
@@ -17,6 +18,7 @@ from app.models.payment import Payment, PaymentSchedule, ScheduleStatus, Payment
 from app.models.kpr import KprApplication, KprStage
 from app.models.construction import UnitConstruction, ConstructionStage, ConstructionProgressLog
 from app.models.tax import TaxRecord, TaxType
+from app.models.document import Document
 
 router = APIRouter()
 
@@ -647,16 +649,23 @@ async def sales_monthly(
 
 
 # ═══════════════════════ LAPORAN: PAJAK BULANAN (PPh) ═══════════════════════
+SHM_RE = re.compile(r'shm|hgb|sertifikat', re.I)
+PBB_RE = re.compile(r'pbb', re.I)
+
+
 class MonthlyTaxRow(BaseModel):
     client_id: uuid.UUID
     name: str
     nik: Optional[str] = None
     location: Optional[str] = None       # nama proyek
-    unit_type: Optional[str] = None
+    unit_number: Optional[str] = None    # blok-nomor
     category: Optional[str] = None       # subsidi | komersial
     base_amount: Optional[Decimal] = None  # Nilai AJB
     amount: Optional[Decimal] = None       # Jumlah PPh
+    ppn_amount: Optional[Decimal] = None   # Jumlah PPN (dari TaxRecord PPN klien ini, bila ada)
     ntpn: Optional[str] = None
+    shm_number: Optional[str] = None     # dari Dokumen Legalitas unit (SHM/HGB)
+    pbb_number: Optional[str] = None     # dari Dokumen Legalitas unit (PBB)
     sikumbang_number: Optional[str] = None  # KIR — No. SiKasep/SiKumbang, dari KPR pembeli (kosong utk cash)
     notary_name: Optional[str] = None
     tax_date: Optional[date] = None
@@ -668,6 +677,7 @@ class MonthlyTaxReport(BaseModel):
     total_count: int
     total_base_amount: Decimal
     total_amount: Decimal
+    total_ppn_amount: Decimal
 
 
 @router.get("/monthly-tax", response_model=MonthlyTaxReport)
@@ -732,6 +742,30 @@ async def monthly_tax(
             if cid not in sikumbang_by_client:
                 sikumbang_by_client[cid] = sikasep
 
+    # Jumlah PPN per klien (tak terikat bulan — cukup nilai PPN klien ybs, kalau ada)
+    ppn_by_client: dict = {}
+    if client_ids:
+        ppn_rows = (await db.execute(
+            select(TaxRecord.client_id, TaxRecord.amount)
+            .where(TaxRecord.client_id.in_(client_ids), TaxRecord.tenant_id == t,
+                   TaxRecord.is_deleted == False, TaxRecord.tax_type == TaxType.PPN)  # noqa: E712
+        )).all()
+        ppn_by_client = {cid: amt for cid, amt in ppn_rows}
+
+    # No. SHM & No. PBB — dari Dokumen Legalitas unit (doc_type teks bebas, dicocokkan pola sama FE)
+    shm_by_unit: dict = {}
+    pbb_by_unit: dict = {}
+    if unit_ids:
+        doc_rows = (await db.execute(
+            select(Document.unit_id, Document.doc_type, Document.name)
+            .where(Document.unit_id.in_(unit_ids), Document.tenant_id == t, Document.is_deleted == False)  # noqa: E712
+        )).all()
+        for uid, doc_type, dname in doc_rows:
+            if SHM_RE.search(doc_type or '') and uid not in shm_by_unit:
+                shm_by_unit[uid] = dname
+            elif PBB_RE.search(doc_type or '') and uid not in pbb_by_unit:
+                pbb_by_unit[uid] = dname
+
     result_rows: list[MonthlyTaxRow] = []
     for r in rows:
         c = clients.get(r.client_id)
@@ -740,8 +774,12 @@ async def monthly_tax(
         u = units.get(c.unit_id) if c.unit_id else None
         result_rows.append(MonthlyTaxRow(
             client_id=r.client_id, name=c.full_name, nik=c.nik,
-            location=proj_names.get(c.project_id), unit_type=u.unit_type if u else None,
-            category=r.category, base_amount=r.base_amount, amount=r.amount, ntpn=r.ntpn,
+            location=proj_names.get(c.project_id),
+            unit_number=("-".join(x for x in [u.block, u.unit_number] if x) if u else None),
+            category=r.category, base_amount=r.base_amount, amount=r.amount,
+            ppn_amount=ppn_by_client.get(r.client_id), ntpn=r.ntpn,
+            shm_number=shm_by_unit.get(c.unit_id) if c.unit_id else None,
+            pbb_number=pbb_by_unit.get(c.unit_id) if c.unit_id else None,
             sikumbang_number=sikumbang_by_client.get(r.client_id),
             notary_name=r.notary.name if r.notary else None, tax_date=r.tax_date,
         ))
@@ -750,4 +788,5 @@ async def monthly_tax(
         month=month, rows=result_rows, total_count=len(result_rows),
         total_base_amount=sum((x.base_amount or Decimal(0) for x in result_rows), Decimal(0)),
         total_amount=sum((x.amount or Decimal(0) for x in result_rows), Decimal(0)),
+        total_ppn_amount=sum((x.ppn_amount or Decimal(0) for x in result_rows), Decimal(0)),
     )

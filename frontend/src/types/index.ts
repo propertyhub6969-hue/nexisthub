@@ -782,11 +782,14 @@ export interface MonthlyTaxRow {
   name: string
   nik?: string
   location?: string
-  unit_type?: string
+  unit_number?: string
   category?: string
   base_amount?: number
   amount?: number
+  ppn_amount?: number
   ntpn?: string
+  shm_number?: string
+  pbb_number?: string
   sikumbang_number?: string
   notary_name?: string
   tax_date?: string
@@ -797,6 +800,7 @@ export interface MonthlyTaxReport {
   total_count: number
   total_base_amount: number
   total_amount: number
+  total_ppn_amount: number
 }
 
 export interface CashflowMonth {
