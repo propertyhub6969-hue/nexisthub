@@ -1,9 +1,13 @@
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.models.tenant import Tenant
+from app.models.tax import MonthlyTaxShareLink
+from app.api.v1.endpoints.reporting import _build_monthly_tax_report, MonthlyTaxReport
 
 router = APIRouter()
 
@@ -20,3 +24,18 @@ async def tenant_by_slug(slug: str, db: AsyncSession = Depends(get_db)):
     if t is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Kantor Digital tidak ditemukan")
     return {"name": t.name, "slug": t.slug}
+
+
+@router.get("/monthly-tax/{token}", response_model=MonthlyTaxReport)
+async def public_monthly_tax(token: str, db: AsyncSession = Depends(get_db)):
+    """Laporan Pajak Bulanan lewat tautan bertoken (tanpa login) — utk pihak luar (mis. konsultan pajak).
+    404 bila token salah/sudah dicabut/kedaluwarsa. Setiap akses dicatat (last_accessed_at + access_count)."""
+    link = (await db.execute(
+        select(MonthlyTaxShareLink).where(MonthlyTaxShareLink.token == token)
+    )).scalar_one_or_none()
+    if link is None or not link.is_active:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Tautan tidak ditemukan, sudah dicabut, atau kedaluwarsa")
+    link.last_accessed_at = datetime.now(timezone.utc)
+    link.access_count += 1
+    await db.flush()
+    return await _build_monthly_tax_report(db, link.tenant_id, link.month, link.project_id)

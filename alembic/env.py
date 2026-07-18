@@ -17,7 +17,7 @@ from app.models.marketing import Lead, Prospect, Client
 from app.models.property import Project, Unit
 from app.models.sale import Sale
 from app.models.payment import PaymentSchedule, Payment
-from app.models.tax import Notary, TaxRecord, NotaryFee
+from app.models.tax import Notary, TaxRecord, NotaryFee, MonthlyTaxShareLink
 from app.models.document import Document, CertificateSplitBatch, CertificateSplitBatchItem, DocumentProgressLog
 from app.models.kpr import Bank, KprApplication
 from app.models.procurement import Vendor, PurchaseOrder, PurchaseOrderItem, VendorPayment

@@ -24,6 +24,7 @@ import Team from './pages/settings/Team'
 import Subscription from './pages/settings/Subscription'
 import Reports from './pages/Reports'
 import Platform from './pages/platform/Platform'
+import PublicMonthlyTax from './pages/public/PublicMonthlyTax'
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   return authService.isAuthenticated() ? <>{children}</> : <Navigate to="/login" replace />
@@ -40,6 +41,7 @@ export default function App() {
         {/* Public */}
         <Route path="/login"    element={<PublicRoute><Login /></PublicRoute>} />
         <Route path="/register" element={<PublicRoute><Register /></PublicRoute>} />
+        <Route path="/public/pajak/:token" element={<PublicMonthlyTax />} />
 
         {/* Protected */}
         <Route

@@ -805,6 +805,25 @@ export interface MonthlyTaxReport {
   total_bphtb_amount: number
 }
 
+export interface MonthlyTaxShareLink {
+  id: string
+  token: string
+  month: string
+  project_id?: string
+  project_name?: string
+  expires_at: string
+  revoked_at?: string
+  last_accessed_at?: string
+  access_count: number
+  is_active: boolean
+  created_at: string
+}
+export interface ShareLinkCreate {
+  month: string
+  project_id?: string
+  expires_days?: number
+}
+
 export interface CashflowMonth {
   month: string
   from_buyer: number

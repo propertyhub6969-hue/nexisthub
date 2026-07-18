@@ -1,6 +1,7 @@
 import re
+import secrets
 import uuid
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Optional
 
@@ -17,7 +18,7 @@ from app.models.property import Project, Unit, UnitStatus
 from app.models.payment import Payment, PaymentSchedule, ScheduleStatus, PaymentSource
 from app.models.kpr import KprApplication, KprStage
 from app.models.construction import UnitConstruction, ConstructionStage, ConstructionProgressLog
-from app.models.tax import TaxRecord, TaxType
+from app.models.tax import TaxRecord, TaxType, MonthlyTaxShareLink
 from app.models.document import Document
 
 router = APIRouter()
@@ -682,17 +683,10 @@ class MonthlyTaxReport(BaseModel):
     total_bphtb_amount: Decimal
 
 
-@router.get("/monthly-tax", response_model=MonthlyTaxReport)
-async def monthly_tax(
-    month: str = Query(..., description="YYYY-MM"),
-    project_id: Optional[uuid.UUID] = Query(None),
-    ctx: AuthContext = Depends(get_current_context),
-    db: AsyncSession = Depends(get_db),
-):
-    """Rekap PPh bulanan per pembeli (nama/NIK/lokasi/tipe/kategori/AJB/jumlah/NTPN/No. SiKumbang/notaris)
+async def _build_monthly_tax_report(db: AsyncSession, t: uuid.UUID, month: str, project_id: Optional[uuid.UUID]) -> MonthlyTaxReport:
+    """Rekap PPh bulanan per pembeli (nama/NIK/lokasi/kategori/AJB/jumlah/NTPN/No. SiKumbang/notaris)
     — utk lapor ke akuntan/kantor pajak. Hanya baris PPh yang SUDAH ada tanggalnya (tax_date) di bulan
-    terpilih; baris belum bayar (tanpa tanggal) sengaja tak ikut."""
-    t = ctx.tenant_id
+    terpilih; baris belum bayar (tanpa tanggal) sengaja tak ikut. Dipakai endpoint biasa & tautan publik."""
     try:
         year, mon = int(month[:4]), int(month[5:7])
     except (ValueError, IndexError):
@@ -800,3 +794,79 @@ async def monthly_tax(
         total_ppn_amount=sum((x.ppn_amount or Decimal(0) for x in result_rows), Decimal(0)),
         total_bphtb_amount=sum((x.bphtb_amount or Decimal(0) for x in result_rows), Decimal(0)),
     )
+
+
+@router.get("/monthly-tax", response_model=MonthlyTaxReport)
+async def monthly_tax(
+    month: str = Query(..., description="YYYY-MM"),
+    project_id: Optional[uuid.UUID] = Query(None),
+    ctx: AuthContext = Depends(get_current_context),
+    db: AsyncSession = Depends(get_db),
+):
+    return await _build_monthly_tax_report(db, ctx.tenant_id, month, project_id)
+
+
+# ── Tautan bagikan Laporan Pajak Bulanan ke pihak luar (mis. konsultan pajak), tanpa login ──
+class ShareLinkCreate(BaseModel):
+    month: str
+    project_id: Optional[uuid.UUID] = None
+    expires_days: int = 30
+
+
+class ShareLinkResponse(BaseModel):
+    id: uuid.UUID
+    token: str
+    month: str
+    project_id: Optional[uuid.UUID] = None
+    project_name: Optional[str] = None
+    expires_at: datetime
+    revoked_at: Optional[datetime] = None
+    last_accessed_at: Optional[datetime] = None
+    access_count: int
+    is_active: bool
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+@router.get("/monthly-tax/share", response_model=list[ShareLinkResponse])
+async def list_monthly_tax_share_links(ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db)):
+    """Daftar tautan bagikan yang pernah dibuat tenant ini (termasuk yang sudah expired/dicabut, utk histori)."""
+    rows = (await db.execute(
+        select(MonthlyTaxShareLink).where(MonthlyTaxShareLink.tenant_id == ctx.tenant_id)
+        .order_by(MonthlyTaxShareLink.created_at.desc())
+    )).scalars().all()
+    return rows
+
+
+@router.post("/monthly-tax/share", response_model=ShareLinkResponse, status_code=status.HTTP_201_CREATED)
+async def create_monthly_tax_share_link(payload: ShareLinkCreate, ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db)):
+    """Buat tautan bertoken (tanpa login) utk bagikan Laporan Pajak Bulanan satu bulan ke pihak luar."""
+    proj_name = None
+    if payload.project_id:
+        proj_name = await db.scalar(select(Project.name).where(Project.id == payload.project_id, Project.tenant_id == ctx.tenant_id))
+        if proj_name is None:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Proyek tidak ditemukan")
+    days = max(1, min(365, payload.expires_days))
+    link = MonthlyTaxShareLink(
+        tenant_id=ctx.tenant_id, token=secrets.token_urlsafe(32), month=payload.month,
+        project_id=payload.project_id, project_name_snapshot=proj_name or "Semua Proyek",
+        created_by=ctx.user_id, expires_at=datetime.now(timezone.utc) + timedelta(days=days),
+    )
+    db.add(link)
+    await db.flush()
+    await db.refresh(link)
+    return link
+
+
+@router.delete("/monthly-tax/share/{link_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def revoke_monthly_tax_share_link(link_id: uuid.UUID, ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db)):
+    """Cabut tautan bagikan — begitu dicabut, tautan tak bisa diakses lagi (walau belum expired)."""
+    link = (await db.execute(
+        select(MonthlyTaxShareLink).where(MonthlyTaxShareLink.id == link_id, MonthlyTaxShareLink.tenant_id == ctx.tenant_id)
+    )).scalar_one_or_none()
+    if link is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Tautan tidak ditemukan")
+    link.revoked_at = datetime.now(timezone.utc)
+    await db.flush()

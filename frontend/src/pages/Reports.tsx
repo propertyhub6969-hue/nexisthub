@@ -2,12 +2,14 @@ import { useEffect, useState } from 'react'
 import {
   Loader2, Landmark, TrendingDown, CheckCircle2, XCircle, FileStack,
   Wallet, Users, Building2, PiggyBank, HandCoins, Home, AlertTriangle, Clock, HardHat, CalendarClock, Receipt,
-  Printer, FileDown,
+  Printer, FileDown, Share2, Copy, Trash2, Check,
 } from 'lucide-react'
 import { reportingService } from '../services/reporting'
 import { propertyService } from '../services/property'
 import { printMonthlyTax, downloadMonthlyTaxCsv } from '../utils/monthlyTax'
-import type { KprRejectionReport, CashflowReport, SalesRecapReport, AgingReport, ConstructionProgressReport, MonthlyTaxReport, Project } from '../types'
+import Modal from '../components/ui/Modal'
+import Badge from '../components/ui/Badge'
+import type { KprRejectionReport, CashflowReport, SalesRecapReport, AgingReport, ConstructionProgressReport, MonthlyTaxReport, MonthlyTaxShareLink, Project } from '../types'
 
 const fmtRp = (n?: number | null) =>
   n == null ? '—' : new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(Number(n))
@@ -482,6 +484,14 @@ function MonthlyTaxTab() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
+  // Bagikan ke konsultan (tautan bertoken, tanpa login)
+  const [shareModal, setShareModal] = useState(false)
+  const [shareLinks, setShareLinks] = useState<MonthlyTaxShareLink[]>([])
+  const [shareLoading, setShareLoading] = useState(false)
+  const [shareDays, setShareDays] = useState(30)
+  const [shareSaving, setShareSaving] = useState(false)
+  const [copiedId, setCopiedId] = useState<string | null>(null)
+
   useEffect(() => {
     propertyService.listProjects({ size: 500 }).then((r) => setProjects(r.items)).catch(() => {})
   }, [])
@@ -493,6 +503,37 @@ function MonthlyTaxTab() {
       .catch(() => setError('Gagal memuat laporan pajak bulanan.'))
       .finally(() => setLoading(false))
   }, [month, projectId])
+
+  function shareUrl(token: string): string {
+    return `${window.location.origin}/public/pajak/${token}`
+  }
+  async function loadShareLinks() {
+    setShareLoading(true)
+    try { setShareLinks(await reportingService.listShareLinks()) } catch { /* noop */ } finally { setShareLoading(false) }
+  }
+  function openShareModal() { setShareModal(true); loadShareLinks() }
+  async function createShareLink() {
+    setShareSaving(true)
+    try {
+      await reportingService.createShareLink({ month, project_id: projectId || undefined, expires_days: shareDays })
+      await loadShareLinks()
+    } catch { setError('Gagal membuat tautan.') } finally { setShareSaving(false) }
+  }
+  async function revokeShareLink(id: string) {
+    if (!confirm('Cabut tautan ini? Pihak yang pegang link tak akan bisa akses lagi.')) return
+    try { await reportingService.revokeShareLink(id); await loadShareLinks() } catch { /* noop */ }
+  }
+  function copyLink(id: string, token: string) {
+    navigator.clipboard.writeText(shareUrl(token)).then(() => {
+      setCopiedId(id)
+      setTimeout(() => setCopiedId(null), 2000)
+    })
+  }
+  function linkStatus(l: MonthlyTaxShareLink): { label: string; variant: 'green' | 'red' | 'gray' } {
+    if (l.revoked_at) return { label: 'Dicabut', variant: 'gray' }
+    if (!l.is_active) return { label: 'Kedaluwarsa', variant: 'red' }
+    return { label: 'Aktif', variant: 'green' }
+  }
 
   return (
     <div className="space-y-5">
@@ -517,6 +558,9 @@ function MonthlyTaxTab() {
               onClick={() => downloadMonthlyTaxCsv(rep, fmtMonth(month))}
             >
               <FileDown size={14} /> Excel (CSV)
+            </button>
+            <button className="btn-primary text-sm flex items-center gap-1.5" onClick={openShareModal}>
+              <Share2 size={14} /> Bagikan ke Konsultan
             </button>
           </div>
         )}
@@ -583,6 +627,64 @@ function MonthlyTaxTab() {
           </div>
         </>
       )}
+
+      <Modal open={shareModal} onClose={() => setShareModal(false)} title="Bagikan ke Konsultan Pajak" size="lg">
+        <div className="space-y-4">
+          <p className="text-sm text-slate-500">
+            Buat tautan khusus bulan <b>{fmtMonth(month)}</b> ({projects.find((p) => p.id === projectId)?.name ?? 'Semua Proyek'}) yang bisa dibuka pihak luar <b>tanpa perlu akun/login</b>. Data yang tampil di tautan ini sama persis dengan tabel di atas (termasuk NIK).
+          </p>
+          <div className="flex items-end gap-2">
+            <div>
+              <label className="label">Berlaku (hari)</label>
+              <input type="number" className="input w-28" min={1} max={365} value={shareDays} onChange={(e) => setShareDays(Math.max(1, Math.min(365, Number(e.target.value) || 30)))} />
+            </div>
+            <button className="btn-primary text-sm flex items-center gap-1.5" onClick={createShareLink} disabled={shareSaving}>
+              {shareSaving && <Loader2 size={14} className="animate-spin" />} Buat Tautan Baru
+            </button>
+          </div>
+
+          <div>
+            <label className="label">Tautan yang pernah dibuat</label>
+            {shareLoading ? (
+              <div className="flex justify-center py-6"><Loader2 size={16} className="animate-spin text-slate-400" /></div>
+            ) : shareLinks.length === 0 ? (
+              <p className="text-sm text-slate-400 text-center py-4">Belum ada tautan.</p>
+            ) : (
+              <div className="border border-slate-200 rounded-lg divide-y divide-slate-100 max-h-72 overflow-y-auto">
+                {shareLinks.map((l) => {
+                  const s = linkStatus(l)
+                  return (
+                    <div key={l.id} className="px-3 py-2.5 text-sm space-y-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-medium text-slate-800">{fmtMonth(l.month)} — {l.project_name ?? 'Semua Proyek'}</span>
+                        <Badge label={s.label} variant={s.variant} />
+                      </div>
+                      <div className="flex items-center justify-between gap-2 text-xs text-slate-400">
+                        <span>
+                          Kedaluwarsa {new Date(l.expires_at).toLocaleDateString('id-ID')}
+                          {l.access_count > 0 && <> · diakses {l.access_count}x</>}
+                        </span>
+                        <div className="flex items-center gap-3 shrink-0">
+                          {s.variant === 'green' && (
+                            <button onClick={() => copyLink(l.id, l.token)} className="flex items-center gap-1 text-brand-600 hover:underline">
+                              {copiedId === l.id ? <><Check size={12} /> Tersalin</> : <><Copy size={12} /> Salin Tautan</>}
+                            </button>
+                          )}
+                          {!l.revoked_at && (
+                            <button onClick={() => revokeShareLink(l.id)} className="flex items-center gap-1 text-slate-400 hover:text-red-600">
+                              <Trash2 size={12} /> Cabut
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      </Modal>
     </div>
   )
 }

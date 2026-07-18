@@ -1,5 +1,5 @@
 import api from './api'
-import type { DashboardStats, KprRejectionReport, CashflowReport, SalesRecapReport, AgingReport, SalesMonthly, ConstructionProgressReport, MonthlyTaxReport } from '../types'
+import type { DashboardStats, KprRejectionReport, CashflowReport, SalesRecapReport, AgingReport, SalesMonthly, ConstructionProgressReport, MonthlyTaxReport, MonthlyTaxShareLink, ShareLinkCreate } from '../types'
 
 export const reportingService = {
   async dashboard(): Promise<DashboardStats> {
@@ -43,6 +43,24 @@ export const reportingService = {
     const { data } = await api.get<MonthlyTaxReport>('/reporting/monthly-tax', {
       params: { month, project_id: projectId || undefined },
     })
+    return data
+  },
+
+  async listShareLinks(): Promise<MonthlyTaxShareLink[]> {
+    const { data } = await api.get<MonthlyTaxShareLink[]>('/reporting/monthly-tax/share')
+    return data
+  },
+  async createShareLink(payload: ShareLinkCreate): Promise<MonthlyTaxShareLink> {
+    const { data } = await api.post<MonthlyTaxShareLink>('/reporting/monthly-tax/share', payload)
+    return data
+  },
+  async revokeShareLink(id: string): Promise<void> {
+    await api.delete(`/reporting/monthly-tax/share/${id}`)
+  },
+
+  // ── Publik (tanpa login) — akses via tautan bertoken ──
+  async publicMonthlyTax(token: string): Promise<MonthlyTaxReport> {
+    const { data } = await api.get<MonthlyTaxReport>(`/public/monthly-tax/${token}`)
     return data
   },
 }

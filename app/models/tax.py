@@ -1,6 +1,7 @@
 import uuid
 import enum
-from sqlalchemy import String, Text, ForeignKey, Enum as SAEnum, Numeric, Date, Boolean, Integer, LargeBinary
+from datetime import datetime, timezone
+from sqlalchemy import String, Text, ForeignKey, Enum as SAEnum, Numeric, Date, DateTime, Boolean, Integer, LargeBinary
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID
 from app.models.base import BaseModel, SoftDeleteMixin
@@ -137,3 +138,35 @@ class NotaryFee(BaseModel, SoftDeleteMixin):
 
     def __repr__(self) -> str:
         return f"<NotaryFee {self.description}>"
+
+
+class MonthlyTaxShareLink(BaseModel):
+    """Tautan bertoken (tanpa login) utk bagikan Laporan Pajak Bulanan ke pihak luar
+    (mis. konsultan pajak) — scoped ke SATU bulan (+ opsional satu proyek), bisa expired/dicabut."""
+    __tablename__ = "monthly_tax_share_links"
+
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"),
+        nullable=False, index=True
+    )
+    token: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
+    month: Mapped[str] = mapped_column(String(7), nullable=False)   # "YYYY-MM"
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=True   # kosong = semua proyek
+    )
+    project_name_snapshot: Mapped[str] = mapped_column(String(200), nullable=True)  # "Semua Proyek" atau nama proyek, dicatat saat dibuat
+    created_by: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revoked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_accessed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
+    access_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+    @property
+    def is_active(self) -> bool:
+        return self.revoked_at is None and self.expires_at > datetime.now(timezone.utc)
+
+    def __repr__(self) -> str:
+        return f"<MonthlyTaxShareLink {self.month} [{self.token[:8]}...]>"
