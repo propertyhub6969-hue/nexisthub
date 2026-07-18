@@ -167,6 +167,7 @@ export default function Procurement() {
 
   const stockUnits = unitsFor(stockLocProject)
   const formUnits = unitsFor(poForm.project_id)
+  const expUnits = unitsFor(stockProject)   // BUKAN stockUnits — tab Biaya punya proyek sendiri (stockProject), beda dari tab Stok (stockLocProject)
   const unitBlockLabel = (u: Unit) => [u.block, u.unit_number].filter(Boolean).join('-')
   function matchUnitByLabel(list: Unit[], text: string): string {
     const m = list.find((u) => unitBlockLabel(u).toLowerCase() === text.trim().toLowerCase())
@@ -186,7 +187,7 @@ export default function Procurement() {
   }
   function handleExpUnitQueryChange(text: string) {
     setExpUnitQuery(text)
-    setExpForm((f) => ({ ...f, unit_id: matchUnitByLabel(stockUnits, text) }))
+    setExpForm((f) => ({ ...f, unit_id: matchUnitByLabel(expUnits, text) }))
   }
   // sinkron teks tampilan PO HANYA saat unit_id sudah match (mis. buka Edit sebelum unit proyeknya
   // selesai lazy-load) — jangan pernah kosongkan di sini, supaya tak menimpa ketikan yang sedang berjalan.
@@ -1226,7 +1227,7 @@ export default function Procurement() {
             <div><label className="label">Alokasi ke Unit</label>
               <input className="input" list="exp-unit-suggest" placeholder="Umum proyek (tanpa unit)"
                 value={expUnitQuery} onChange={(e) => handleExpUnitQueryChange(e.target.value)} />
-              <datalist id="exp-unit-suggest">{stockUnits.map((u) => <option key={u.id} value={unitBlockLabel(u)} />)}</datalist>
+              <datalist id="exp-unit-suggest">{expUnits.map((u) => <option key={u.id} value={unitBlockLabel(u)} />)}</datalist>
             </div>
             <div><label className="label">Tanggal</label><DateInput className="input" max={today()} value={expForm.expense_date} onChange={(v) => setExpForm({ ...expForm, expense_date: v })} /></div>
           </div>
