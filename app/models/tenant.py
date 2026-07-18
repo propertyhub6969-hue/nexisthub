@@ -33,6 +33,12 @@ class Tenant(BaseModel):
     address: Mapped[str] = mapped_column(Text, nullable=True)
     city: Mapped[str] = mapped_column(String(100), nullable=True)
     province: Mapped[str] = mapped_column(String(100), nullable=True)
+    # Logo perusahaan — dipakai di kop dokumen cetak (BAST, Kwitansi, Pengajuan Pembayaran).
+    # Non-sensitif (branding) → boleh dilayani lewat endpoint publik tanpa auth.
+    logo_key: Mapped[str] = mapped_column(String(600), nullable=True)
+    logo_name: Mapped[str] = mapped_column(String(255), nullable=True)
+    logo_type: Mapped[str] = mapped_column(String(100), nullable=True)
+    logo_size: Mapped[int] = mapped_column(Integer, nullable=True)
     # Skala bisnis saat daftar (isian wajib di form register, bukan hitungan live dari Proyek/Unit)
     estimated_project_count: Mapped[int] = mapped_column(Integer, nullable=True)
     estimated_units_per_project: Mapped[int] = mapped_column(Integer, nullable=True)
@@ -49,6 +55,10 @@ class Tenant(BaseModel):
     users: Mapped[list["User"]] = relationship(
         "User", back_populates="tenant", cascade="all, delete-orphan"
     )
+
+    @property
+    def has_logo(self) -> bool:
+        return self.logo_key is not None
 
     def __repr__(self) -> str:
         return f"<Tenant {self.name}>"

@@ -1,10 +1,12 @@
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core import storage
+from app.core.files import file_etag, not_modified_response, cached_file_response
 from app.models.tenant import Tenant
 from app.models.tax import MonthlyTaxShareLink
 from app.api.v1.endpoints.reporting import _build_monthly_tax_report, MonthlyTaxReport
@@ -24,6 +26,25 @@ async def tenant_by_slug(slug: str, db: AsyncSession = Depends(get_db)):
     if t is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Kantor Digital tidak ditemukan")
     return {"name": t.name, "slug": t.slug}
+
+
+@router.get("/tenant-logo/{slug}")
+async def tenant_logo(slug: str, request: Request, db: AsyncSession = Depends(get_db)):
+    """Logo perusahaan tenant — non-sensitif (branding), dilayani tanpa auth supaya bisa dipakai
+    langsung sbg <img src> di dokumen cetak (BAST/Kwitansi/Pengajuan Pembayaran)."""
+    meta = (await db.execute(
+        select(Tenant.logo_size, Tenant.logo_type, Tenant.logo_name, Tenant.updated_at, Tenant.logo_key)
+        .where(Tenant.slug == slug)
+    )).first()
+    if meta is None or meta[0] is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Logo tidak ditemukan")
+    size, ctype, fname, updated, fkey = meta
+    etag = file_etag(size, updated)
+    nm = not_modified_response(request, etag)
+    if nm is not None:
+        return nm
+    data = await storage.get(fkey)
+    return cached_file_response(data, ctype, fname, etag)
 
 
 @router.get("/monthly-tax/{token}", response_model=MonthlyTaxReport)

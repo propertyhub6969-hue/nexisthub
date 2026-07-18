@@ -11,6 +11,8 @@ import { marketingService } from '../../services/marketing'
 import { propertyService } from '../../services/property'
 import { paymentService } from '../../services/payment'
 import { auditService } from '../../services/audit'
+import { tenantLogoUrl } from '../../services/users'
+import { useAuth } from '../../context/AuthContext'
 import type {
   Client, Unit, PaymentSchedule, PaymentScheduleCreate, Payment, PaymentCreate,
   PaymentSummary, PaymentMethod, PaymentSource, PaymentPurpose, AuditEntry,
@@ -63,6 +65,7 @@ const emptyPayment = (clientId: string): PaymentCreate => ({ client_id: clientId
 
 export default function ClientPayments() {
   const { clientId = '' } = useParams()
+  const { user } = useAuth()
   const [client, setClient] = useState<Client | null>(null)
   const [unit, setUnit] = useState<Unit | null>(null)
   const [summary, setSummary] = useState<PaymentSummary | null>(null)
@@ -203,6 +206,7 @@ export default function ClientPayments() {
       method: methodLabel[p.method],
       purpose: p.purpose ? purposeLabel[p.purpose] : undefined,
       source: sourceConfig[p.source]?.label,
+      logoUrl: user?.tenant_slug ? tenantLogoUrl(user.tenant_slug) : undefined,
     })
   }
 

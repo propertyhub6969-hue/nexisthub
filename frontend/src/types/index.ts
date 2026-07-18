@@ -145,6 +145,26 @@ export interface TeamMemberUpdate {
   is_active?: boolean
 }
 
+export interface TenantProfile {
+  id: string
+  name: string
+  slug: string
+  company_name?: string
+  phone?: string
+  address?: string
+  city?: string
+  province?: string
+  has_logo: boolean
+  logo_name?: string
+}
+export interface TenantProfileUpdate {
+  company_name?: string
+  phone?: string
+  address?: string
+  city?: string
+  province?: string
+}
+
 // ── Marketing ─────────────────────────────────────────────────────
 // NB: status values match backend enum values (lowercase).
 export type LeadStatus = 'new' | 'contacted' | 'qualified' | 'unqualified'

@@ -10,6 +10,7 @@ import { constructionService } from '../../services/construction'
 import { propertyService } from '../../services/property'
 import { procurementService } from '../../services/procurement'
 import { useAuth } from '../../context/AuthContext'
+import { tenantLogoUrl } from '../../services/users'
 import { printPengajuan } from '../../utils/pengajuan'
 import type {
   Project, Unit, Vendor, UnitConstructionRow, ConstructionSummary, ConstructionStage, ConstructionUpsert,
@@ -273,6 +274,7 @@ export default function Construction() {
       company: user?.tenant_name ?? undefined,
       // Uraian di surat pengajuan = judul kontrak borongan (fallback ke keterangan opname bila judul kosong)
       rows: pending.map((r) => ({ unit_label: r.unit_label, contractor_name: r.contractor_name, work_item_name: r.work_item_name, expense_date: r.expense_date, description: r.title || r.description, amount: Number(r.amount) })),
+      logoUrl: user?.tenant_slug ? tenantLogoUrl(user.tenant_slug) : undefined,
     })
   }
   async function tandaiDibayar() {

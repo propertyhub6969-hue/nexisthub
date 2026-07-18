@@ -21,6 +21,7 @@ import LegalSplitting from './pages/property/LegalSplitting'
 import Procurement from './pages/procurement/Procurement'
 import Construction from './pages/construction/Construction'
 import Team from './pages/settings/Team'
+import Profile from './pages/settings/Profile'
 import Subscription from './pages/settings/Subscription'
 import Reports from './pages/Reports'
 import Platform from './pages/platform/Platform'
@@ -68,6 +69,7 @@ export default function App() {
           <Route path="/legal"               element={<Notaries />} />
           <Route path="/pemberkasan"         element={<Pemberkasan />} />
           <Route path="/settings/team"       element={<Team />} />
+          <Route path="/settings/profile"    element={<Profile />} />
           <Route path="/settings/langganan"  element={<Subscription />} />
           <Route path="/reports"             element={<Reports />} />
           <Route path="/platform/tenants"    element={<Platform />} />

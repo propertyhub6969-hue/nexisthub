@@ -9,6 +9,7 @@ import Modal from '../../components/ui/Modal'
 import Pagination from '../../components/ui/Pagination'
 import { propertyService } from '../../services/property'
 import { useAuth } from '../../context/AuthContext'
+import { tenantLogoUrl } from '../../services/users'
 import { printBast } from '../../utils/bast'
 import type { Project, Unit, UnitCreate, UnitStatus, UnitBulkGenerate, PriceItem } from '../../types'
 
@@ -217,6 +218,7 @@ export default function ProjectUnits() {
       bastNumber: u.bast_number, bastDate: u.bast_date, petugas: u.bast_user_name ?? user?.full_name,
       buyer: u.buyer_name, project: project?.name, unit: [u.block, u.unit_number].filter(Boolean).join('-'),
       unitType: u.unit_type, landArea: u.land_area, buildingArea: u.building_area, price: u.price,
+      logoUrl: user?.tenant_slug ? tenantLogoUrl(user.tenant_slug) : undefined,
     })
   }
 

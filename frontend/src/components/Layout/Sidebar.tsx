@@ -75,6 +75,7 @@ const settingsItem = {
   icon: Settings,
   children: [
     { label: 'Tim', to: '/settings/team', icon: UsersRound },
+    { label: 'Profil Perusahaan', to: '/settings/profile', icon: Building2 },
   ],
 }
 

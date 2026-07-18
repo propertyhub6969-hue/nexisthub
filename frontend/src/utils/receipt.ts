@@ -10,6 +10,7 @@ export interface ReceiptData {
   method?: string
   purpose?: string
   source?: string
+  logoUrl?: string       // URL logo perusahaan (opsional) — placeholder "LOGO" bila kosong
 }
 
 const fmtRp = (n: number) =>
@@ -60,7 +61,8 @@ export async function printReceipt(data: ReceiptData): Promise<void> {
   .receipt { width: 100%; max-width: 780px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px 26px; }
   .head { display: flex; align-items: center; justify-content: space-between; border-bottom: 2px solid #1e293b; padding-bottom: 12px; margin-bottom: 14px; }
   .brand { display: flex; align-items: center; gap: 12px; }
-  .logo { width: 64px; height: 64px; border: 1px dashed #cbd5e1; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 9px; color: #94a3b8; text-align: center; line-height: 1.2; }
+  .logo { width: 64px; height: 64px; border: 1px dashed #cbd5e1; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 9px; color: #94a3b8; text-align: center; line-height: 1.2; overflow: hidden; }
+  .logo img { max-width: 100%; max-height: 100%; object-fit: contain; }
   .brand .co { font-size: 13px; color: #64748b; }
   .brand .co b { display: block; font-size: 15px; color: #0f172a; }
   .title { text-align: right; }
@@ -86,7 +88,7 @@ export async function printReceipt(data: ReceiptData): Promise<void> {
   <div class="receipt">
     <div class="head">
       <div class="brand">
-        <div class="logo">LOGO<br/>PERUSAHAAN</div>
+        <div class="logo">${data.logoUrl ? `<img src="${esc(data.logoUrl)}" alt="Logo" onerror="this.outerHTML='LOGO&lt;br/&gt;PERUSAHAAN'" />` : 'LOGO<br/>PERUSAHAAN'}</div>
         <div class="co"><b>${esc(data.project || 'Developer Properti')}</b>Kuitansi Pembayaran</div>
       </div>
       <div class="title">

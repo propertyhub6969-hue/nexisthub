@@ -13,6 +13,7 @@ export interface PengajuanData {
   company?: string
   date?: string // ISO, default hari ini
   rows: PengajuanRow[]
+  logoUrl?: string        // URL logo perusahaan (opsional) — placeholder "LOGO" bila kosong
 }
 
 const fmtRp = (n?: number) => n == null ? 'Rp 0' : new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(Number(n))
@@ -51,7 +52,8 @@ export function printPengajuan(data: PengajuanData): void {
   body { font-family: 'Times New Roman', Georgia, serif; color: #111; margin: 0; padding: 24px; font-size: 12.5px; line-height: 1.5; }
   .doc { max-width: 720px; margin: 0 auto; }
   .head { display: flex; align-items: center; gap: 14px; border-bottom: 2px solid #111; padding-bottom: 10px; }
-  .logo { width: 56px; height: 56px; border: 1px dashed #bbb; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 8px; color: #999; }
+  .logo { width: 56px; height: 56px; border: 1px dashed #bbb; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 8px; color: #999; overflow: hidden; }
+  .logo img { max-width: 100%; max-height: 100%; object-fit: contain; }
   .head .co b { font-size: 15px; } .head .co span { color: #555; font-size: 12px; }
   h1 { text-align: center; font-size: 15px; letter-spacing: 1px; margin: 16px 0 2px; }
   .sub { text-align: center; font-size: 12px; color: #444; margin-bottom: 14px; }
@@ -71,7 +73,7 @@ export function printPengajuan(data: PengajuanData): void {
 <body onload="window.focus(); window.print();">
   <div class="doc">
     <div class="head">
-      <div class="logo">LOGO</div>
+      <div class="logo">${data.logoUrl ? `<img src="${esc(data.logoUrl)}" alt="Logo" onerror="this.outerHTML='LOGO'" />` : 'LOGO'}</div>
       <div class="co"><b>${esc(data.company || data.project || 'Developer Properti')}</b><br/><span>Pengajuan Pembayaran Borongan</span></div>
     </div>
     <h1>SURAT PENGAJUAN PEMBAYARAN</h1>

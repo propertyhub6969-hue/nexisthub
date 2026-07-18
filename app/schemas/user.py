@@ -37,3 +37,28 @@ class TeamMemberResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# ── Profil perusahaan tenant (dipakai kop dokumen cetak) ──
+class TenantProfileUpdate(BaseModel):
+    company_name: Optional[str] = Field(None, max_length=200)
+    phone: Optional[str] = Field(None, max_length=20)
+    address: Optional[str] = None
+    city: Optional[str] = Field(None, max_length=100)
+    province: Optional[str] = Field(None, max_length=100)
+
+
+class TenantProfileResponse(BaseModel):
+    id: uuid.UUID
+    name: str
+    slug: str
+    company_name: Optional[str] = None
+    phone: Optional[str] = None
+    address: Optional[str] = None
+    city: Optional[str] = None
+    province: Optional[str] = None
+    has_logo: bool = False
+    logo_name: Optional[str] = None
+
+    class Config:
+        from_attributes = True
