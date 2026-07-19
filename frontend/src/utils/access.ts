@@ -43,6 +43,7 @@ const PATH_FEATURE: [string, string][] = [
   ['/procurement', 'procurement'],
   ['/reports', 'laporan'],
   ['/payments', 'pembayaran'],
+  ['/cashbook', 'laporan'],
 ]
 
 export function featureForPath(path: string): string | null {

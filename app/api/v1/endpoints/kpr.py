@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.audit import record_audit
 from app.core.unit_status import unit_status_for_client, set_unit_status
+from app.core.cashbook import sync_payment_cashbook
 from app.api.deps import get_current_context, AuthContext
 from app.models.kpr import Bank, KprApplication, KprStage
 from app.models.marketing import Client, ClientStatus
@@ -209,6 +210,7 @@ async def disburse_kpr(kpr_id: uuid.UUID, payload: DisburseRequest, ctx: AuthCon
     k.stage = KprStage.PENCAIRAN
     await db.flush()
     await _sync_client_on_kpr_stage(db, ctx.tenant_id, k.client_id, k.stage)
+    await sync_payment_cashbook(db, ctx.tenant_id, pay)
     await db.flush()
     await record_audit(db, ctx.tenant_id, ctx.user_id, "DISBURSE", "kpr_applications", kpr_id,
                        new_data={"amount": str(payload.amount), "date": str(pay_date)})
@@ -228,6 +230,7 @@ async def delete_disbursement(payment_id: uuid.UUID, ctx: AuthContext = Depends(
     pay.is_deleted = True
     pay.deleted_at = datetime.utcnow()
     await db.flush()
+    await sync_payment_cashbook(db, ctx.tenant_id, pay)
     # sinkron kolom legacy pencairan_amount
     k = (await db.execute(select(KprApplication).where(KprApplication.id == kpr_id))).scalar_one_or_none()
     if k is not None:

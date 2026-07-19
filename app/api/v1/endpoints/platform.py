@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.security import get_password_hash
 from app.core.proxy_routes import regenerate_tenant_routes
+from app.core.cashbook import seed_default_account_categories
 from app.api.deps import require_platform_admin
 from app.models.tenant import Tenant, TenantStatus
 from app.models.user import User, UserRole
@@ -77,6 +78,7 @@ async def provision_tenant(payload: TenantProvision, _: User = Depends(require_p
         expires_at=payload.expires_at, feature_flags=payload.feature_flags, is_active=True,
     )
     db.add(tenant); await db.flush()
+    await seed_default_account_categories(db, tenant.id)
     owner = User(
         email=payload.owner_email, hashed_password=get_password_hash(payload.owner_password),
         full_name=payload.owner_full_name, role=UserRole.OWNER, tenant_id=tenant.id, is_active=True,

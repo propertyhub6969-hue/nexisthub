@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.audit import record_audit
+from app.core.cashbook import sync_expense_cashbook
 from app.api.deps import get_current_context, AuthContext, require_role
 from app.models.contractor import ContractorContract, ContractWorkItem, WorkStageTemplate, WorkStageTemplateLine
 from app.models.expense import Expense, ExpenseCategory
@@ -198,6 +199,8 @@ async def delete_opname(eid: uuid.UUID, ctx: AuthContext = Depends(get_current_c
     if e is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Opname tidak ditemukan")
     e.is_deleted = True; e.deleted_at = datetime.utcnow()
+    await db.flush()
+    await sync_expense_cashbook(db, ctx.tenant_id, e)
 
 
 # ── Pengajuan pembayaran (opname belum dibayar) — level proyek ──
@@ -240,6 +243,8 @@ async def mark_opname_paid(
         e.is_paid = True
         e.paid_at = pd
     await db.flush()
+    for e in rows:
+        await sync_expense_cashbook(db, ctx.tenant_id, e)
     if rows:
         await record_audit(db, ctx.tenant_id, ctx.user_id, "PAY", "contractor_opname", None,
                            new_data={"count": len(rows), "paid_date": str(pd), "ids": [str(e.id) for e in rows]})

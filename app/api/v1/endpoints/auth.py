@@ -11,6 +11,7 @@ from app.models.tenant import Tenant, TenantStatus
 from app.models.user import User, UserRole
 from app.api.deps import get_current_context, AuthContext
 from app.core.proxy_routes import regenerate_tenant_routes
+from app.core.cashbook import seed_default_account_categories
 from datetime import date, timedelta
 import re
 
@@ -81,6 +82,7 @@ async def register(
     )
     db.add(tenant)
     await db.flush()  # get tenant.id
+    await seed_default_account_categories(db, tenant.id)
 
     # Create User as OWNER of tenant
     user = User(

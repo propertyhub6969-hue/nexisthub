@@ -19,6 +19,7 @@ import {
   ChevronDown,
   X,
   ShieldCheck,
+  Wallet,
 } from 'lucide-react'
 import { clsx } from 'clsx'
 import { useAuth } from '../../context/AuthContext'
@@ -87,6 +88,7 @@ const financeItem = {
   icon: ShieldCheck,
   children: [
     { label: 'Persetujuan Pembayaran', to: '/payments/approval', icon: ShieldCheck },
+    { label: 'Buku Kas', to: '/cashbook', icon: Wallet },
   ],
 }
 

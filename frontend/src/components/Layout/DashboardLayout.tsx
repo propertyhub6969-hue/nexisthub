@@ -24,6 +24,7 @@ const pageTitles: Record<string, string> = {
   '/settings/langganan': 'Langganan',
   '/reports': 'Reports',
   '/payments/approval': 'Persetujuan Pembayaran',
+  '/cashbook': 'Buku Kas',
   '/platform/tenants': 'Control Plane — Pelanggan',
 }
 

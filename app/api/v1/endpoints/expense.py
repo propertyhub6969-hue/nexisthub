@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.audit import record_audit
+from app.core.cashbook import sync_expense_cashbook
 from app.api.deps import get_current_context, AuthContext
 from app.models.expense import Expense
 from app.models.stock import StockMovement, MovementType
@@ -50,6 +51,7 @@ async def list_expenses(
 async def create_expense(payload: ExpenseCreate, ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db)):
     e = Expense(tenant_id=ctx.tenant_id, **payload.model_dump())
     db.add(e); await db.flush()
+    await sync_expense_cashbook(db, ctx.tenant_id, e)
     await record_audit(db, ctx.tenant_id, ctx.user_id, "CREATE", "expenses", e.id,
                        new_data={"category": e.category.value, "amount": str(e.amount)})
     return await _get_expense(db, ctx.tenant_id, e.id)
@@ -61,6 +63,7 @@ async def update_expense(eid: uuid.UUID, payload: ExpenseUpdate, ctx: AuthContex
     for f, v in payload.model_dump(exclude_unset=True).items():
         setattr(e, f, v)
     await db.flush()
+    await sync_expense_cashbook(db, ctx.tenant_id, e)
     return await _get_expense(db, ctx.tenant_id, eid)
 
 
@@ -68,6 +71,8 @@ async def update_expense(eid: uuid.UUID, payload: ExpenseUpdate, ctx: AuthContex
 async def delete_expense(eid: uuid.UUID, ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db)):
     e = await _get_expense(db, ctx.tenant_id, eid)
     e.is_deleted = True; e.deleted_at = datetime.utcnow()
+    await db.flush()
+    await sync_expense_cashbook(db, ctx.tenant_id, e)
     await record_audit(db, ctx.tenant_id, ctx.user_id, "DELETE", "expenses", eid,
                        old_data={"category": e.category.value, "amount": str(e.amount)})
 

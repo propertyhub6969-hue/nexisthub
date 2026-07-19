@@ -13,6 +13,7 @@ from sqlalchemy.orm import selectinload
 from app.core.database import get_db
 from app.api.deps import get_current_context, AuthContext, require_role
 from app.core.audit import record_audit
+from app.core.cashbook import sync_payment_cashbook
 from app.models.user import User, UserRole
 from app.models.marketing import Client
 from app.models.property import Unit
@@ -286,6 +287,7 @@ async def create_payment(
     db.add(pay)
     await db.flush()
     await _recompute_schedule(db, ctx.tenant_id, pay.schedule_id)
+    await sync_payment_cashbook(db, ctx.tenant_id, pay)
     await record_audit(db, ctx.tenant_id, ctx.user_id, "CREATE", "payments", pay.id,
                        new_data=data, client_id=pay.client_id)
     await db.refresh(pay)
@@ -320,6 +322,7 @@ async def approve_payment(
     pay.rejection_reason = None
     await db.flush()
     await _recompute_schedule(db, ctx.tenant_id, pay.schedule_id)
+    await sync_payment_cashbook(db, ctx.tenant_id, pay)
     await record_audit(db, ctx.tenant_id, ctx.user_id, "APPROVE", "payments", payment_id,
                        new_data={"amount": str(pay.amount)}, client_id=pay.client_id)
     await db.refresh(pay)
@@ -347,6 +350,7 @@ async def reject_payment(
     await db.flush()
     if was_approved:
         await _recompute_schedule(db, ctx.tenant_id, pay.schedule_id)  # sebelumnya lunas → hitung ulang
+    await sync_payment_cashbook(db, ctx.tenant_id, pay)
     await record_audit(db, ctx.tenant_id, ctx.user_id, "REJECT", "payments", payment_id,
                        new_data={"amount": str(pay.amount)}, client_id=pay.client_id,
                        reason=payload.reason.strip())
@@ -386,6 +390,7 @@ async def update_payment(
     await _recompute_schedule(db, ctx.tenant_id, old_schedule)
     if pay.schedule_id != old_schedule:
         await _recompute_schedule(db, ctx.tenant_id, pay.schedule_id)
+    await sync_payment_cashbook(db, ctx.tenant_id, pay)
     await record_audit(db, ctx.tenant_id, ctx.user_id, "UPDATE", "payments", payment_id,
                        new_data={"amount": str(pay.amount), "source": pay.source.value},
                        client_id=pay.client_id, reason=(reason.strip() if reason else None))
@@ -462,6 +467,7 @@ async def delete_payment(
     pay.deleted_at = datetime.utcnow()
     await db.flush()
     await _recompute_schedule(db, ctx.tenant_id, sched)
+    await sync_payment_cashbook(db, ctx.tenant_id, pay)
     await record_audit(db, ctx.tenant_id, ctx.user_id, "DELETE", "payments", payment_id,
                        old_data={"amount": str(pay.amount), "source": pay.source.value},
                        client_id=pay.client_id, reason=reason.strip())

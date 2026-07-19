@@ -1448,3 +1448,53 @@ export interface PaginatedResponse<T> {
 export interface ApiError {
   detail: string
 }
+
+// ── Buku Kas (Fase B1) ──────────────────────────────────────────────
+export type CashDirection = 'in' | 'out'
+
+export interface AccountCategory {
+  id: string
+  name: string
+  direction: CashDirection
+  code?: string
+  notes?: string
+  created_at: string
+}
+
+export interface CashBookEntry {
+  id: string
+  date: string
+  direction: CashDirection
+  amount: number
+  category_id?: string
+  category_name?: string
+  source_type: string
+  source_id: string
+  description: string
+  client_id?: string
+  client_name?: string
+  project_id?: string
+  project_name?: string
+  created_at: string
+}
+
+export interface CashBookCategoryTotal {
+  category_id?: string
+  category_name: string
+  direction: CashDirection
+  total: number
+}
+
+export interface CashBookMonth {
+  month: string
+  total_in: number
+  total_out: number
+}
+
+export interface CashBookSummary {
+  total_in: number
+  total_out: number
+  saldo: number
+  by_category: CashBookCategoryTotal[]
+  months: CashBookMonth[]
+}

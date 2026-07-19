@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends
-from app.api.v1.endpoints import auth, users, marketing, property, sale, payment, audit, tax, document, kpr, procurement, stock, expense, rab, construction, contractor, legal, reporting, filing, platform, public, billing
+from app.api.v1.endpoints import auth, users, marketing, property, sale, payment, audit, tax, document, kpr, procurement, stock, expense, rab, construction, contractor, legal, reporting, filing, platform, public, billing, cashbook
 from app.api.deps import require_feature, guard
 from app.models.user import UserRole
 
@@ -41,6 +41,7 @@ api_router.include_router(construction.router, prefix="/construction", tags=["Co
 api_router.include_router(contractor.router,   prefix="/construction", tags=["Contractor"],   dependencies=[feat("konstruksi"), g(*PROD, read=(V,))])
 api_router.include_router(legal.router,       prefix="/legal",       tags=["Legal"],       dependencies=[g(*SALES, read=(V,))])
 api_router.include_router(reporting.router,   prefix="/reporting",   tags=["Reporting"],   dependencies=[feat("laporan"), g(*FULL, read=(UserRole.MARKETING, UserRole.PRODUKSI, UserRole.FINANCE, V))])
+api_router.include_router(cashbook.router,    prefix="/cashbook",    tags=["Cashbook"],    dependencies=[feat("laporan"), g(UserRole.OWNER, UserRole.ADMIN, UserRole.FINANCE, read=(V,))])
 api_router.include_router(filing.router,      prefix="/filing",      tags=["Pemberkasan"], dependencies=[feat("dokumen"), g(*SALES, read=(V,))])
 api_router.include_router(platform.router,    prefix="/platform",    tags=["Platform"])
 api_router.include_router(billing.router,      prefix="/billing",     tags=["Billing"],     dependencies=[g(*FULL)])

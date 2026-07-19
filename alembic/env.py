@@ -30,6 +30,7 @@ from app.models.legal import DocumentTemplate, LegalDocument
 from app.models.reporting import ReportConfig
 from app.models.audit import AuditLog
 from app.models.billing import Invoice
+from app.models.cashbook import AccountCategory, CashBookEntry
 
 config = context.config
 
