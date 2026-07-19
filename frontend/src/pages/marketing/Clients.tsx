@@ -189,7 +189,16 @@ export default function Clients() {
   }
   function handleUnitFormQueryChange(text: string) {
     setUnitFormQuery(text)
-    const q = text.trim().toLowerCase()
+    // HANYA cocokkan kalau teksnya PERSIS label lengkap dropdown (mis. user klik saran datalist) —
+    // aman dipasang di tiap ketikan krn tak mungkin kena oleh potongan teks yg baru separuh diketik.
+    // Pencocokan yg lebih longgar (nomor polos, tanpa nol depan, dst) baru dicoba saat blur di bawah,
+    // supaya ketikan yg sedang berjalan (mis. mau ketik "064") tak "dibajak" begitu baru sampai "06".
+    const match = formUnits.find((u) => unitOptionLabel(u).toLowerCase() === text.trim().toLowerCase())
+    if (match) onSelectUnit(match.id)
+  }
+  function resolveUnitFormQuery() {
+    const q = unitFormQuery.trim().toLowerCase()
+    if (!q) { onSelectUnit(''); return }
     // cocokkan: label lengkap dropdown, lalu "blok-nomor" saja, lalu nomor unit polos
     // (kalau nomornya unik di proyek ini — user sering cukup ketik nomornya tanpa blok/tipe).
     let match = formUnits.find((u) => unitOptionLabel(u).toLowerCase() === q)
@@ -203,6 +212,7 @@ export default function Clients() {
       const byNumeric = formUnits.filter((u) => /^\d+$/.test(u.unit_number ?? '') && String(Number(u.unit_number)) === String(Number(q)))
       if (byNumeric.length === 1) match = byNumeric[0]
     }
+    // tak ketemu → kosongkan (bukan simpan unit lama) supaya kelihatan jelas & tak kesimpan salah kavling
     onSelectUnit(match ? match.id : '')
   }
   // sinkron teks tampilan form HANYA saat unit_id sudah match (mis. buka Edit sebelum unit proyeknya
@@ -427,7 +437,7 @@ export default function Clients() {
               <input
                 className="input" list="client-form-unit-suggest"
                 placeholder={form.project_id ? 'Cari no. unit / blok...' : 'Pilih proyek dulu'}
-                value={unitFormQuery} onChange={(e) => handleUnitFormQueryChange(e.target.value)} disabled={!form.project_id}
+                value={unitFormQuery} onChange={(e) => handleUnitFormQueryChange(e.target.value)} onBlur={resolveUnitFormQuery} disabled={!form.project_id}
               />
               <datalist id="client-form-unit-suggest">
                 {formUnits.map((u) => <option key={u.id} value={unitOptionLabel(u)} />)}
