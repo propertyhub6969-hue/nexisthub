@@ -405,7 +405,7 @@ export default function Clients() {
         <Pagination page={page} pages={pages} total={total} onPage={setPage} />
       </div>
 
-      <Modal open={modalOpen} onClose={closeModal} title={editingId ? 'Edit Pembeli' : 'Tambah Pembeli'}>
+      <Modal open={modalOpen} onClose={closeModal} title={editingId ? 'Edit Pembeli' : 'Tambah Pembeli'} size="lg">
         <form onSubmit={handleSubmit} className="space-y-3">
           <div>
             <label className="label">Nama Lengkap *</label>
