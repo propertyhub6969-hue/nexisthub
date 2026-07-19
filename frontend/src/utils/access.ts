@@ -1,12 +1,12 @@
 import type { UserRole } from '../types'
 
 // Peta akses menu per role (enforcement frontend; backend guard di api.py utk Konstruksi/Procurement).
-// - produksi : Dashboard + area Produksi (Konstruksi/Procurement)
-// - marketing: grup Marketing & Properti (+ Pemberkasan)
+// - produksi : Dashboard + area Produksi (Konstruksi/Procurement) + Report > Pembangunan saja
+// - marketing: grup Marketing & Properti (+ Pemberkasan) + Report > Marketing saja
 // - role lain (owner/admin/manager/viewer): akses penuh KECUALI area Produksi yg dibatasi PROD_ROLES
 const ROLE_PATHS: Partial<Record<UserRole, string[]>> = {
-  produksi: ['/dashboard', '/construction', '/procurement'],
-  marketing: ['/marketing', '/property', '/pemberkasan'],
+  produksi: ['/dashboard', '/construction', '/procurement', '/reports/pembangunan'],
+  marketing: ['/marketing', '/property', '/pemberkasan', '/reports/marketing'],
 }
 
 // Area Konstruksi & Procurement — hanya role ini (samakan dgn backend api.py PROD_ROLES).
