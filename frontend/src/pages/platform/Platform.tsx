@@ -223,7 +223,14 @@ export default function Platform() {
                   <td className="px-4 py-2.5 text-slate-600">{t.subscription_plan}</td>
                   <td className="px-4 py-2.5">{st && <Badge label={st.label} variant={st.variant} />}</td>
                   <td className="px-4 py-2.5 text-slate-500">{t.user_count}</td>
-                  <td className="px-4 py-2.5 text-slate-500 text-xs">{t.owner_email ?? '—'}</td>
+                  <td className="px-4 py-2.5 text-xs">
+                    {t.owner_name || t.owner_email ? (
+                      <>
+                        <p className="text-slate-700 font-medium">{t.owner_name ?? '—'}</p>
+                        {t.owner_name && t.owner_email && <p className="text-slate-400">{t.owner_email}</p>}
+                      </>
+                    ) : <span className="text-slate-500">—</span>}
+                  </td>
                   <td className="px-4 py-2.5 text-slate-500 text-xs">{fmtDate(t.expires_at)}</td>
                   <td className="px-4 py-2.5 text-slate-500 text-xs">{t.feature_flags == null ? 'Semua' : `${t.feature_flags.length} modul`}</td>
                   <td className="px-4 py-2.5"><div className="flex items-center justify-end gap-3">

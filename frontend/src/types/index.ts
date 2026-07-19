@@ -50,6 +50,7 @@ export interface TenantAdmin {
   feature_flags?: string[] | null
   user_count: number
   owner_email?: string | null
+  owner_name?: string | null
   company_name?: string | null
   phone?: string | null
   city?: string | null

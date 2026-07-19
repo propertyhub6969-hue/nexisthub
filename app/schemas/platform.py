@@ -23,6 +23,7 @@ class TenantAdminResponse(BaseModel):
     feature_flags: Optional[List[str]] = None  # None = semua modul aktif
     user_count: int = 0
     owner_email: Optional[str] = None
+    owner_name: Optional[str] = None
     company_name: Optional[str] = None
     phone: Optional[str] = None
     city: Optional[str] = None

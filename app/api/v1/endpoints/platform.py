@@ -35,18 +35,20 @@ async def _unique_slug(db, base: str) -> str:
     return slug
 
 
-async def _owner_email(db, tenant_id) -> str | None:
+async def _owner(db, tenant_id) -> tuple[str | None, str | None]:
+    """(email, nama) pemilik tenant — None,None bila belum/tak ada baris OWNER."""
     r = await db.execute(
-        select(User.email).where(User.tenant_id == tenant_id, User.role == UserRole.OWNER).limit(1)
+        select(User.email, User.full_name).where(User.tenant_id == tenant_id, User.role == UserRole.OWNER).limit(1)
     )
-    return r.scalar_one_or_none()
+    row = r.first()
+    return (row[0], row[1]) if row else (None, None)
 
 
 async def _to_resp(db, t: Tenant) -> TenantAdminResponse:
     cnt = await db.scalar(select(func.count()).select_from(User).where(User.tenant_id == t.id))
     resp = TenantAdminResponse.model_validate(t)
     resp.user_count = cnt or 0
-    resp.owner_email = await _owner_email(db, t.id)
+    resp.owner_email, resp.owner_name = await _owner(db, t.id)
     return resp
 
 
