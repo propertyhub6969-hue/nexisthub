@@ -333,6 +333,7 @@ async def _submission_response(db, tenant_id, sub: KprBankSubmission) -> BankSub
         id=sub.id, kpr_application_id=sub.kpr_application_id, client_id=client_id, client_name=client_name,
         unit_label=unit_label, bank_name=bank_name, submitted_stage=sub.submitted_stage,
         submitted_sp3k_number=sub.submitted_sp3k_number, submitted_sp3k_date=sub.submitted_sp3k_date,
+        submitted_notes=sub.submitted_notes,
         has_file=sub.has_file, file_name=sub.file_name, status=sub.status,
         reviewer_name=reviewer_name, reviewed_at=sub.reviewed_at, notes=sub.notes, created_at=sub.created_at,
     )

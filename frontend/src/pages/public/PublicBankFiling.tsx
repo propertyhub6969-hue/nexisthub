@@ -18,6 +18,7 @@ interface RowForm {
   stage: KprStage
   sp3k_number: string
   sp3k_date: string
+  notes: string
   file: File | null
 }
 
@@ -38,7 +39,7 @@ export default function PublicBankFiling() {
       .then((p) => {
         setPage(p)
         const init: Record<string, RowForm> = {}
-        for (const r of p.rows) init[r.kpr_application_id] = { stage: r.stage, sp3k_number: '', sp3k_date: '', file: null }
+        for (const r of p.rows) init[r.kpr_application_id] = { stage: r.stage, sp3k_number: '', sp3k_date: '', notes: '', file: null }
         setForms(init)
       })
       .catch((err) => setError(
@@ -60,7 +61,8 @@ export default function PublicBankFiling() {
     try {
       await kprService.publicBankSubmit(token, {
         kpr_application_id: id, stage: f.stage,
-        sp3k_number: f.sp3k_number || undefined, sp3k_date: f.sp3k_date || undefined, file: f.file,
+        sp3k_number: f.sp3k_number || undefined, sp3k_date: f.sp3k_date || undefined,
+        notes: f.notes || undefined, file: f.file,
       })
       setSent((prev) => new Set(prev).add(id))
     } catch {
@@ -87,7 +89,7 @@ export default function PublicBankFiling() {
           <>
             <div>
               <h1 className="text-lg font-semibold text-slate-900 flex items-center gap-2"><Landmark size={20} className="text-brand-600" /> {page.bank_name}</h1>
-              <p className="text-sm text-slate-500">Status pemberkasan pembeli yang ditangani {page.bank_name}. Kirim update progres — akan ditinjau developer sebelum resmi tercatat.</p>
+              <p className="text-sm text-slate-500">Status pemberkasan pembeli yang ditangani {page.bank_name} — hanya yang sedang tahap Berkas Masuk Bank. Kirim update progres — akan ditinjau developer sebelum resmi tercatat. Kalau berkas kurang atau ditolak, cukup tulis di Catatan.</p>
             </div>
 
             <div className="card overflow-hidden">
@@ -126,6 +128,8 @@ export default function PublicBankFiling() {
                                 <input className="input text-xs py-1" type="date" value={f.sp3k_date} onChange={(e) => setForm(r.kpr_application_id, { sp3k_date: e.target.value })} />
                               </div>
                               <input className="input text-xs py-1" type="file" accept="image/*,application/pdf" onChange={(e) => setForm(r.kpr_application_id, { file: e.target.files?.[0] ?? null })} />
+                              <textarea className="input text-xs py-1" rows={2} placeholder="Catatan — mis. kurang berkas KTP, ditolak (alasan), dll"
+                                value={f.notes} onChange={(e) => setForm(r.kpr_application_id, { notes: e.target.value })} />
                               {rowError[r.kpr_application_id] && <p className="text-xs text-red-600">{rowError[r.kpr_application_id]}</p>}
                             </div>
                           ) : null}

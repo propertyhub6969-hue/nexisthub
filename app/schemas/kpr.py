@@ -150,6 +150,7 @@ class BankSubmissionResponse(BaseModel):
     submitted_stage: KprStage
     submitted_sp3k_number: Optional[str] = None
     submitted_sp3k_date: Optional[date] = None
+    submitted_notes: Optional[str] = None
     has_file: bool = False
     file_name: Optional[str] = None
     status: BankSubmissionStatus

@@ -74,7 +74,8 @@ async def public_monthly_tax(token: str, db: AsyncSession = Depends(get_db)):
 @router.get("/bank/{token}", response_model=PublicBankPageResponse)
 async def public_bank_page(token: str, db: AsyncSession = Depends(get_db)):
     """Status pemberkasan pembeli yang ditangani 1 bank, lewat tautan bertoken (tanpa login).
-    Cakupan sempit: cuma pembeli bank ini — tahap KPR, status dokumen & pajak (jumlah, bukan detail)."""
+    Cakupan sempit: cuma pembeli bank ini yang SEDANG di tahap Berkas Masuk Bank (yg butuh aksi bank
+    sekarang) — tahap KPR, status dokumen & pajak (jumlah, bukan detail)."""
     link = (await db.execute(select(BankShareLink).where(BankShareLink.token == token))).scalar_one_or_none()
     if link is None or not link.is_active:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Tautan tidak ditemukan, sudah dicabut, atau kedaluwarsa")
@@ -87,7 +88,7 @@ async def public_bank_page(token: str, db: AsyncSession = Depends(get_db)):
     kpr_rows = (await db.execute(
         select(KprApplication).where(
             KprApplication.tenant_id == link.tenant_id, KprApplication.bank_id == link.bank_id,
-            KprApplication.is_deleted == False)  # noqa: E712
+            KprApplication.stage == KprStage.BERKAS_MASUK_BANK, KprApplication.is_deleted == False)  # noqa: E712
         .order_by(KprApplication.created_at.desc())
     )).scalars().all()
     seen: set = set()
@@ -159,11 +160,13 @@ async def public_bank_submit(
     stage: KprStage = Form(...),
     sp3k_number: str = Form(None),
     sp3k_date: str = Form(None),
+    notes: str = Form(None),
     file: UploadFile = File(None),
     db: AsyncSession = Depends(get_db),
 ):
-    """Kiriman dari bank (progres/No. SP3K/Tgl SP3K/file) — TIDAK langsung mengubah data KPR.
-    Masuk sbg KprBankSubmission menunggu diterima developer (lihat kpr.py accept_bank_submission)."""
+    """Kiriman dari bank (progres/No. SP3K/Tgl SP3K/catatan/file) — TIDAK langsung mengubah data KPR.
+    Bank tak punya tombol "tolak" sendiri — kalau berkas kurang/ditolak, cukup tulis di catatan;
+    developer yang putuskan terima/tolak lewat halaman Kiriman Bank (lihat kpr.py accept_bank_submission)."""
     link = (await db.execute(select(BankShareLink).where(BankShareLink.token == token))).scalar_one_or_none()
     if link is None or not link.is_active:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Tautan tidak ditemukan, sudah dicabut, atau kedaluwarsa")
@@ -186,6 +189,7 @@ async def public_bank_submit(
     sub = KprBankSubmission(
         tenant_id=link.tenant_id, kpr_application_id=k.id, bank_share_link_id=link.id,
         submitted_stage=stage, submitted_sp3k_number=(sp3k_number or None), submitted_sp3k_date=parsed_date,
+        submitted_notes=(notes or None),
     )
     if file is not None and file.filename:
         data = await file.read()

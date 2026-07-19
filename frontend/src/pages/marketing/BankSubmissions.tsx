@@ -65,12 +65,12 @@ export default function BankSubmissions() {
         ) : (
           <table className="w-full text-sm">
             <thead className="bg-slate-50 border-b border-slate-200">
-              <tr>{['Pembeli', 'Bank', 'Tahap Diajukan', 'No. SP3K', 'Tgl SP3K', 'File', ''].map((h, i) => (
+              <tr>{['Pembeli', 'Bank', 'Tahap Diajukan', 'No. SP3K', 'Tgl SP3K', 'Catatan', 'File', ''].map((h, i) => (
                 <th key={i} className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">{h}</th>))}</tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {items.length === 0 ? (
-                <tr><td colSpan={7} className="px-4 py-6 text-center text-slate-400 text-sm">Tidak ada kiriman menunggu persetujuan.</td></tr>
+                <tr><td colSpan={8} className="px-4 py-6 text-center text-slate-400 text-sm">Tidak ada kiriman menunggu persetujuan.</td></tr>
               ) : items.map((s) => (
                 <tr key={s.id} className="hover:bg-slate-50">
                   <td className="px-4 py-2.5">
@@ -81,6 +81,9 @@ export default function BankSubmissions() {
                   <td className="px-4 py-2.5 text-slate-700">{stageLabel[s.submitted_stage]}</td>
                   <td className="px-4 py-2.5 text-slate-500">{s.submitted_sp3k_number ?? '—'}</td>
                   <td className="px-4 py-2.5 text-slate-500">{fmtDate(s.submitted_sp3k_date)}</td>
+                  <td className="px-4 py-2.5 text-slate-600 max-w-[220px]">
+                    {s.submitted_notes ? <span className="line-clamp-2" title={s.submitted_notes}>{s.submitted_notes}</span> : <span className="text-slate-400">—</span>}
+                  </td>
                   <td className="px-4 py-2.5">
                     {s.has_file ? (
                       <button onClick={() => kprService.openSubmissionFile(s.id)} className="inline-flex items-center gap-1 text-brand-600 hover:underline text-xs" title={s.file_name}>

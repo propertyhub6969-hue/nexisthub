@@ -1067,6 +1067,7 @@ export interface BankSubmission {
   submitted_stage: KprStage
   submitted_sp3k_number?: string
   submitted_sp3k_date?: string
+  submitted_notes?: string
   has_file: boolean
   file_name?: string
   status: BankSubmissionStatus
