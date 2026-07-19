@@ -285,6 +285,13 @@ async def upah_resume(project_id: uuid.UUID = Query(...), ctx: AuthContext = Dep
         (real_paid if is_paid else real_submitted)[uid] += Decimal(tot)
         real_week[uid] += Decimal(wk)   # minggu berjalan: gabung dibayar+diajukan (kapan opname dicatat)
 
+    # Progres pembangunan per unit (dari modul Konstruksi)
+    progress_rows = (await db.execute(
+        select(UnitConstruction.unit_id, UnitConstruction.percent, UnitConstruction.stage)
+        .where(UnitConstruction.tenant_id == t, UnitConstruction.project_id == project_id)
+    )).all()
+    progress: dict = {uid: (pct, stage) for uid, pct, stage in progress_rows}
+
     out = []
     for u in units:
         rab = tpl_upah.get(u.rab_template_id, Decimal(0)) + adj_upah.get(u.id, Decimal(0))
@@ -295,10 +302,12 @@ async def upah_resume(project_id: uuid.UUID = Query(...), ctx: AuthContext = Dep
         if rab == 0 and total == 0:
             continue  # kavling tanpa RAB upah & tanpa realisasi → tak relevan
         selisih = total - rab
+        pct, stage = progress.get(u.id, (0, None))
         out.append(UpahResumeRow(
             unit_id=u.id, unit_label=_label(u),
             upah_minggu=week, upah_dibayar=paid, upah_diajukan=submitted, upah_total=total,
             rab_tenaga_kerja=rab, selisih=selisih, status=("lewat" if (rab > 0 and total > rab) else "aman"),
+            progress_percent=pct, progress_stage=(stage.value if stage else None),
         ))
     out.sort(key=lambda r: r.unit_label)
     return out

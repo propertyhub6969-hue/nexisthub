@@ -1396,6 +1396,8 @@ export interface UpahResume {
   rab_tenaga_kerja: number
   selisih: number
   status: 'aman' | 'lewat'
+  progress_percent: number
+  progress_stage?: ConstructionStage
 }
 export interface StageTemplateLine { id: string; name: string; value: number }
 export interface StageTemplate {

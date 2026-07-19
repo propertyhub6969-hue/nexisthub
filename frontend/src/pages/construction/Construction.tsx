@@ -444,14 +444,22 @@ export default function Construction() {
         <div className="card overflow-hidden">
           <div className="px-4 py-2.5 border-b border-slate-100 text-sm font-semibold text-slate-900 flex items-center gap-2"><HardHat size={15} /> Resume Upah Tenaga Kerja per Kavling</div>
           <table className="w-full text-sm">
-            <thead className="bg-slate-50 border-b border-slate-200"><tr>{['Kavling', 'Upah Minggu Ini', 'Dibayar', 'Diajukan', 'RAB Tenaga Kerja', 'Selisih', 'Status', ''].map((h, i) => (
-              <th key={i} className={`px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wider ${i >= 1 && i <= 5 ? 'text-right' : 'text-left'}`}>{h}</th>))}</tr></thead>
+            <thead className="bg-slate-50 border-b border-slate-200"><tr>{['Kavling', 'Progres', 'Upah Minggu Ini', 'Dibayar', 'Diajukan', 'RAB Tenaga Kerja', 'Selisih', 'Status', ''].map((h, i) => (
+              <th key={i} className={`px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wider ${i >= 2 && i <= 6 ? 'text-right' : 'text-left'}`}>{h}</th>))}</tr></thead>
             <tbody className="divide-y divide-slate-100">
               {upahResume.length === 0 ? (
-                <tr><td colSpan={8} className="px-4 py-8 text-center text-slate-400 text-sm">{project ? 'Belum ada realisasi upah / RAB tenaga kerja.' : 'Pilih proyek dulu.'}</td></tr>
+                <tr><td colSpan={9} className="px-4 py-8 text-center text-slate-400 text-sm">{project ? 'Belum ada realisasi upah / RAB tenaga kerja.' : 'Pilih proyek dulu.'}</td></tr>
               ) : upahResume.map((u) => (
                 <tr key={u.unit_id} className="hover:bg-slate-50">
                   <td className="px-4 py-2.5 font-medium text-slate-900">{u.unit_label}</td>
+                  <td className="px-4 py-2.5">
+                    {u.progress_stage ? (
+                      <div className="flex items-center gap-2">
+                        <div className="h-2 w-16 rounded-full bg-slate-100 overflow-hidden"><div className="h-full bg-brand-500" style={{ width: `${u.progress_percent}%` }} /></div>
+                        <span className="text-xs text-slate-500 whitespace-nowrap">{stageCfg(u.progress_stage).label} · {u.progress_percent}%</span>
+                      </div>
+                    ) : <span className="text-slate-400 text-xs">—</span>}
+                  </td>
                   <td className="px-4 py-2.5 text-right text-slate-600">{fmt(u.upah_minggu)}</td>
                   <td className="px-4 py-2.5 text-right text-slate-700 font-medium">{fmt(u.upah_dibayar)}</td>
                   <td className="px-4 py-2.5 text-right">

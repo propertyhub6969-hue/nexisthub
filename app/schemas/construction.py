@@ -56,6 +56,8 @@ class UpahResumeRow(BaseModel):
     rab_tenaga_kerja: Decimal  # RAB kategori upah unit (template + penyesuaian)
     selisih: Decimal          # upah_total − rab (minus = di bawah anggaran = aman)
     status: str               # 'aman' | 'lewat'
+    progress_percent: int = 0             # progres pembangunan unit (0-100), dari UnitConstruction
+    progress_stage: Optional[str] = None  # tahap konstruksi saat ini; None = belum ada data progres
 
 
 class ProgressLogResponse(BaseModel):
