@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Loader2, Plus, Pencil, KeyRound, Building2, Receipt, Trash2, CheckCircle2, Wallet } from 'lucide-react'
+import { Loader2, Plus, Pencil, KeyRound, Building2, Receipt, Trash2, CheckCircle2, Wallet, RotateCcw } from 'lucide-react'
 import { Navigate } from 'react-router-dom'
 import Modal from '../../components/ui/Modal'
 import DateInput from '../../components/ui/DateInput'
@@ -27,6 +27,11 @@ export default function Platform() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
+  const [showDeleted, setShowDeleted] = useState(false)
+
+  // hapus tenant (soft-delete — arsip, bisa dipulihkan)
+  const [delTenant, setDelTenant] = useState<TenantAdmin | null>(null)
+  const [delConfirmText, setDelConfirmText] = useState('')
 
   // create
   const [cModal, setCModal] = useState(false)
@@ -52,11 +57,11 @@ export default function Platform() {
   const load = async () => {
     setLoading(true)
     try {
-      const [m, t, r] = await Promise.all([platformService.listModules(), platformService.listTenants(), platformService.getRevenue()])
+      const [m, t, r] = await Promise.all([platformService.listModules(), platformService.listTenants(showDeleted), platformService.getRevenue()])
       setModules(m); setTenants(t); setRevenue(r)
     } catch { setError('Gagal memuat data platform.') } finally { setLoading(false) }
   }
-  useEffect(() => { if (user?.is_platform_admin) load() }, [user])
+  useEffect(() => { if (user?.is_platform_admin) load() }, [user, showDeleted])
 
   if (user && !user.is_platform_admin) return <Navigate to="/dashboard" replace />
 
@@ -81,16 +86,14 @@ export default function Platform() {
   function openEdit(t: TenantAdmin) {
     setETenant(t)
     setEAllModules(t.feature_flags == null)
-    setEForm({ name: t.name, status: t.status, is_active: t.is_active, subscription_plan: t.subscription_plan, expires_at: t.expires_at ?? '', feature_flags: t.feature_flags })
+    setEForm({ name: t.name, status: t.status, is_active: t.is_active, subscription_plan: t.subscription_plan, expires_at: t.expires_at ?? '', feature_flags: t.feature_flags, owner_email: t.owner_email ?? '' })
   }
   async function submitEdit(e: React.FormEvent) {
     e.preventDefault(); if (!eTenant) return; setSaving(true); setError('')
     try {
-      await platformService.updateTenant(eTenant.id, {
-        ...eForm,
-        expires_at: eForm.expires_at || null,
-        feature_flags: eAllModules ? null : (eForm.feature_flags ?? []),
-      })
+      const payload = { ...eForm, expires_at: eForm.expires_at || null, feature_flags: eAllModules ? null : (eForm.feature_flags ?? []) }
+      if (!payload.owner_email) delete payload.owner_email  // kosong = tak diubah (EmailStr backend tolak string kosong)
+      await platformService.updateTenant(eTenant.id, payload)
       setETenant(null); await load()
     } catch (e: any) { setError(e?.response?.data?.detail || 'Gagal menyimpan.') } finally { setSaving(false) }
   }
@@ -99,6 +102,18 @@ export default function Platform() {
     e.preventDefault(); if (!pwTenant || newPw.length < 6) return; setSaving(true)
     try { await platformService.resetOwnerPassword(pwTenant.id, newPw); setPwTenant(null); setNewPw('') }
     catch (e: any) { setError(e?.response?.data?.detail || 'Gagal reset password.') } finally { setSaving(false) }
+  }
+
+  async function submitDelete(e: React.FormEvent) {
+    e.preventDefault(); if (!delTenant || delConfirmText.trim() !== delTenant.name) return
+    setSaving(true); setError('')
+    try { await platformService.deleteTenant(delTenant.id); setDelTenant(null); setDelConfirmText(''); await load() }
+    catch (e: any) { setError(e?.response?.data?.detail || 'Gagal menghapus tenant.') } finally { setSaving(false) }
+  }
+  async function restore(t: TenantAdmin) {
+    if (!confirm(`Pulihkan tenant "${t.name}"? Login & subdomain akan aktif kembali.`)) return
+    try { await platformService.restoreTenant(t.id); await load() }
+    catch (e: any) { setError(e?.response?.data?.detail || 'Gagal memulihkan tenant.') }
   }
 
   async function openInvoices(t: TenantAdmin) {
@@ -180,6 +195,12 @@ export default function Platform() {
         )}
       </div>
 
+      <div className="flex justify-end">
+        <label className="flex items-center gap-2 text-xs text-slate-500">
+          <input type="checkbox" checked={showDeleted} onChange={(e) => setShowDeleted(e.target.checked)} /> Tampilkan tenant terhapus
+        </label>
+      </div>
+
       <div className="card overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-slate-50 border-b border-slate-200"><tr>{['Tenant', 'Subdomain', 'Paket', 'Status', 'User', 'Owner', 'Aktif s/d', 'Modul', ''].map((h, i) => (
@@ -190,9 +211,10 @@ export default function Platform() {
             ) : tenants.map((t) => {
               const st = statusCfg[t.status]
               return (
-                <tr key={t.id} className="hover:bg-slate-50">
+                <tr key={t.id} className={`hover:bg-slate-50 ${t.is_deleted ? 'opacity-60' : ''}`}>
                   <td className="px-4 py-2.5 font-medium text-slate-900">
-                    {t.name}{!t.is_active && <span className="ml-1 text-xs text-red-500">(nonaktif)</span>}
+                    {t.name}
+                    {t.is_deleted ? <span className="ml-1 text-xs text-red-500">(dihapus {fmtDate(t.deleted_at)})</span> : !t.is_active && <span className="ml-1 text-xs text-red-500">(nonaktif)</span>}
                     {(t.estimated_project_count || t.estimated_units_per_project) && (
                       <p className="text-xs font-normal text-slate-400">{t.estimated_project_count ?? '—'} proyek · {t.estimated_units_per_project ?? '—'} unit/proyek</p>
                     )}
@@ -205,9 +227,16 @@ export default function Platform() {
                   <td className="px-4 py-2.5 text-slate-500 text-xs">{fmtDate(t.expires_at)}</td>
                   <td className="px-4 py-2.5 text-slate-500 text-xs">{t.feature_flags == null ? 'Semua' : `${t.feature_flags.length} modul`}</td>
                   <td className="px-4 py-2.5"><div className="flex items-center justify-end gap-3">
-                    <button onClick={() => openEdit(t)} className="text-slate-400 hover:text-brand-600" title="Kelola"><Pencil size={15} /></button>
-                    <button onClick={() => openInvoices(t)} className="text-slate-400 hover:text-brand-600" title="Tagihan / Langganan"><Receipt size={15} /></button>
-                    <button onClick={() => { setPwTenant(t); setNewPw('') }} className="text-slate-400 hover:text-brand-600" title="Reset password owner"><KeyRound size={15} /></button>
+                    {t.is_deleted ? (
+                      <button onClick={() => restore(t)} className="text-slate-400 hover:text-emerald-600" title="Pulihkan tenant"><RotateCcw size={15} /></button>
+                    ) : (
+                      <>
+                        <button onClick={() => openEdit(t)} className="text-slate-400 hover:text-brand-600" title="Kelola"><Pencil size={15} /></button>
+                        <button onClick={() => openInvoices(t)} className="text-slate-400 hover:text-brand-600" title="Tagihan / Langganan"><Receipt size={15} /></button>
+                        <button onClick={() => { setPwTenant(t); setNewPw('') }} className="text-slate-400 hover:text-brand-600" title="Reset password owner"><KeyRound size={15} /></button>
+                        <button onClick={() => { setDelTenant(t); setDelConfirmText('') }} className="text-slate-400 hover:text-red-600" title="Hapus tenant"><Trash2 size={15} /></button>
+                      </>
+                    )}
                   </div></td>
                 </tr>
               )
@@ -249,6 +278,7 @@ export default function Platform() {
         {eTenant && (
           <form onSubmit={submitEdit} className="space-y-3">
             <div><label className="label">Nama</label><input className="input" value={eForm.name ?? ''} onChange={(e) => setEForm({ ...eForm, name: e.target.value })} /></div>
+            <div><label className="label">Email Owner</label><input className="input" type="email" value={eForm.owner_email ?? ''} onChange={(e) => setEForm({ ...eForm, owner_email: e.target.value })} /></div>
             <div className="grid grid-cols-2 gap-3">
               <div><label className="label">Paket</label><input className="input" value={eForm.subscription_plan ?? ''} onChange={(e) => setEForm({ ...eForm, subscription_plan: e.target.value })} /></div>
               <div><label className="label">Status</label>
@@ -323,6 +353,29 @@ export default function Platform() {
             <button type="submit" className="btn-primary text-sm flex items-center gap-2" disabled={saving}>{saving && <Loader2 size={14} className="animate-spin" />}Reset</button>
           </div>
         </form>
+      </Modal>
+
+      {/* Hapus tenant (soft-delete) */}
+      <Modal open={!!delTenant} onClose={() => setDelTenant(null)} title={`Hapus Tenant — ${delTenant?.name ?? ''}`}>
+        {delTenant && (
+          <form onSubmit={submitDelete} className="space-y-3">
+            <p className="text-sm text-slate-600">
+              Tenant akan diarsipkan: subdomain <b>{delTenant.slug}.nexisthub.id</b> berhenti bisa diakses & semua user-nya (termasuk owner) tak bisa login lagi.
+              Data bisnis (proyek, pembeli, pembayaran, dst) <b>tidak dihapus</b> — bisa dipulihkan kapan saja lewat "Tampilkan tenant terhapus".
+            </p>
+            <div>
+              <label className="label">Ketik nama tenant untuk konfirmasi: <span className="font-semibold text-slate-800">{delTenant.name}</span></label>
+              <input className="input" value={delConfirmText} onChange={(e) => setDelConfirmText(e.target.value)} autoFocus />
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <button type="button" className="btn-secondary text-sm" onClick={() => setDelTenant(null)}>Batal</button>
+              <button type="submit" className="text-sm flex items-center gap-2 rounded-lg bg-red-600 text-white px-4 py-2 font-medium hover:bg-red-700 disabled:opacity-50"
+                disabled={saving || delConfirmText.trim() !== delTenant.name}>
+                {saving && <Loader2 size={14} className="animate-spin" />}Hapus Tenant
+              </button>
+            </div>
+          </form>
+        )}
       </Modal>
     </div>
   )

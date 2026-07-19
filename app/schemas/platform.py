@@ -29,6 +29,8 @@ class TenantAdminResponse(BaseModel):
     province: Optional[str] = None
     estimated_project_count: Optional[int] = None
     estimated_units_per_project: Optional[int] = None
+    is_deleted: bool = False
+    deleted_at: Optional[datetime] = None
     created_at: datetime
 
     class Config:
@@ -55,6 +57,7 @@ class TenantAdminUpdate(BaseModel):
     subscription_plan: Optional[str] = Field(None, max_length=50)
     expires_at: Optional[date] = None
     feature_flags: Optional[List[str]] = None
+    owner_email: Optional[EmailStr] = None  # ubah email akun OWNER tenant — bukan kolom Tenant
 
 
 class ResetOwnerPassword(BaseModel):

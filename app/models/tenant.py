@@ -3,7 +3,7 @@ from datetime import date
 from sqlalchemy import String, Boolean, Text, Integer, Enum as SAEnum, Date
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID, JSONB
-from app.models.base import BaseModel
+from app.models.base import BaseModel, SoftDeleteMixin
 import enum
 
 
@@ -13,7 +13,7 @@ class TenantStatus(str, enum.Enum):
     TRIAL = "trial"
 
 
-class Tenant(BaseModel):
+class Tenant(BaseModel, SoftDeleteMixin):
     """
     Root of multi-tenant architecture.
     Each property developer company = one Tenant.

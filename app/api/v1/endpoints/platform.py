@@ -1,9 +1,9 @@
 import re
 import uuid
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select, func
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import select, func, update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -57,8 +57,12 @@ async def list_modules(_: User = Depends(require_platform_admin)):
 
 
 @router.get("/tenants", response_model=list[TenantAdminResponse])
-async def list_tenants(_: User = Depends(require_platform_admin), db: AsyncSession = Depends(get_db)):
-    tenants = (await db.execute(select(Tenant).order_by(Tenant.created_at.desc()))).scalars().all()
+async def list_tenants(
+    include_deleted: bool = Query(False),
+    _: User = Depends(require_platform_admin), db: AsyncSession = Depends(get_db),
+):
+    conds = [] if include_deleted else [Tenant.is_deleted == False]  # noqa: E712
+    tenants = (await db.execute(select(Tenant).where(*conds).order_by(Tenant.created_at.desc()))).scalars().all()
     return [await _to_resp(db, t) for t in tenants]
 
 
@@ -115,9 +119,58 @@ async def update_tenant(tid: uuid.UUID, payload: TenantAdminUpdate, _: User = De
         bad = [f for f in data["feature_flags"] if f not in FEATURE_MODULES]
         if bad:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=f"Modul tak dikenal: {bad}")
+    new_owner_email = data.pop("owner_email", None)  # bukan kolom Tenant — diterapkan ke User OWNER di bawah
     for f, v in data.items():
         setattr(t, f, v)
+    if new_owner_email:
+        owner = (await db.execute(
+            select(User).where(User.tenant_id == tid, User.role == UserRole.OWNER).limit(1)
+        )).scalar_one_or_none()
+        if owner is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Owner tenant tidak ditemukan")
+        if new_owner_email != owner.email:
+            dupe = (await db.execute(
+                select(User).where(User.email == new_owner_email, User.id != owner.id)
+            )).scalar_one_or_none()
+            if dupe is not None:
+                raise HTTPException(status.HTTP_409_CONFLICT, detail="Email sudah dipakai akun lain")
+            owner.email = new_owner_email
     await db.flush()
+    return await _to_resp(db, t)
+
+
+@router.delete("/tenants/{tid}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_tenant(tid: uuid.UUID, _: User = Depends(require_platform_admin), db: AsyncSession = Depends(get_db)):
+    """Soft-delete — arsipkan tenant & cabut akses login SEMUA user-nya, tapi data bisnis (proyek,
+    pembeli, pembayaran, dst) tetap tersimpan utuh di database. Bisa dipulihkan lewat /restore."""
+    t = (await db.execute(select(Tenant).where(Tenant.id == tid))).scalar_one_or_none()
+    if t is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Tenant tidak ditemukan")
+    t.is_deleted = True
+    t.deleted_at = datetime.utcnow()
+    t.is_active = False
+    await db.execute(sa_update(User).where(User.tenant_id == tid).values(is_active=False))
+    await db.flush()
+    try:
+        await regenerate_tenant_routes(db)  # cabut subdomain
+    except Exception:
+        pass
+
+
+@router.post("/tenants/{tid}/restore", response_model=TenantAdminResponse)
+async def restore_tenant(tid: uuid.UUID, _: User = Depends(require_platform_admin), db: AsyncSession = Depends(get_db)):
+    t = (await db.execute(select(Tenant).where(Tenant.id == tid))).scalar_one_or_none()
+    if t is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Tenant tidak ditemukan")
+    t.is_deleted = False
+    t.deleted_at = None
+    t.is_active = True
+    await db.execute(sa_update(User).where(User.tenant_id == tid).values(is_active=True))
+    await db.flush()
+    try:
+        await regenerate_tenant_routes(db)  # subdomain aktif lagi
+    except Exception:
+        pass
     return await _to_resp(db, t)
 
 

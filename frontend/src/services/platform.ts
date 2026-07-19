@@ -25,8 +25,8 @@ export const platformService = {
     const { data } = await api.get<string[]>('/platform/modules')
     return data
   },
-  async listTenants(): Promise<TenantAdmin[]> {
-    const { data } = await api.get<TenantAdmin[]>('/platform/tenants')
+  async listTenants(includeDeleted = false): Promise<TenantAdmin[]> {
+    const { data } = await api.get<TenantAdmin[]>('/platform/tenants', { params: { include_deleted: includeDeleted } })
     return data
   },
   async createTenant(payload: TenantProvision): Promise<TenantAdmin> {
@@ -35,6 +35,13 @@ export const platformService = {
   },
   async updateTenant(id: string, payload: TenantAdminUpdate): Promise<TenantAdmin> {
     const { data } = await api.patch<TenantAdmin>(`/platform/tenants/${id}`, payload)
+    return data
+  },
+  async deleteTenant(id: string): Promise<void> {
+    await api.delete(`/platform/tenants/${id}`)
+  },
+  async restoreTenant(id: string): Promise<TenantAdmin> {
+    const { data } = await api.post<TenantAdmin>(`/platform/tenants/${id}/restore`)
     return data
   },
   async resetOwnerPassword(id: string, newPassword: string): Promise<void> {

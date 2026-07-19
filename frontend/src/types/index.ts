@@ -55,6 +55,8 @@ export interface TenantAdmin {
   province?: string | null
   estimated_project_count?: number | null
   estimated_units_per_project?: number | null
+  is_deleted: boolean
+  deleted_at?: string | null
   created_at: string
 }
 export interface TenantProvision {
@@ -75,6 +77,7 @@ export interface TenantAdminUpdate {
   subscription_plan?: string
   expires_at?: string | null
   feature_flags?: string[] | null
+  owner_email?: string
 }
 
 export type InvoiceStatus = 'unpaid' | 'paid' | 'void'

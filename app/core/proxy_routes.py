@@ -43,7 +43,8 @@ async def regenerate_tenant_routes(db) -> bool:
     if not os.path.isdir(PROXY_DIR):
         return False  # dir proxy tak di-mount → lewati
     rows = (await db.execute(
-        select(Tenant.slug).where(Tenant.slug != "platform").order_by(Tenant.slug)
+        select(Tenant.slug).where(Tenant.slug != "platform", Tenant.is_deleted == False)  # noqa: E712
+        .order_by(Tenant.slug)
     )).all()
     slugs = [r[0] for r in rows if r[0]]
     content = _yaml_for(slugs)
