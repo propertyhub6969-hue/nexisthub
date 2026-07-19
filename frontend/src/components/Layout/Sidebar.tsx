@@ -20,70 +20,63 @@ import {
   X,
   ShieldCheck,
   Wallet,
+  type LucideIcon,
 } from 'lucide-react'
 import { clsx } from 'clsx'
 import { useAuth } from '../../context/AuthContext'
 import { canAccessPath, canAccessFeature } from '../../utils/access'
 import NexistLogo from '../ui/NexistLogo'
 
-const navItems = [
-  {
-    label: 'Dashboard',
-    icon: LayoutDashboard,
-    to: '/dashboard',
-  },
-  {
-    label: 'Marketing',
-    icon: Users,
-    children: [
-      { label: 'Leads', to: '/marketing/leads', icon: Users },
-      { label: 'Prospek', to: '/marketing/prospects', icon: UserCheck },
-      { label: 'Pembeli', to: '/marketing/clients', icon: Handshake },
-      { label: 'Pemberkasan', to: '/pemberkasan', icon: ClipboardCheck },
-    ],
-  },
-  {
-    label: 'Properti',
-    icon: Building2,
-    children: [
-      { label: 'Proyek & Unit', to: '/property/projects', icon: Building2 },
-      { label: 'Dokumen Legalitas', to: '/property/legal-docs', icon: FileCheck },
-    ],
-  },
-  {
-    label: 'Produksi',
-    icon: Factory,
-    children: [
-      { label: 'Konstruksi', to: '/construction', icon: HardHat },
-      { label: 'Procurement', to: '/procurement', icon: ShoppingCart },
-    ],
-  },
-  {
-    label: 'Setting',
-    icon: FileText,
-    children: [
-      { label: 'Master Data', to: '/legal', icon: FileText },
-    ],
-  },
-  {
-    label: 'Report',
-    icon: BarChart3,
-    children: [
-      { label: 'Report', to: '/reports', icon: BarChart3 },
-    ],
-  },
-]
+interface NavChild {
+  label: string
+  to: string
+  icon: LucideIcon
+}
 
-const settingsItem = {
-  label: 'Role',
-  icon: Settings,
+interface NavItem {
+  label: string
+  icon: LucideIcon
+  to?: string
+  children?: NavChild[]
+}
+
+const dashboardItem: NavItem = {
+  label: 'Dashboard',
+  icon: LayoutDashboard,
+  to: '/dashboard',
+}
+
+const marketingItem: NavItem = {
+  label: 'Marketing',
+  icon: Users,
   children: [
-    { label: 'Tim', to: '/settings/team', icon: UsersRound },
+    { label: 'Leads', to: '/marketing/leads', icon: Users },
+    { label: 'Prospek', to: '/marketing/prospects', icon: UserCheck },
+    { label: 'Pembeli', to: '/marketing/clients', icon: Handshake },
+    { label: 'Pemberkasan', to: '/pemberkasan', icon: ClipboardCheck },
+  ],
+}
+
+const propertiItem: NavItem = {
+  label: 'Properti',
+  icon: Building2,
+  children: [
+    { label: 'Proyek & Unit', to: '/property/projects', icon: Building2 },
+    { label: 'Dokumen Legalitas', to: '/property/legal-docs', icon: FileCheck },
+  ],
+}
+
+const produksiItem: NavItem = {
+  label: 'Produksi',
+  icon: Factory,
+  children: [
+    { label: 'Konstruksi', to: '/construction', icon: HardHat },
+    { label: 'Procurement', to: '/procurement', icon: ShoppingCart },
   ],
 }
 
 // Keuangan — hanya owner/admin/finance (persetujuan pembayaran, lihat require_role di backend)
-const financeItem = {
+const financeItem: NavItem = {
   label: 'Keuangan',
   icon: ShieldCheck,
   children: [
@@ -92,8 +85,32 @@ const financeItem = {
   ],
 }
 
+const reportItem: NavItem = {
+  label: 'Report',
+  icon: BarChart3,
+  children: [
+    { label: 'Report', to: '/reports', icon: BarChart3 },
+  ],
+}
+
+const masterDataItem: NavItem = {
+  label: 'Setting',
+  icon: FileText,
+  children: [
+    { label: 'Master Data', to: '/legal', icon: FileText },
+  ],
+}
+
+const settingsItem: NavItem = {
+  label: 'Role',
+  icon: Settings,
+  children: [
+    { label: 'Tim', to: '/settings/team', icon: UsersRound },
+  ],
+}
+
 // Control Plane — hanya super-admin platform (vendor)
-const platformItem = {
+const platformItem: NavItem = {
   label: 'Platform',
   icon: Server,
   children: [
@@ -101,7 +118,11 @@ const platformItem = {
   ],
 }
 
-const allGroups = [...navItems, settingsItem, financeItem, platformItem]
+// Urutan tampil: Dashboard, Marketing, Properti, Produksi, Keuangan, Report, Setting, Role, Platform.
+const allGroups = [
+  dashboardItem, marketingItem, propertiItem, produksiItem,
+  financeItem, reportItem, masterDataItem, settingsItem, platformItem,
+]
 
 // Grup dianggap "aktif" bila halaman yang sedang dibuka ada di dalam children-nya (termasuk sub-rute).
 function isGroupActive(item: (typeof allGroups)[number], pathname: string): boolean {
@@ -115,17 +136,19 @@ export default function Sidebar({ open = false, onClose }: { open?: boolean; onC
 
   const canManageTeam = user?.role === 'owner' || user?.role === 'admin'
   const canApprovePayments = user?.role === 'owner' || user?.role === 'admin' || user?.role === 'finance'
+  // Urutan tampil: Dashboard, Marketing, Properti, Produksi, Keuangan, Report, Setting, Role, Platform.
   const allItems = [
-    ...navItems,
+    dashboardItem, marketingItem, propertiItem, produksiItem,
     ...(canApprovePayments ? [financeItem] : []),
+    reportItem, masterDataItem,
+    ...(canManageTeam ? [settingsItem] : []),  // Role — selalu paling bawah (sebelum Platform)
     ...(user?.is_platform_admin ? [platformItem] : []),
-    ...(canManageTeam ? [settingsItem] : []),  // Role — selalu paling bawah
   ]
   // gabungan gating: akses role + feature-flag paket tenant
   const allow = (to: string) => canAccessPath(user?.role, to, user?.is_platform_admin) && canAccessFeature(user?.feature_flags, to)
   // saring menu sesuai akses role (produksi = Dashboard/Konstruksi/Procurement; role lain penuh)
   const items = allItems.filter((it) =>
-    'to' in it ? allow(it.to) : it.children.some((c) => allow(c.to))
+    it.to ? allow(it.to) : (it.children ?? []).some((c) => allow(c.to))
   )
 
   // Grup collapsible: default terbuka hanya grup berisi halaman aktif; sisanya tertutup.
