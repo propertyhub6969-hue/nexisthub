@@ -101,8 +101,8 @@ export default function PublicBankFiling() {
               <p className="text-sm text-slate-500">Status pemberkasan pembeli yang ditangani {page.bank_name} — hanya yang sedang tahap Berkas Masuk Bank. Kirim update progres — akan ditinjau developer sebelum resmi tercatat. Kalau berkas kurang atau ditolak, cukup tulis di Catatan.</p>
             </div>
 
-            <div className="card overflow-hidden">
-              <table className="w-full text-sm">
+            <div className="card overflow-x-auto">
+              <table className="w-full text-sm min-w-[1100px]">
                 <thead className="bg-slate-50 border-b border-slate-200">
                   <tr>
                     {['Pembeli', 'Unit / Proyek', 'Tahap Saat Ini', 'Plafon', 'Tenor', 'Dokumen', 'Pajak', 'Umur', 'Kirim Update', ''].map((h, i) => (
