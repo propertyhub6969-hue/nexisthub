@@ -452,15 +452,13 @@ export default function Clients() {
           </div>
           <div className="grid grid-cols-3 gap-3">
             <div>
-              <div className="flex items-center justify-between gap-2">
-                <label className="label mb-0">Harga Jual (Rp)</label>
-                {selectedFormUnit?.price != null && (
-                  <button type="button" onClick={ambilHargaUnit} className="text-xs text-brand-600 hover:underline whitespace-nowrap" title={`Harga unit terkini: ${fmt(Number(selectedFormUnit.price))}`}>
-                    Ambil harga terbaru dari unit
-                  </button>
-                )}
-              </div>
+              <label className="label">Harga Jual (Rp)</label>
               <MoneyInput value={form.contract_value} onChange={(v) => setForm({ ...form, contract_value: v })} />
+              {selectedFormUnit?.price != null && (
+                <button type="button" onClick={ambilHargaUnit} className="mt-1 text-xs text-brand-600 hover:underline" title={`Harga unit terkini: ${fmt(Number(selectedFormUnit.price))}`}>
+                  Ambil harga terbaru dari unit
+                </button>
+              )}
             </div>
             <div>
               <label className="label">Tanggal *</label>

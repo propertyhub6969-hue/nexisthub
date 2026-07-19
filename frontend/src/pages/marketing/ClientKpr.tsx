@@ -271,7 +271,9 @@ export default function ClientKpr() {
                 <p className="text-xs font-medium text-slate-400 mb-2">Berkas Masuk Bank</p>
                 <div>
                   <label className="label">Tgl Pengajuan ke Bank</label>
-                  <DateInput className="input max-w-xs" max={today()} value={kpr.bank_submission_date ?? ''} onChange={(v) => set('bank_submission_date', v)} />
+                  <div className="max-w-[240px]">
+                    <DateInput className="input" max={today()} value={kpr.bank_submission_date ?? ''} onChange={(v) => set('bank_submission_date', v)} />
+                  </div>
                 </div>
                 <p className="text-xs text-slate-400 mt-2">No. SiKasep/SiKumbang (utk subsidi) dicatat di <Link to={`/property/legal-docs`} className="text-brand-600 hover:underline">Dokumen Legalitas</Link> unit ini.</p>
 
