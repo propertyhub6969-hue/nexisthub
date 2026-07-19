@@ -9,6 +9,7 @@ import Modal from '../../components/ui/Modal'
 import Pagination from '../../components/ui/Pagination'
 import { propertyService } from '../../services/property'
 import { useAuth } from '../../context/AuthContext'
+import { hasAnyRole } from '../../utils/access'
 import { tenantLogoUrl } from '../../services/users'
 import { printBast } from '../../utils/bast'
 import type { Project, Unit, UnitCreate, UnitStatus, UnitBulkGenerate, PriceItem } from '../../types'
@@ -33,7 +34,7 @@ const emptyForm = (projectId: string): UnitCreate => ({
 export default function ProjectUnits() {
   const { projectId = '' } = useParams()
   const { user } = useAuth()
-  const canDelete = user?.role === 'owner' || user?.role === 'admin'  // hapus data properti = owner/admin
+  const canDelete = hasAnyRole(user, ['owner', 'admin'])  // hapus data properti = owner/admin
   const [project, setProject] = useState<Project | null>(null)
   const [units, setUnits] = useState<Unit[]>([])
   const [loading, setLoading] = useState(true)

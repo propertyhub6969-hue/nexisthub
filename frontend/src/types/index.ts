@@ -29,6 +29,7 @@ export interface UserResponse {
   full_name: string
   is_active: boolean
   role: UserRole
+  additional_roles?: UserRole[] | null
   is_platform_admin?: boolean
   tenant_name?: string | null
   tenant_slug?: string | null
@@ -130,6 +131,7 @@ export interface TeamMember {
   full_name: string
   phone?: string
   role: UserRole
+  additional_roles?: UserRole[] | null
   is_active: boolean
 }
 
@@ -139,12 +141,14 @@ export interface TeamMemberCreate {
   password: string
   phone?: string
   role: UserRole
+  additional_roles?: UserRole[]
 }
 
 export interface TeamMemberUpdate {
   full_name?: string
   phone?: string
   role?: UserRole
+  additional_roles?: UserRole[]
   is_active?: boolean
 }
 

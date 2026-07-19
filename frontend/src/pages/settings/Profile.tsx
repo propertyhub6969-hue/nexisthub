@@ -2,11 +2,12 @@ import { useEffect, useState, useRef } from 'react'
 import { Loader2, Building2, Upload, Trash2, ShieldAlert } from 'lucide-react'
 import { usersService, tenantLogoUrl } from '../../services/users'
 import { useAuth } from '../../context/AuthContext'
+import { hasAnyRole } from '../../utils/access'
 import type { TenantProfile, TenantProfileUpdate } from '../../types'
 
 export default function Profile() {
   const { user } = useAuth()
-  const canManage = user?.role === 'owner' || user?.role === 'admin'
+  const canManage = hasAnyRole(user, ['owner', 'admin'])
   const [profile, setProfile] = useState<TenantProfile | null>(null)
   const [form, setForm] = useState<TenantProfileUpdate>({})
   const [loading, setLoading] = useState(true)

@@ -21,15 +21,16 @@ router = APIRouter()
 ManagerDep = Depends(require_role(UserRole.OWNER, UserRole.ADMIN))
 
 
-def _assert_can_assign(actor: User, role: UserRole) -> None:
-    """Validate that `actor` is allowed to grant `role`."""
-    if role not in ASSIGNABLE_ROLES:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Role tidak dapat diberikan (OWNER hanya diset saat registrasi)",
-        )
-    # An admin may not create/appoint another admin — only the owner can.
-    if actor.role == UserRole.ADMIN and role == UserRole.ADMIN:
+def _assert_can_assign(actor: User, roles: list[UserRole]) -> None:
+    """Validate that `actor` is allowed to grant EVERY role in `roles` (peran utama + tambahan)."""
+    for role in roles:
+        if role not in ASSIGNABLE_ROLES:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Role tidak dapat diberikan (OWNER hanya diset saat registrasi)",
+            )
+    # An admin may not create/appoint another admin (baik sbg peran utama maupun tambahan) — only the owner can.
+    if actor.role == UserRole.ADMIN and UserRole.ADMIN in roles:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Hanya OWNER yang boleh mengangkat ADMIN",
@@ -48,8 +49,9 @@ def _assert_can_modify_target(actor: User, target: User) -> None:
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Akun OWNER tidak dapat diubah",
         )
-    # An admin may not modify another admin.
-    if actor.role == UserRole.ADMIN and target.role == UserRole.ADMIN:
+    # An admin may not modify another admin — cek peran EFEKTIF target (utama + tambahan),
+    # supaya proteksi ini tak bisa dilewati dgn menjadikan seseorang admin lewat peran tambahan.
+    if actor.role == UserRole.ADMIN and UserRole.ADMIN.value in target.all_roles():
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="ADMIN tidak dapat mengubah ADMIN lain",
@@ -85,7 +87,8 @@ async def create_user(
     db: AsyncSession = Depends(get_db),
 ):
     """Create a team member with an initial password (shared manually by the admin)."""
-    _assert_can_assign(actor, payload.role)
+    extra_roles = [r for r in (payload.additional_roles or []) if r != payload.role]
+    _assert_can_assign(actor, [payload.role, *extra_roles])
 
     exists = (
         await db.execute(select(User).where(User.email == payload.email))
@@ -102,6 +105,7 @@ async def create_user(
         full_name=payload.full_name,
         phone=payload.phone,
         role=payload.role,
+        additional_roles=[r.value for r in extra_roles] or None,
         tenant_id=actor.tenant_id,
         is_active=True,
     )
@@ -123,8 +127,12 @@ async def update_user(
     _assert_can_modify_target(actor, member)
 
     if payload.role is not None:
-        _assert_can_assign(actor, payload.role)
+        _assert_can_assign(actor, [payload.role])
         member.role = payload.role
+    if payload.additional_roles is not None:
+        extra_roles = [r for r in payload.additional_roles if r != member.role]
+        _assert_can_assign(actor, extra_roles)
+        member.additional_roles = [r.value for r in extra_roles] or None
     if payload.full_name is not None:
         member.full_name = payload.full_name
     if payload.phone is not None:

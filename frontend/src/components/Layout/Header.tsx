@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { Bell, ChevronDown, LogOut, Menu, CreditCard, Building2 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
+import { effectiveRoles, hasAnyRole } from '../../utils/access'
 
 interface HeaderProps {
   title: string
@@ -64,12 +65,16 @@ export default function Header({ title, onMenuClick }: HeaderProps) {
                 <p className="text-sm font-semibold text-slate-900 truncate">{user?.full_name ?? 'Pengguna'}</p>
                 <p className="text-xs text-slate-400 truncate">{user?.email}</p>
                 {user?.role && (
-                  <span className="inline-block mt-1 text-[10px] font-medium uppercase tracking-wider text-brand-600 bg-brand-50 rounded px-1.5 py-0.5">
-                    {roleLabel[user.role] ?? user.role}
-                  </span>
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    {effectiveRoles(user).map((r) => (
+                      <span key={r} className="inline-block text-[10px] font-medium uppercase tracking-wider text-brand-600 bg-brand-50 rounded px-1.5 py-0.5">
+                        {roleLabel[r] ?? r}
+                      </span>
+                    ))}
+                  </div>
                 )}
               </div>
-              {(user?.role === 'owner' || user?.role === 'admin') && !user?.is_platform_admin && (
+              {hasAnyRole(user, ['owner', 'admin']) && !user?.is_platform_admin && (
                 <>
                   <Link
                     to="/settings/profile"

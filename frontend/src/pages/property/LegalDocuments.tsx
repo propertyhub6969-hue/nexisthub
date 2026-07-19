@@ -11,6 +11,7 @@ import { kprService } from '../../services/kpr'
 import { marketingService } from '../../services/marketing'
 import { today } from '../../utils/date'
 import { useAuth } from '../../context/AuthContext'
+import { hasAnyRole } from '../../utils/access'
 import type {
   Project, Unit, DocumentItem, DocumentCreate, DocumentBulkItem, DocStatus,
   DocumentHandover, HandoverEvent, CustodyStatus, Notary, Bank, Client,
@@ -66,7 +67,7 @@ const emptyDoc = (): Omit<DocumentCreate, 'unit_id'> => ({ doc_type: '', name: '
 
 export default function LegalDocuments() {
   const { user } = useAuth()
-  const canDelete = user?.role === 'owner' || user?.role === 'admin'  // hapus dokumen legalitas = owner/admin
+  const canDelete = hasAnyRole(user, ['owner', 'admin'])  // hapus dokumen legalitas = owner/admin
   const [projects, setProjects] = useState<Project[]>([])
   const [units, setUnits] = useState<Unit[]>([])
   const [projectId, setProjectId] = useState('')

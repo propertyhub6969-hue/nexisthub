@@ -27,7 +27,7 @@ import {
 } from 'lucide-react'
 import { clsx } from 'clsx'
 import { useAuth } from '../../context/AuthContext'
-import { canAccessPath, canAccessFeature } from '../../utils/access'
+import { canAccessPath, canAccessFeature, effectiveRoles, hasAnyRole } from '../../utils/access'
 import { kprService } from '../../services/kpr'
 import NexistLogo from '../ui/NexistLogo'
 
@@ -142,8 +142,8 @@ export default function Sidebar({ open = false, onClose }: { open?: boolean; onC
   const { user } = useAuth()
   const location = useLocation()
 
-  const canManageTeam = user?.role === 'owner' || user?.role === 'admin'
-  const canApprovePayments = user?.role === 'owner' || user?.role === 'admin' || user?.role === 'finance'
+  const canManageTeam = hasAnyRole(user, ['owner', 'admin'])
+  const canApprovePayments = hasAnyRole(user, ['owner', 'admin', 'finance'])
   // Urutan tampil: Dashboard, Marketing, Properti, Produksi, Keuangan, Report, Setting, Role, Platform.
   const allItems = [
     dashboardItem, marketingItem, propertiItem, produksiItem,
@@ -153,7 +153,7 @@ export default function Sidebar({ open = false, onClose }: { open?: boolean; onC
     ...(user?.is_platform_admin ? [platformItem] : []),
   ]
   // gabungan gating: akses role + feature-flag paket tenant
-  const allow = (to: string) => canAccessPath(user?.role, to, user?.is_platform_admin) && canAccessFeature(user?.feature_flags, to)
+  const allow = (to: string) => canAccessPath(effectiveRoles(user), to, user?.is_platform_admin) && canAccessFeature(user?.feature_flags, to)
 
   // badge jumlah kiriman bank menunggu persetujuan (silent — 403/gagal cukup diabaikan, badge tetap 0)
   const [bankPendingCount, setBankPendingCount] = useState(0)

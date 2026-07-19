@@ -5,6 +5,7 @@ import Badge from '../../components/ui/Badge'
 import Modal from '../../components/ui/Modal'
 import { propertyService } from '../../services/property'
 import { useAuth } from '../../context/AuthContext'
+import { hasAnyRole } from '../../utils/access'
 import type { Project, ProjectCreate, ProjectStatus } from '../../types'
 
 const statusConfig: Record<ProjectStatus, { label: string; variant: 'blue' | 'green' | 'gray' | 'yellow' }> = {
@@ -19,7 +20,7 @@ const emptyForm: ProjectCreate = { name: '', city: '', province: '', address: ''
 export default function Projects() {
   const navigate = useNavigate()
   const { user } = useAuth()
-  const canDelete = user?.role === 'owner' || user?.role === 'admin'  // hapus data properti = owner/admin
+  const canDelete = hasAnyRole(user, ['owner', 'admin'])  // hapus data properti = owner/admin
   const [projects, setProjects] = useState<Project[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')

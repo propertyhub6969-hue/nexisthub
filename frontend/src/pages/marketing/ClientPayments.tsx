@@ -13,6 +13,7 @@ import { paymentService } from '../../services/payment'
 import { auditService } from '../../services/audit'
 import { tenantLogoUrl } from '../../services/users'
 import { useAuth } from '../../context/AuthContext'
+import { hasAnyRole } from '../../utils/access'
 import type {
   Client, Unit, PaymentSchedule, PaymentScheduleCreate, Payment, PaymentCreate,
   PaymentSummary, PaymentMethod, PaymentSource, PaymentPurpose, AuditEntry,
@@ -100,7 +101,7 @@ export default function ClientPayments() {
   const [rejectTarget, setRejectTarget] = useState<Payment | null>(null)
   const [rejectReason, setRejectReason] = useState('')
 
-  const canApprove = user?.role === 'owner' || user?.role === 'admin' || user?.role === 'finance'
+  const canApprove = hasAnyRole(user, ['owner', 'admin', 'finance'])
 
   const load = useCallback(async () => {
     setLoading(true); setError('')

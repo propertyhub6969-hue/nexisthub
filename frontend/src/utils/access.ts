@@ -13,22 +13,41 @@ const ROLE_PATHS: Partial<Record<UserRole, string[]>> = {
 const PROD_AREA = ['/construction', '/procurement']
 const PROD_ROLES: UserRole[] = ['owner', 'admin', 'manager', 'produksi']
 
-export function canAccessPath(role: UserRole | undefined, path: string, isPlatformAdmin = false): boolean {
-  // Platform admin (vendor Control Plane) — HANYA area /platform, terlepas dari role tenant dummy-nya.
-  if (isPlatformAdmin) return path.startsWith('/platform')
-  if (!role) return true
-  // Area Produksi dibatasi utk semua role (termasuk viewer) — hanya PROD_ROLES yang boleh.
-  if (PROD_AREA.some((p) => path.startsWith(p))) return PROD_ROLES.includes(role)
-  // Role dgn allow-list eksplisit (produksi/marketing) — selain area Produksi, ikuti daftarnya.
-  const allowed = ROLE_PATHS[role]
-  if (allowed) return allowed.some((p) => path.startsWith(p))
-  return true // owner/admin/manager/viewer: penuh utk menu selain area Produksi
+// ── Multi-role: user boleh punya peran utama (`role`) + peran tambahan opsional
+// (`additional_roles`, mis. staf marketing yg juga pegang produksi). Akses = GABUNGAN
+// (union) hak akses semua perannya, bukan cuma peran utama. Dua helper ini jadi satu
+// pintu masuk supaya tak ada tempat lain yg lupa ikut peran tambahan. ──
+type RoleBearer = { role?: UserRole; additional_roles?: UserRole[] | null } | null | undefined
+
+export function effectiveRoles(user: RoleBearer): UserRole[] {
+  if (!user?.role) return []
+  return [user.role, ...(user.additional_roles ?? [])]
 }
 
-// Halaman default (landing/redirect) per role — harus berupa path yang boleh diakses role itu.
-export function defaultPathFor(role: UserRole | undefined, isPlatformAdmin = false): string {
+export function hasAnyRole(user: RoleBearer, roles: UserRole[]): boolean {
+  return effectiveRoles(user).some((r) => roles.includes(r))
+}
+
+export function canAccessPath(roles: UserRole[] | undefined, path: string, isPlatformAdmin = false): boolean {
+  // Platform admin (vendor Control Plane) — HANYA area /platform, terlepas dari role tenant dummy-nya.
+  if (isPlatformAdmin) return path.startsWith('/platform')
+  if (!roles || roles.length === 0) return true
+  // Area Produksi dibatasi utk semua role (termasuk viewer) — hanya PROD_ROLES yang boleh (salah satu peran user cukup).
+  if (PROD_AREA.some((p) => path.startsWith(p))) return roles.some((r) => PROD_ROLES.includes(r))
+  // Kalau salah satu peran user TANPA allow-list eksplisit (owner/admin/manager/viewer) → akses penuh.
+  if (roles.some((r) => !ROLE_PATHS[r])) return true
+  // Semua peran user dibatasi (produksi/marketing dsb) → gabungan (union) allow-list semua perannya.
+  return roles.some((r) => (ROLE_PATHS[r] ?? []).some((p) => path.startsWith(p)))
+}
+
+// Halaman default (landing/redirect) per role — harus berupa path yang boleh diakses gabungan peran itu.
+export function defaultPathFor(roles: UserRole[] | undefined, isPlatformAdmin = false): string {
   if (isPlatformAdmin) return '/platform/tenants'
-  if (role === 'marketing') return '/marketing/leads'
+  if (roles && roles.length > 0 && !roles.some((r) => !ROLE_PATHS[r])) {
+    // semua peran user dibatasi (tak ada yg akses penuh) — cari landing yg boleh diakses gabungan perannya
+    if (canAccessPath(roles, '/dashboard')) return '/dashboard'
+    if (roles.includes('marketing')) return '/marketing/leads'
+  }
   return '/dashboard'
 }
 

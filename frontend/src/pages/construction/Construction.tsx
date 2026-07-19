@@ -10,6 +10,7 @@ import { constructionService } from '../../services/construction'
 import { propertyService } from '../../services/property'
 import { procurementService } from '../../services/procurement'
 import { useAuth } from '../../context/AuthContext'
+import { hasAnyRole } from '../../utils/access'
 import { tenantLogoUrl } from '../../services/users'
 import { printPengajuan } from '../../utils/pengajuan'
 import type {
@@ -106,7 +107,7 @@ export default function Construction() {
 
   // pengajuan pembayaran (level proyek)
   const { user } = useAuth()
-  const canPay = user?.role === 'owner' || user?.role === 'admin' || user?.role === 'manager'
+  const canPay = hasAnyRole(user, ['owner', 'admin', 'manager'])
   const [pengModal, setPengModal] = useState(false)
   const [pending, setPending] = useState<PendingOpname[]>([])
   const [pengLoading, setPengLoading] = useState(false)

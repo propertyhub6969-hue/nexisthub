@@ -41,6 +41,7 @@ class UserResponse(BaseModel):
     full_name: str
     is_active: bool
     role: UserRole
+    additional_roles: Optional[List[UserRole]] = None
     is_platform_admin: bool = False
     # Konteks tenant (untuk gating FE) — None feature_flags = semua modul aktif
     tenant_name: Optional[str] = None

@@ -4,6 +4,7 @@ import Badge from '../../components/ui/Badge'
 import Modal from '../../components/ui/Modal'
 import { usersService } from '../../services/users'
 import { useAuth } from '../../context/AuthContext'
+import { hasAnyRole } from '../../utils/access'
 import type { TeamMember, TeamMemberCreate, UserRole } from '../../types'
 
 const roleConfig: Record<UserRole, { label: string; variant: 'orange' | 'blue' | 'green' | 'gray' | 'yellow' }> = {
@@ -22,7 +23,7 @@ function assignableRoles(actorRole?: UserRole): UserRole[] {
   return ['manager', 'produksi', 'marketing', 'finance', 'viewer'] // admin cannot appoint admins
 }
 
-const emptyCreate: TeamMemberCreate = { email: '', full_name: '', password: '', phone: '', role: 'marketing' }
+const emptyCreate: TeamMemberCreate = { email: '', full_name: '', password: '', phone: '', role: 'marketing', additional_roles: [] }
 
 export default function Team() {
   const { user } = useAuth()
@@ -40,7 +41,7 @@ export default function Team() {
   const [resetSaving, setResetSaving] = useState(false)
   const [resetMsg, setResetMsg] = useState('')
 
-  const canManage = user?.role === 'owner' || user?.role === 'admin'
+  const canManage = hasAnyRole(user, ['owner', 'admin'])
   const roles = assignableRoles(user?.role)
 
   const load = useCallback(async () => {
@@ -64,19 +65,21 @@ export default function Team() {
   function canModify(m: TeamMember): boolean {
     if (m.id === user?.id) return false        // not yourself
     if (m.role === 'owner') return false        // owner is protected
-    if (user?.role === 'admin' && m.role === 'admin') return false // admin can't touch admin
+    // admin can't touch admin — cek peran EFEKTIF target (utama + tambahan), supaya tak bisa
+    // dilewati dgn menjadikan seseorang admin lewat peran tambahan (samakan dgn backend).
+    if (hasAnyRole(user, ['admin']) && hasAnyRole(m, ['admin'])) return false
     return true
   }
 
   function openCreate() {
     setEditingId(null)
-    setForm({ ...emptyCreate, role: roles[0] })
+    setForm({ ...emptyCreate, role: roles[0], additional_roles: [] })
     setModalOpen(true)
   }
 
   function openEdit(m: TeamMember) {
     setEditingId(m.id)
-    setForm({ email: m.email, full_name: m.full_name, password: '', phone: m.phone ?? '', role: m.role })
+    setForm({ email: m.email, full_name: m.full_name, password: '', phone: m.phone ?? '', role: m.role, additional_roles: m.additional_roles ?? [] })
     setModalOpen(true)
   }
 
@@ -91,11 +94,13 @@ export default function Team() {
     setSaving(true)
     setError('')
     try {
+      const additionalRoles = (form.additional_roles ?? []).filter((r) => r !== form.role)
       if (editingId) {
         await usersService.update(editingId, {
           full_name: form.full_name,
           phone: form.phone || undefined,
           role: form.role,
+          additional_roles: additionalRoles,
         })
       } else {
         await usersService.create({
@@ -104,6 +109,7 @@ export default function Team() {
           password: form.password,
           phone: form.phone || undefined,
           role: form.role,
+          additional_roles: additionalRoles,
         })
       }
       closeModal()
@@ -201,7 +207,14 @@ export default function Team() {
                     </td>
                     <td className="px-4 py-3 text-slate-500">{m.email}</td>
                     <td className="px-4 py-3 text-slate-500">{m.phone || '—'}</td>
-                    <td className="px-4 py-3"><Badge label={rc.label} variant={rc.variant} /></td>
+                    <td className="px-4 py-3">
+                      <div className="flex flex-wrap gap-1">
+                        <Badge label={rc.label} variant={rc.variant} />
+                        {(m.additional_roles ?? []).map((r) => (
+                          <Badge key={r} label={`+ ${roleConfig[r].label}`} variant={roleConfig[r].variant} />
+                        ))}
+                      </div>
+                    </td>
                     <td className="px-4 py-3">
                       <Badge label={m.is_active ? 'Aktif' : 'Nonaktif'} variant={m.is_active ? 'green' : 'gray'} />
                     </td>
@@ -264,10 +277,28 @@ export default function Team() {
               <input className="input" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
             </div>
             <div>
-              <label className="label">Peran *</label>
-              <select className="input" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value as UserRole })}>
+              <label className="label">Peran Utama *</label>
+              <select className="input" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value as UserRole, additional_roles: (form.additional_roles ?? []).filter((r) => r !== e.target.value) })}>
                 {roles.map((r) => <option key={r} value={r}>{roleConfig[r].label}</option>)}
               </select>
+            </div>
+          </div>
+          <div>
+            <label className="label">Peran Tambahan <span className="font-normal text-slate-400">(opsional — utk staf rangkap tugas)</span></label>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+              {roles.filter((r) => r !== form.role).map((r) => {
+                const checked = (form.additional_roles ?? []).includes(r)
+                return (
+                  <label key={r} className="flex items-center gap-1.5 text-sm text-slate-600">
+                    <input type="checkbox" checked={checked}
+                      onChange={() => setForm((f) => ({
+                        ...f,
+                        additional_roles: checked ? (f.additional_roles ?? []).filter((x) => x !== r) : [...(f.additional_roles ?? []), r],
+                      }))} />
+                    {roleConfig[r].label}
+                  </label>
+                )
+              })}
             </div>
           </div>
           <div className="flex justify-end gap-2 pt-2">

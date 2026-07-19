@@ -5,7 +5,7 @@ import Sidebar from './Sidebar'
 import Header from './Header'
 import { useAuth } from '../../context/AuthContext'
 import { billingService } from '../../services/billing'
-import { canAccessPath, canAccessFeature, defaultPathFor } from '../../utils/access'
+import { canAccessPath, canAccessFeature, defaultPathFor, effectiveRoles } from '../../utils/access'
 
 const pageTitles: Record<string, string> = {
   '/dashboard': 'Dashboard',
@@ -43,8 +43,9 @@ export default function DashboardLayout() {
   useEffect(() => {
     if (user && !user.is_platform_admin) billingService.subscription().then((s) => setDaysLeft(s.days_left ?? null)).catch(() => {})
   }, [user])
-  // cegah role terbatas (produksi/marketing) buka menu di luar haknya → redirect ke halaman default role-nya
-  if (user && !canAccessPath(user.role, pathname, user.is_platform_admin)) return <Navigate to={defaultPathFor(user.role, user.is_platform_admin)} replace />
+  // cegah role terbatas (produksi/marketing) buka menu di luar haknya → redirect ke halaman default gabungan role-nya
+  const roles = effectiveRoles(user)
+  if (user && !canAccessPath(roles, pathname, user.is_platform_admin)) return <Navigate to={defaultPathFor(roles, user.is_platform_admin)} replace />
   // modul dimatikan paket langganan → tendang ke dashboard
   if (user && !canAccessFeature(user.feature_flags, pathname)) return <Navigate to="/dashboard" replace />
   const title = pageTitles[pathname]

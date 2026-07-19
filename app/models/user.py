@@ -2,7 +2,7 @@ import uuid
 import enum
 from sqlalchemy import String, Boolean, ForeignKey, Enum as SAEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import UUID, JSONB
 from app.models.base import BaseModel
 
 
@@ -35,10 +35,13 @@ class User(BaseModel):
     # Platform super-admin (vendor-side Control Plane) — lintas-tenant, BUKAN role tenant biasa
     is_platform_admin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
-    # Role
+    # Role — `role` = peran UTAMA (menentukan halaman default, dilindungi utk OWNER, dst).
+    # `additional_roles` = peran TAMBAHAN opsional utk staf rangkap tugas (mis. marketing
+    # yg juga pegang produksi) — akumulatif dgn `role`, bukan pengganti. None/[] = tak ada tambahan.
     role: Mapped[UserRole] = mapped_column(
         SAEnum(UserRole), default=UserRole.MARKETING, nullable=False
     )
+    additional_roles: Mapped[list] = mapped_column(JSONB, nullable=True)
 
     # Multi-tenant FK
     tenant_id: Mapped[uuid.UUID] = mapped_column(
@@ -50,6 +53,10 @@ class User(BaseModel):
 
     # Relationships
     tenant: Mapped["Tenant"] = relationship("Tenant", back_populates="users")
+
+    def all_roles(self) -> set:
+        """Gabungan peran utama + tambahan (dipakai semua pengecekan akses)."""
+        return {self.role.value} | set(self.additional_roles or [])
 
     def __repr__(self) -> str:
         return f"<User {self.email} [{self.role}]>"

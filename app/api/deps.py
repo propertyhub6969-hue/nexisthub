@@ -92,9 +92,11 @@ async def get_current_user(
 
 
 def require_role(*roles: UserRole):
-    """Dependency factory: allow only the given roles. Returns the loaded User."""
+    """Dependency factory: allow bila peran UTAMA *atau salah satu* peran TAMBAHAN user
+    termasuk `roles`. Returns the loaded User."""
+    allowed = {r.value for r in roles}
     async def checker(user: User = Depends(get_current_user)) -> User:
-        if user.role not in roles:
+        if not (allowed & user.all_roles()):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Anda tidak memiliki akses untuk aksi ini",
@@ -133,11 +135,12 @@ def guard(*write_roles: UserRole, read: tuple = ()):
     - read: role tambahan yang HANYA boleh baca (GET/HEAD/OPTIONS).
     Role di luar keduanya → 403. Isolasi antar-tenant tetap via tenant_id di query.
     """
-    read_roles = set(write_roles) | set(read)
+    read_roles = {r.value for r in (set(write_roles) | set(read))}
+    write_role_values = {r.value for r in write_roles}
 
     async def checker(request: Request, user: User = Depends(get_current_user)) -> None:
-        allowed = read_roles if request.method in ("GET", "HEAD", "OPTIONS") else set(write_roles)
-        if user.role not in allowed:
+        allowed = read_roles if request.method in ("GET", "HEAD", "OPTIONS") else write_role_values
+        if not (allowed & user.all_roles()):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Role Anda tidak memiliki akses untuk aksi ini",
