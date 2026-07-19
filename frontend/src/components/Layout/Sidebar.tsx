@@ -117,9 +117,9 @@ export default function Sidebar({ open = false, onClose }: { open?: boolean; onC
   const canApprovePayments = user?.role === 'owner' || user?.role === 'admin' || user?.role === 'finance'
   const allItems = [
     ...navItems,
-    ...(canManageTeam ? [settingsItem] : []),
     ...(canApprovePayments ? [financeItem] : []),
     ...(user?.is_platform_admin ? [platformItem] : []),
+    ...(canManageTeam ? [settingsItem] : []),  // Role — selalu paling bawah
   ]
   // gabungan gating: akses role + feature-flag paket tenant
   const allow = (to: string) => canAccessPath(user?.role, to, user?.is_platform_admin) && canAccessFeature(user?.feature_flags, to)
