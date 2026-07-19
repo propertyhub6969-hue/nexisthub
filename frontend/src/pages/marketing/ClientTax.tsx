@@ -1,17 +1,19 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { today } from '../../utils/date'
 import { useParams, Link } from 'react-router-dom'
-import { ArrowLeft, Plus, Trash2, Pencil, Loader2, Receipt, Scale, FileText, Upload, Eye, Contact, FileSignature, ListChecks, Paperclip, X } from 'lucide-react'
+import { ArrowLeft, Plus, Trash2, Pencil, Loader2, Receipt, Scale, FileText, Upload, Eye, Contact, FileSignature, ListChecks, Paperclip, X, ArrowLeftRight } from 'lucide-react'
 import Badge from '../../components/ui/Badge'
 import DateInput from '../../components/ui/DateInput'
 import MoneyInput from '../../components/ui/MoneyInput'
 import Modal from '../../components/ui/Modal'
+import SignaturePad from '../../components/ui/SignaturePad'
 import { marketingService } from '../../services/marketing'
 import { taxService } from '../../services/tax'
 import { documentService } from '../../services/document'
+import { kprService } from '../../services/kpr'
 import type {
-  Client, Notary, TaxRecord, TaxCreate, TaxBulkItem, TaxType, TaxStatus, SaleCategory, NotaryFee, NotaryFeeCreate,
-  DocumentItem, DocumentCreate, DocumentBulkItem, DocStatus,
+  Client, Notary, TaxRecord, TaxCreate, TaxBulkItem, TaxType, TaxStatus, SaleCategory, NotaryFee, NotaryFeeCreate, FeeBulkItem,
+  DocumentItem, DocumentCreate, DocumentBulkItem, DocStatus, Bank, DocumentHandover, HandoverEvent,
 } from '../../types'
 
 // Berkas Pembeli = dokumen identitas melekat ke pembeli (client_id).
@@ -30,6 +32,10 @@ interface TaxRow {
 }
 const TAX_TYPES: TaxType[] = ['pph', 'bphtb', 'ppn']
 
+// Checklist entry cepat biaya notaris (uraian umum utk jual-beli properti)
+const FEE_CHECKLIST = ['Jasa PPJB', 'Jasa AJB', 'Balik Nama (BBN)', 'Cek Sertifikat', 'Jasa APHT (KPR)']
+interface FeeRow { include: boolean; description: string; amount?: number; fee_date: string; notary_id: string; is_paid: boolean; custom?: boolean }
+
 const docStatusCfg: Record<DocStatus, { label: string; variant: 'gray' | 'yellow' | 'green' }> = {
   belum:  { label: 'Belum Ada', variant: 'gray' },
   proses: { label: 'Proses',    variant: 'yellow' },
@@ -38,6 +44,26 @@ const docStatusCfg: Record<DocStatus, { label: string; variant: 'gray' | 'yellow
 
 const fmt = (n?: number) => n == null ? '—' : new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(Number(n))
 const fmtDate = (d?: string) => d ? new Date(d).toLocaleDateString('id-ID') : '—'
+
+// ── Serah-terima dokumen ASLI (fisik) — sama seperti di menu Properti → Dokumen Legalitas,
+// dimunculkan juga di sini supaya staf tak perlu pindah halaman saat menangani KPR pembeli ini.
+const NOTARIS_ALERT_DAYS = 30
+const custodyCfg: Record<string, { label: string; variant: 'gray' | 'yellow' | 'green' | 'blue' }> = {
+  arsip:   { label: 'Di arsip',           variant: 'green' },
+  diambil: { label: 'Diambil',            variant: 'yellow' },
+  notaris: { label: 'Di notaris',         variant: 'yellow' },
+  pembeli: { label: 'Diterima pembeli',   variant: 'green' },
+  bank:    { label: 'Diserahkan ke bank', variant: 'blue' },
+}
+const eventCfg: Record<HandoverEvent, string> = {
+  ambil:          'Diambil dari arsip',
+  serah_notaris:  'Diserahkan ke notaris',
+  terima_pembeli: 'Diterima pembeli (cash)',
+  tahan_bank:     'Diserahkan ke bank (KPR/agunan)',
+  kembali_arsip:  'Kembali ke arsip',
+}
+const daysSince = (d?: string) => d ? Math.max(0, Math.floor((Date.now() - new Date(d).getTime()) / 86400000)) : 0
+const isOverdueNotaris = (d: DocumentItem) => d.custody_status === 'notaris' && daysSince(d.custody_since) > NOTARIS_ALERT_DAYS
 
 const taxTypeLabel: Record<TaxType, string> = { pph: 'PPh Final', bphtb: 'BPHTB', ppn: 'PPN' }
 const taxStatusCfg: Record<TaxStatus, { label: string; variant: 'gray' | 'blue' | 'green' | 'orange' }> = {
@@ -109,6 +135,11 @@ export default function ClientTax() {
   const [feeForm, setFeeForm] = useState<NotaryFeeCreate>(emptyFee(clientId))
   const [feeEditId, setFeeEditId] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  // entry cepat biaya notaris
+  const [feeChecklistModal, setFeeChecklistModal] = useState(false)
+  const [feeRows, setFeeRows] = useState<FeeRow[]>([])
+  const [feeChecklistSaving, setFeeChecklistSaving] = useState(false)
+  const [feeChecklistMsg, setFeeChecklistMsg] = useState('')
 
   const [ppjbNumber, setPpjbNumber] = useState('')
   const [ajbNumber, setAjbNumber] = useState('')
@@ -117,14 +148,24 @@ export default function ClientTax() {
   const ppjbFileInput = useRef<HTMLInputElement | null>(null)
   const ajbFileInput = useRef<HTMLInputElement | null>(null)
 
+  // Serah-terima dokumen ASLI (fisik) — termasuk ke bank, sama seperti di Dokumen Legalitas
+  const [banks, setBanks] = useState<Bank[]>([])
+  const [custodyModal, setCustodyModal] = useState(false)
+  const [custodyDoc, setCustodyDoc] = useState<DocumentItem | null>(null)
+  const [handovers, setHandovers] = useState<DocumentHandover[]>([])
+  const [hLoading, setHLoading] = useState(false)
+  const [hSaving, setHSaving] = useState(false)
+  const [hForm, setHForm] = useState<{ event: HandoverEvent; at: string; notary_id: string; bank_id: string; received_by: string; signature: string; notes: string }>({ event: 'ambil', at: '', notary_id: '', bank_id: '', received_by: '', signature: '', notes: '' })
+  const [hFile, setHFile] = useState<File | null>(null)
+
   const load = useCallback(async () => {
     setLoading(true); setError('')
     try {
-      const [cl, no, tx, fe, dc] = await Promise.all([
-        marketingService.getClient(clientId), taxService.listNotaries(),
+      const [cl, no, bk, tx, fe, dc] = await Promise.all([
+        marketingService.getClient(clientId), taxService.listNotaries(), kprService.listBanks(),
         taxService.listTax(clientId), taxService.listFees(clientId), documentService.list(clientId),
       ])
-      setClient(cl); setNotaries(no); setTaxes(tx); setFees(fe); setDocs(dc)
+      setClient(cl); setNotaries(no); setBanks(bk); setTaxes(tx); setFees(fe); setDocs(dc)
       setPpjbNumber(cl.ppjb_number ?? ''); setAjbNumber(cl.ajb_number ?? '')
       // Dokumen legalitas otomatis diambil dari unit pembeli (dikelola di menu Dokumen Legalitas)
       setUnitDocs(cl.unit_id ? await documentService.listByUnit(cl.unit_id) : [])
@@ -215,6 +256,44 @@ export default function ClientTax() {
     catch { setError('Gagal upload file (maks 10 MB).') } finally { setUploadingId(null) }
   }
   const notaryName = (id?: string) => notaries.find((n) => n.id === id)?.name
+
+  // ── Serah-terima dokumen ASLI (fisik) ──
+  async function openCustody(d: DocumentItem) {
+    setCustodyDoc(d); setHFile(null); setHLoading(true); setCustodyModal(true)
+    setHForm({ event: 'ambil', at: today(), notary_id: '', bank_id: '', received_by: '', signature: '', notes: '' })
+    try { setHandovers(await documentService.listHandovers(d.id)) }
+    catch { setError('Gagal memuat riwayat serah-terima.') } finally { setHLoading(false) }
+  }
+  async function submitHandover(e: React.FormEvent) {
+    e.preventDefault(); if (!custodyDoc) return
+    setHSaving(true); setError('')
+    try {
+      const p = {
+        event: hForm.event,
+        at: hForm.at || undefined,
+        notary_id: hForm.event === 'serah_notaris' ? hForm.notary_id : undefined,
+        bank_id: hForm.event === 'tahan_bank' ? hForm.bank_id : undefined,
+        client_id: hForm.event === 'terima_pembeli' ? clientId : undefined,
+        received_by: hForm.received_by || undefined,
+        signature: hForm.signature || undefined,
+        notes: hForm.notes || undefined,
+      }
+      const created = await documentService.addHandover(custodyDoc.id, p)
+      if (hFile) await documentService.uploadProof(created.id, hFile)
+      setHandovers(await documentService.listHandovers(custodyDoc.id))
+      setHFile(null); setHForm((f) => ({ ...f, notes: '', signature: '' }))
+      setUnitDocs(client?.unit_id ? await documentService.listByUnit(client.unit_id) : [])
+    } catch { setError('Gagal mencatat serah-terima (cek tujuan wajib diisi).') } finally { setHSaving(false) }
+  }
+  async function delHandover(id: string) {
+    if (!custodyDoc) return
+    if (!confirm('Hapus catatan serah-terima ini?')) return
+    try {
+      await documentService.deleteHandover(id)
+      setHandovers(await documentService.listHandovers(custodyDoc.id))
+      setUnitDocs(client?.unit_id ? await documentService.listByUnit(client.unit_id) : [])
+    } catch { setError('Gagal menghapus catatan (hanya owner/admin).') }
+  }
 
   // tax handlers
   function openTaxCreate() {
@@ -350,6 +429,39 @@ export default function ClientTax() {
     try { await taxService.deleteFee(id); await reload() } catch { setError('Gagal menghapus.') }
   }
 
+  // ── Entry cepat biaya notaris (checklist Jasa PPJB/AJB/BBN dst) ──
+  function openFeeChecklist() {
+    const existing = new Set(fees.map((f) => f.description.trim().toLowerCase()))
+    const preset: FeeRow[] = FEE_CHECKLIST
+      .filter((d) => !existing.has(d.trim().toLowerCase()))
+      .map((d) => ({ include: false, description: d, amount: undefined, fee_date: '', notary_id: '', is_paid: false }))
+    setFeeRows(preset.length ? preset : [{ include: true, description: '', amount: undefined, fee_date: '', notary_id: '', is_paid: false, custom: true }])
+    setFeeChecklistMsg(''); setFeeChecklistModal(true)
+  }
+  function setFeeRow(i: number, patch: Partial<FeeRow>) {
+    setFeeRows((prev) => prev.map((r, idx) => (idx === i ? { ...r, ...patch } : r)))
+  }
+  function addFeeRow() {
+    setFeeRows((prev) => [...prev, { include: true, description: '', amount: undefined, fee_date: '', notary_id: '', is_paid: false, custom: true }])
+  }
+  async function submitFeeChecklist(e: React.FormEvent) {
+    e.preventDefault()
+    const filled = feeRows.filter((r) => r.include && r.description.trim() && r.amount)
+    if (filled.length === 0) { setFeeChecklistMsg('Centang minimal satu baris & isi nominalnya.'); return }
+    setFeeChecklistSaving(true); setError('')
+    try {
+      const items: FeeBulkItem[] = filled.map((r) => {
+        const it: FeeBulkItem = { description: r.description.trim(), amount: r.amount as number, is_paid: r.is_paid }
+        if (r.fee_date) it.fee_date = r.fee_date
+        if (r.notary_id) it.notary_id = r.notary_id
+        return it
+      })
+      await taxService.bulkCreateFees({ client_id: clientId, items })
+      await reload()
+      setFeeChecklistModal(false)
+    } catch { setError('Gagal menyimpan biaya notaris.') } finally { setFeeChecklistSaving(false) }
+  }
+
   // PPJB & AJB handlers
   async function saveDeedNumbers() {
     setSavingDeed(true); setError('')
@@ -373,16 +485,17 @@ export default function ClientTax() {
 
   if (loading) return <div className="py-16 text-center text-slate-400"><Loader2 size={20} className="inline animate-spin" /></div>
 
-  function docTable(list: DocumentItem[], emptyMsg: string, readOnly = false) {
+  function docTable(list: DocumentItem[], emptyMsg: string, readOnly = false, withCustody = false) {
+    const cols = ['Jenis', 'Nomor', 'Status', 'File', ...(withCustody ? ['Posisi Asli'] : []), ...(readOnly && !withCustody ? [] : [''])]
     return (
       <table className="w-full text-sm">
         <thead className="bg-slate-50 border-b border-slate-200">
-          <tr>{['Jenis', 'Nomor', 'Status', 'File', ...(readOnly ? [] : [''])].map((h, i) => (
+          <tr>{cols.map((h, i) => (
             <th key={i} className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">{h}</th>))}</tr>
         </thead>
         <tbody className="divide-y divide-slate-100">
           {list.length === 0 ? (
-            <tr><td colSpan={readOnly ? 4 : 5} className="px-4 py-6 text-center text-slate-400 text-sm">{emptyMsg}</td></tr>
+            <tr><td colSpan={cols.length} className="px-4 py-6 text-center text-slate-400 text-sm">{emptyMsg}</td></tr>
           ) : list.map((d) => {
             const st = docStatusCfg[d.status]
             return (
@@ -404,11 +517,37 @@ export default function ClientTax() {
                     )}
                   </div>
                 </td>
-                {!readOnly && (
+                {withCustody && (
+                  <td className="px-4 py-2.5">
+                    {(() => {
+                      const cs = d.custody_status ?? 'arsip'
+                      const cc = custodyCfg[cs]
+                      const late = isOverdueNotaris(d)
+                      return (
+                        <button type="button" onClick={() => openCustody(d)} className="text-left group" title="Catat / lihat serah-terima dokumen asli">
+                          <Badge label={cc.label} variant={late ? 'red' : cc.variant} />
+                          {d.custody_holder && (
+                            <div className="text-[11px] text-slate-500 mt-0.5 group-hover:text-brand-600">
+                              {d.custody_holder}{d.custody_since ? ` · ${daysSince(d.custody_since)} hari` : ''}
+                            </div>
+                          )}
+                        </button>
+                      )
+                    })()}
+                  </td>
+                )}
+                {(!readOnly || withCustody) && (
                   <td className="px-4 py-2.5">
                     <div className="flex items-center justify-end gap-3">
-                      <button onClick={() => openDocEdit(d)} className="text-slate-400 hover:text-brand-600" title="Edit"><Pencil size={14} /></button>
-                      <button onClick={() => delDoc(d.id)} className="text-slate-400 hover:text-red-600" title="Hapus"><Trash2 size={14} /></button>
+                      {withCustody && (
+                        <button type="button" onClick={() => openCustody(d)} className="text-slate-400 hover:text-brand-600" title="Serah-terima dokumen asli"><ArrowLeftRight size={14} /></button>
+                      )}
+                      {!readOnly && (
+                        <>
+                          <button onClick={() => openDocEdit(d)} className="text-slate-400 hover:text-brand-600" title="Edit"><Pencil size={14} /></button>
+                          <button onClick={() => delDoc(d.id)} className="text-slate-400 hover:text-red-600" title="Hapus"><Trash2 size={14} /></button>
+                        </>
+                      )}
                     </div>
                   </td>
                 )}
@@ -455,7 +594,7 @@ export default function ClientTax() {
         </div>
         {!client?.unit_id
           ? <p className="px-4 py-6 text-center text-slate-400 text-sm">Pembeli belum terhubung ke unit — dokumen legalitas mengikuti unit.</p>
-          : docTable(unitDocs, 'Belum ada dokumen legalitas untuk unit ini. Tambahkan di menu Properti → Dokumen Legalitas.', true)}
+          : docTable(unitDocs, 'Belum ada dokumen legalitas untuk unit ini. Tambahkan di menu Properti → Dokumen Legalitas.', true, true)}
       </div>
 
       {/* PPJB & AJB */}
@@ -598,7 +737,10 @@ export default function ClientTax() {
       <div className="card overflow-hidden">
         <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
           <h2 className="text-sm font-semibold text-slate-900 flex items-center gap-2"><Scale size={15} /> Biaya Notaris {totalFee > 0 && <span className="text-slate-400 font-normal">· total {fmt(totalFee)}</span>}</h2>
-          <button className="btn-primary text-xs flex items-center gap-1" onClick={openFeeCreate}><Plus size={13} /> Tambah Biaya</button>
+          <div className="flex items-center gap-2">
+            <button className="btn-secondary text-xs flex items-center gap-1" onClick={openFeeChecklist}><ListChecks size={13} /> Entry Cepat</button>
+            <button className="btn-primary text-xs flex items-center gap-1" onClick={openFeeCreate}><Plus size={13} /> Tambah Biaya</button>
+          </div>
         </div>
         <table className="w-full text-sm">
           <thead className="bg-slate-50 border-b border-slate-200">
@@ -881,6 +1023,167 @@ export default function ClientTax() {
             <button type="submit" className="btn-primary text-sm flex items-center gap-2" disabled={saving}>{saving && <Loader2 size={14} className="animate-spin" />}Simpan</button>
           </div>
         </form>
+      </Modal>
+
+      {/* Modal Entry Cepat Biaya Notaris */}
+      <Modal open={feeChecklistModal} onClose={() => setFeeChecklistModal(false)} title="Entry Cepat Biaya Notaris" size="lg">
+        <form onSubmit={submitFeeChecklist} className="space-y-3">
+          <p className="text-sm text-slate-500">
+            Isi beberapa rincian biaya notaris sekaligus untuk <b>{client?.full_name}</b>. Centang uraian yang berlaku & isi nominalnya — baris akan disimpan sebagai rincian baru.
+          </p>
+          <div className="space-y-2">
+            {feeRows.map((r, i) => (
+              <div key={i} className={`rounded-lg border p-3 space-y-2 ${r.include ? 'border-brand-200 bg-brand-50/30' : 'border-slate-200'}`}>
+                <div className="flex items-center gap-2">
+                  <input type="checkbox" checked={r.include} onChange={(e) => setFeeRow(i, { include: e.target.checked })} />
+                  {r.custom ? (
+                    <input className="input flex-1" placeholder="Uraian biaya..." value={r.description} onChange={(e) => setFeeRow(i, { description: e.target.value })} />
+                  ) : (
+                    <span className="font-medium text-slate-800 text-sm flex-1">{r.description}</span>
+                  )}
+                  <button type="button" onClick={() => setFeeRows((prev) => prev.filter((_, idx) => idx !== i))} className="text-slate-400 hover:text-red-600" title="Hapus baris"><X size={15} /></button>
+                </div>
+                {r.include && (
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pl-6">
+                    <div>
+                      <label className="label text-xs">Nominal (Rp)</label>
+                      <MoneyInput className="input text-sm" value={r.amount} onChange={(v) => setFeeRow(i, { amount: v })} />
+                    </div>
+                    <div>
+                      <label className="label text-xs">Tanggal</label>
+                      <DateInput className="input text-sm" max={today()} value={r.fee_date} onChange={(v) => setFeeRow(i, { fee_date: v })} />
+                    </div>
+                    <div>
+                      <label className="label text-xs">Notaris</label>
+                      <select className="input text-sm" value={r.notary_id} onChange={(e) => setFeeRow(i, { notary_id: e.target.value })}>
+                        <option value="">— pilih —</option>
+                        {notaries.map((n) => <option key={n.id} value={n.id}>{n.name}</option>)}
+                      </select>
+                    </div>
+                    <div className="flex items-end pb-2">
+                      <label className="flex items-center gap-2 text-sm text-slate-600">
+                        <input type="checkbox" checked={r.is_paid} onChange={(e) => setFeeRow(i, { is_paid: e.target.checked })} /> Sudah dibayar
+                      </label>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+          <button type="button" onClick={addFeeRow} className="text-sm text-brand-600 hover:underline flex items-center gap-1"><Plus size={13} /> Tambah baris biaya</button>
+          {feeChecklistMsg && <div className="rounded-lg bg-amber-50 border border-amber-200 text-amber-700 text-sm px-3 py-2">{feeChecklistMsg}</div>}
+          <div className="flex justify-end gap-2 pt-1">
+            <button type="button" className="btn-secondary text-sm" onClick={() => setFeeChecklistModal(false)}>Batal</button>
+            <button type="submit" className="btn-primary text-sm flex items-center gap-2" disabled={feeChecklistSaving}>
+              {feeChecklistSaving && <Loader2 size={14} className="animate-spin" />}Simpan Semua
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Modal Serah-terima Dokumen ASLI (fisik) — termasuk ke bank */}
+      <Modal open={custodyModal} onClose={() => setCustodyModal(false)} title={`Dokumen Asli — ${custodyDoc?.doc_type ?? ''}`} size="lg">
+        {custodyDoc && (
+          <div className="space-y-3">
+            <div className="flex items-center gap-2 text-sm">
+              <span className="text-slate-500">Posisi sekarang:</span>
+              <Badge label={custodyCfg[custodyDoc.custody_status ?? 'arsip'].label}
+                     variant={isOverdueNotaris(custodyDoc) ? 'red' : custodyCfg[custodyDoc.custody_status ?? 'arsip'].variant} />
+              {custodyDoc.custody_holder && <span className="text-slate-600">{custodyDoc.custody_holder}</span>}
+              {custodyDoc.custody_since && <span className="text-xs text-slate-400">sejak {fmtDate(custodyDoc.custody_since)} · {daysSince(custodyDoc.custody_since)} hari</span>}
+            </div>
+            <p className="text-[11px] text-slate-400">Yang dilacak di sini adalah <b>kertas aslinya</b> — file scan yang diunggah tetap tersimpan di sistem.</p>
+
+            {/* Riwayat */}
+            <div className="space-y-1 max-h-56 overflow-y-auto">
+              {hLoading ? (
+                <p className="text-xs text-slate-400 py-2"><Loader2 size={13} className="inline animate-spin" /> Memuat riwayat…</p>
+              ) : handovers.length === 0 ? (
+                <p className="text-xs text-slate-400 py-2">Belum ada catatan serah-terima — dokumen asli dianggap masih di arsip.</p>
+              ) : handovers.map((h) => (
+                <div key={h.id} className="flex items-start justify-between gap-2 text-sm border-b border-slate-100 py-1.5">
+                  <div className="min-w-0">
+                    <p className="text-slate-800">{eventCfg[h.event]}
+                      {(h.notary_name || h.bank_name || h.client_name) && <span className="text-slate-500"> → {h.notary_name || h.bank_name || h.client_name}</span>}
+                    </p>
+                    <p className="text-[11px] text-slate-400">
+                      {fmtDate(h.at)}{h.by_user_name ? ` · dicatat ${h.by_user_name}` : ''}
+                      {h.received_by ? ` · diterima ${h.received_by}` : ''}{h.notes ? ` · ${h.notes}` : ''}
+                    </p>
+                    {h.signature && (
+                      <img src={h.signature} alt={`Tanda tangan ${h.received_by ?? 'penerima'}`}
+                           className="mt-1 h-10 rounded border border-slate-200 bg-white" />
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {h.has_proof && (
+                      <button onClick={() => documentService.openProof(h.id).catch(() => setError('Gagal membuka bukti.'))}
+                              className="text-brand-600 hover:underline text-xs inline-flex items-center gap-1" title={h.proof_name}>
+                        <Eye size={12} /> Bukti
+                      </button>
+                    )}
+                    <button onClick={() => delHandover(h.id)} className="text-slate-400 hover:text-red-600"><Trash2 size={13} /></button>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Form catat kejadian */}
+            <form onSubmit={submitHandover} className="border-t border-slate-100 pt-3 space-y-2">
+              <div className="grid grid-cols-2 gap-2">
+                <div><label className="label">Kejadian *</label>
+                  <select className="input" value={hForm.event} onChange={(e) => setHForm({ ...hForm, event: e.target.value as HandoverEvent })}>
+                    {(Object.keys(eventCfg) as HandoverEvent[]).map((k) => <option key={k} value={k}>{eventCfg[k]}</option>)}
+                  </select></div>
+                <div><label className="label">Tanggal</label><DateInput className="input" max={today()} value={hForm.at} onChange={(v) => setHForm({ ...hForm, at: v })} /></div>
+              </div>
+
+              {hForm.event === 'serah_notaris' && (
+                <div><label className="label">Notaris *</label>
+                  <select className="input" required value={hForm.notary_id} onChange={(e) => setHForm({ ...hForm, notary_id: e.target.value })}>
+                    <option value="">Pilih notaris...</option>
+                    {notaries.map((n) => <option key={n.id} value={n.id}>{n.name}</option>)}
+                  </select></div>
+              )}
+              {hForm.event === 'tahan_bank' && (
+                <div><label className="label">Bank *</label>
+                  <select className="input" required value={hForm.bank_id} onChange={(e) => setHForm({ ...hForm, bank_id: e.target.value })}>
+                    <option value="">Pilih bank...</option>
+                    {banks.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+                  </select></div>
+              )}
+              {hForm.event === 'terima_pembeli' && (
+                <p className="text-xs text-slate-500 bg-slate-50 rounded-lg px-3 py-2">Diterima oleh <b>{client?.full_name}</b> — pembeli kavling ini.</p>
+              )}
+
+              <div className="grid grid-cols-2 gap-2">
+                <div><label className="label">Nama PIC Penerima</label>
+                  <input className="input" placeholder="mis. Rina — staf notaris" value={hForm.received_by} onChange={(e) => setHForm({ ...hForm, received_by: e.target.value })} /></div>
+                <div><label className="label">Catatan</label>
+                  <input className="input" placeholder="mis. untuk proses AJB" value={hForm.notes} onChange={(e) => setHForm({ ...hForm, notes: e.target.value })} /></div>
+              </div>
+
+              <div>
+                <label className="label">Tanda Tangan PIC Penerima</label>
+                <SignaturePad key={handovers.length} value={hForm.signature} onChange={(d) => setHForm((f) => ({ ...f, signature: d }))} />
+              </div>
+
+              <div className="flex items-center justify-between gap-2">
+                <label className="flex items-center gap-2 text-xs text-slate-500 cursor-pointer">
+                  <span className="inline-flex items-center gap-1 px-2 py-1 rounded border border-slate-200 hover:bg-slate-50">
+                    <Paperclip size={12} /> {hFile ? 'Ganti bukti' : 'Bukti serah-terima'}
+                  </span>
+                  {hFile && <span className="text-slate-600 truncate max-w-[160px]">{hFile.name}</span>}
+                  <input type="file" className="hidden" onChange={(e) => setHFile(e.target.files?.[0] ?? null)} />
+                </label>
+                <button type="submit" className="btn-primary text-sm flex items-center gap-2" disabled={hSaving}>
+                  {hSaving && <Loader2 size={14} className="animate-spin" />}Catat
+                </button>
+              </div>
+              <p className="text-[11px] text-slate-400">Bukti: foto berita acara / tanda terima bertanda tangan (maks 10 MB). Pencatat = akun Anda.</p>
+            </form>
+          </div>
+        )}
       </Modal>
     </div>
   )

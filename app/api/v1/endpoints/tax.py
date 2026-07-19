@@ -23,7 +23,7 @@ from app.models.user import User
 from app.schemas.tax import (
     NotaryCreate, NotaryUpdate, NotaryResponse,
     TaxCreate, TaxUpdate, TaxResponse, TaxBulkCreate,
-    FeeCreate, FeeUpdate, FeeResponse,
+    FeeCreate, FeeUpdate, FeeResponse, FeeBulkCreate,
     NotaryShareLinkCreate, NotaryShareLinkResponse,
     NotarySubmissionResponse, NotarySubmissionRejectRequest,
 )
@@ -345,6 +345,28 @@ async def create_fee(payload: FeeCreate, ctx: AuthContext = Depends(get_current_
     f = NotaryFee(tenant_id=ctx.tenant_id, **payload.model_dump())
     db.add(f); await db.flush()
     return await _load_fee(db, ctx.tenant_id, f.id)
+
+
+@router.post("/notary-fees/bulk", response_model=list[FeeResponse], status_code=status.HTTP_201_CREATED)
+async def bulk_create_fees(payload: FeeBulkCreate, ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db)):
+    """Entry cepat: beberapa baris biaya notaris (Jasa PPJB/AJB/BBN dst) sekaligus. Selalu baris BARU
+    (beda dgn entry cepat pajak) — uraian bebas teks, tak ada "jenis" unik utk dijadikan kunci update."""
+    result: list[NotaryFee] = []
+    for item in payload.items:
+        f = NotaryFee(tenant_id=ctx.tenant_id, client_id=payload.client_id, **item.model_dump())
+        db.add(f)
+        await db.flush()
+        await record_audit(db, ctx.tenant_id, ctx.user_id, "CREATE", "notary_fees", f.id,
+                           new_data={"description": f.description, "amount": str(f.amount)})
+        result.append(f)
+
+    ids = [f.id for f in result]
+    rows = (await db.execute(
+        select(NotaryFee).options(selectinload(NotaryFee.notary)).where(NotaryFee.id.in_(ids))
+    )).scalars().all()
+    order = {fid: i for i, fid in enumerate(ids)}
+    rows.sort(key=lambda f: order[f.id])
+    return rows
 
 
 @router.patch("/notary-fees/{fee_id}", response_model=FeeResponse)

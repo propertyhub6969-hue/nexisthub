@@ -111,6 +111,16 @@ class FeeCreate(FeeBase):
     client_id: uuid.UUID
 
 
+class FeeBulkItem(FeeBase):
+    """Satu baris biaya dalam entry cepat (checklist Jasa PPJB/AJB/BBN dst)."""
+    pass
+
+
+class FeeBulkCreate(BaseModel):
+    client_id: uuid.UUID
+    items: list[FeeBulkItem] = Field(..., min_length=1, max_length=20)
+
+
 class FeeUpdate(BaseModel):
     description: Optional[str] = Field(None, min_length=1, max_length=200)
     amount: Optional[Decimal] = Field(None, ge=0)

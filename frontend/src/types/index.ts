@@ -629,6 +629,18 @@ export interface NotaryFeeCreate {
   notary_id?: string
   notes?: string
 }
+export interface FeeBulkItem {
+  description: string
+  amount: number
+  fee_date?: string
+  is_paid?: boolean
+  notary_id?: string
+  notes?: string
+}
+export interface FeeBulkCreate {
+  client_id: string
+  items: FeeBulkItem[]
+}
 
 // ── Dokumen & Legalitas ───────────────────────────────────────────
 export type DocStatus = 'belum' | 'proses' | 'terbit'
