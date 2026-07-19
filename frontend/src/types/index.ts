@@ -1390,6 +1390,8 @@ export interface UpahResume {
   unit_id: string
   unit_label: string
   upah_minggu: number
+  upah_dibayar: number
+  upah_diajukan: number
   upah_total: number
   rab_tenaga_kerja: number
   selisih: number

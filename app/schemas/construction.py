@@ -50,7 +50,9 @@ class UpahResumeRow(BaseModel):
     unit_id: uuid.UUID
     unit_label: str
     upah_minggu: Decimal      # realisasi upah minggu berjalan (Senin s/d kini)
-    upah_total: Decimal       # realisasi upah kumulatif (akrual: opname diajukan + dibayar)
+    upah_dibayar: Decimal     # opname yang sudah dibayar (cash keluar riil)
+    upah_diajukan: Decimal    # opname diajukan, menunggu dibayar keuangan (belum cair)
+    upah_total: Decimal       # akrual = upah_dibayar + upah_diajukan (dipakai utk selisih vs RAB)
     rab_tenaga_kerja: Decimal  # RAB kategori upah unit (template + penyesuaian)
     selisih: Decimal          # upah_total − rab (minus = di bawah anggaran = aman)
     status: str               # 'aman' | 'lewat'

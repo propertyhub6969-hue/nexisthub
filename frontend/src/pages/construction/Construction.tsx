@@ -444,18 +444,21 @@ export default function Construction() {
         <div className="card overflow-hidden">
           <div className="px-4 py-2.5 border-b border-slate-100 text-sm font-semibold text-slate-900 flex items-center gap-2"><HardHat size={15} /> Resume Upah Tenaga Kerja per Kavling</div>
           <table className="w-full text-sm">
-            <thead className="bg-slate-50 border-b border-slate-200"><tr>{['Kavling', 'Upah Minggu Ini', 'Total Terpakai', 'RAB Tenaga Kerja', 'Selisih', 'Status', ''].map((h, i) => (
-              <th key={i} className={`px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wider ${i >= 1 && i <= 4 ? 'text-right' : 'text-left'}`}>{h}</th>))}</tr></thead>
+            <thead className="bg-slate-50 border-b border-slate-200"><tr>{['Kavling', 'Upah Minggu Ini', 'Dibayar', 'Diajukan', 'RAB Tenaga Kerja', 'Selisih', 'Status', ''].map((h, i) => (
+              <th key={i} className={`px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wider ${i >= 1 && i <= 5 ? 'text-right' : 'text-left'}`}>{h}</th>))}</tr></thead>
             <tbody className="divide-y divide-slate-100">
               {upahResume.length === 0 ? (
-                <tr><td colSpan={7} className="px-4 py-8 text-center text-slate-400 text-sm">{project ? 'Belum ada realisasi upah / RAB tenaga kerja.' : 'Pilih proyek dulu.'}</td></tr>
+                <tr><td colSpan={8} className="px-4 py-8 text-center text-slate-400 text-sm">{project ? 'Belum ada realisasi upah / RAB tenaga kerja.' : 'Pilih proyek dulu.'}</td></tr>
               ) : upahResume.map((u) => (
                 <tr key={u.unit_id} className="hover:bg-slate-50">
                   <td className="px-4 py-2.5 font-medium text-slate-900">{u.unit_label}</td>
                   <td className="px-4 py-2.5 text-right text-slate-600">{fmt(u.upah_minggu)}</td>
-                  <td className="px-4 py-2.5 text-right text-slate-700 font-medium">{fmt(u.upah_total)}</td>
+                  <td className="px-4 py-2.5 text-right text-slate-700 font-medium">{fmt(u.upah_dibayar)}</td>
+                  <td className="px-4 py-2.5 text-right">
+                    {Number(u.upah_diajukan) > 0 ? <span className="text-amber-600 font-medium">{fmt(u.upah_diajukan)}</span> : <span className="text-slate-400">{fmt(u.upah_diajukan)}</span>}
+                  </td>
                   <td className="px-4 py-2.5 text-right text-slate-600">{fmt(u.rab_tenaga_kerja)}</td>
-                  <td className={`px-4 py-2.5 text-right font-medium ${Number(u.selisih) > 0 ? 'text-red-600' : 'text-emerald-600'}`}>{fmt(u.selisih)}</td>
+                  <td className={`px-4 py-2.5 text-right font-medium ${Number(u.selisih) > 0 ? 'text-red-600' : 'text-emerald-600'}`} title="Selisih dihitung dari total komitmen (dibayar + diajukan) terhadap RAB">{fmt(u.selisih)}</td>
                   <td className="px-4 py-2.5"><Badge label={u.status === 'aman' ? 'Aman' : 'Lewat'} variant={u.status === 'aman' ? 'green' : 'red'} /></td>
                   <td className="px-4 py-2.5 text-right">{resumeMap.has(u.unit_id) && <button onClick={() => openResume(u.unit_id)} className="text-slate-400 hover:text-brand-600" title="Lihat detail borongan"><Eye size={15} /></button>}</td>
                 </tr>

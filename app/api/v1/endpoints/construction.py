@@ -265,36 +265,40 @@ async def upah_resume(project_id: uuid.UUID = Query(...), ctx: AuthContext = Dep
     for a in adjs:
         adj_upah[a.unit_id] += Decimal(a.amount)
 
-    # Realisasi upah per unit (akrual: semua opname upah, dibayar/diajukan) + bucket minggu berjalan
+    # Realisasi upah per unit (akrual: semua opname upah, dibayar/diajukan dipisah) + bucket minggu berjalan
     today = date.today()
     week_start = today - timedelta(days=today.weekday())  # Senin minggu ini
     rows = (await db.execute(
         select(
-            Expense.unit_id,
+            Expense.unit_id, Expense.is_paid,
             func.coalesce(func.sum(Expense.amount), 0),
             func.coalesce(func.sum(Expense.amount).filter(Expense.expense_date >= week_start), 0),
         ).where(
             Expense.tenant_id == t, Expense.project_id == project_id,
             Expense.category == ExpenseCategory.UPAH, Expense.is_deleted == False)  # noqa: E712
-        .group_by(Expense.unit_id)
+        .group_by(Expense.unit_id, Expense.is_paid)
     )).all()
-    real_total: dict = {}
-    real_week: dict = {}
-    for uid, tot, wk in rows:
-        real_total[uid] = Decimal(tot); real_week[uid] = Decimal(wk)
+    real_paid: dict = defaultdict(Decimal)
+    real_submitted: dict = defaultdict(Decimal)
+    real_week: dict = defaultdict(Decimal)
+    for uid, is_paid, tot, wk in rows:
+        (real_paid if is_paid else real_submitted)[uid] += Decimal(tot)
+        real_week[uid] += Decimal(wk)   # minggu berjalan: gabung dibayar+diajukan (kapan opname dicatat)
 
     out = []
     for u in units:
         rab = tpl_upah.get(u.rab_template_id, Decimal(0)) + adj_upah.get(u.id, Decimal(0))
-        total = real_total.get(u.id, Decimal(0))
+        paid = real_paid.get(u.id, Decimal(0))
+        submitted = real_submitted.get(u.id, Decimal(0))
+        total = paid + submitted
         week = real_week.get(u.id, Decimal(0))
         if rab == 0 and total == 0:
             continue  # kavling tanpa RAB upah & tanpa realisasi → tak relevan
         selisih = total - rab
         out.append(UpahResumeRow(
             unit_id=u.id, unit_label=_label(u),
-            upah_minggu=week, upah_total=total, rab_tenaga_kerja=rab,
-            selisih=selisih, status=("lewat" if (rab > 0 and total > rab) else "aman"),
+            upah_minggu=week, upah_dibayar=paid, upah_diajukan=submitted, upah_total=total,
+            rab_tenaga_kerja=rab, selisih=selisih, status=("lewat" if (rab > 0 and total > rab) else "aman"),
         ))
     out.sort(key=lambda r: r.unit_label)
     return out
