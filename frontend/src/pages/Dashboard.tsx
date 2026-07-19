@@ -10,13 +10,17 @@ const fmt = (n?: number) =>
 const monthLabels = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des']
 const monShort = (ym: string) => { const [y, m] = ym.split('-'); return `${monthLabels[Number(m) - 1] ?? m} '${y.slice(2)}` }
 
+const CURRENT_YEAR = new Date().getFullYear()
+const YEAR_OPTIONS = Array.from({ length: 5 }, (_, i) => CURRENT_YEAR - i)
+
 function SalesChart() {
   const [projects, setProjects] = useState<Project[]>([])
   const [projectId, setProjectId] = useState('')
+  const [year, setYear] = useState('')
   const [data, setData] = useState<SalesMonthly[]>([])
 
   useEffect(() => { propertyService.listProjects({ size: 500 }).then((r) => setProjects(r.items)).catch(() => {}) }, [])
-  useEffect(() => { reportingService.salesMonthly(projectId || undefined).then(setData).catch(() => {}) }, [projectId])
+  useEffect(() => { reportingService.salesMonthly(projectId || undefined, year ? Number(year) : undefined).then(setData).catch(() => {}) }, [projectId, year])
 
   const max = Math.max(1, ...data.map((d) => d.value))
   const totalUnit = data.reduce((a, d) => a + d.count, 0)
@@ -24,11 +28,15 @@ function SalesChart() {
   return (
     <div className="card p-4 sm:p-5">
       <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
-        <h3 className="text-sm font-semibold text-slate-800 flex items-center gap-2"><BarChart3 size={15} /> Penjualan 12 Bulan Terakhir</h3>
+        <h3 className="text-sm font-semibold text-slate-800 flex items-center gap-2"><BarChart3 size={15} /> Penjualan {year ? `Tahun ${year}` : '12 Bulan Terakhir'}</h3>
         <div className="flex items-center gap-2">
           <select className="input h-8 py-0 text-xs w-44" value={projectId} onChange={(e) => setProjectId(e.target.value)}>
             <option value="">Semua proyek</option>
             {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+          <select className="input h-8 py-0 text-xs w-28" value={year} onChange={(e) => setYear(e.target.value)}>
+            <option value="">12 bln terakhir</option>
+            {YEAR_OPTIONS.map((y) => <option key={y} value={y}>{y}</option>)}
           </select>
           <span className="text-xs text-slate-400 whitespace-nowrap">{totalUnit} unit · {fmt(totalVal)}</span>
         </div>

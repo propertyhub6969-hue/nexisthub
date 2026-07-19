@@ -32,11 +32,13 @@ export const reportingService = {
     return data
   },
 
-  async salesMonthly(projectId?: string): Promise<SalesMonthly[]> {
+  async salesMonthly(projectId?: string, year?: number): Promise<SalesMonthly[]> {
     const { data } = await api.get<SalesMonthly[]>('/reporting/sales-monthly', {
-      params: projectId ? { project_id: projectId } : {},
+      params: { project_id: projectId || undefined, year: year || undefined },
     })
-    return data
+    // value datang sbg Decimal (string) dari backend — normalkan ke number di sini
+    // supaya semua pemakai boleh percaya tipe SalesMonthly.value tanpa Number() berulang.
+    return data.map((d) => ({ ...d, value: Number(d.value) }))
   },
 
   async monthlyTax(month: string, projectId?: string): Promise<MonthlyTaxReport> {

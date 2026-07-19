@@ -634,22 +634,31 @@ class SalesMonthly(BaseModel):
 @router.get("/sales-monthly", response_model=list[SalesMonthly])
 async def sales_monthly(
     project_id: Optional[uuid.UUID] = Query(None),
+    year: Optional[int] = Query(None, ge=2000, le=2100),
     ctx: AuthContext = Depends(get_current_context),
     db: AsyncSession = Depends(get_db),
 ):
     """Penjualan per bulan (unit terjual + nilai) berdasarkan tanggal kontrak pembeli
-    (fallback tanggal entri). Opsional filter per proyek. Maks 12 bulan terakhir yang ada penjualan."""
+    (fallback tanggal entri). Opsional filter per proyek & tahun.
+    Tanpa `year` → 12 bulan terakhir yang ada penjualan (rolling). Dengan `year` → Jan-Des penuh
+    tahun itu (termasuk bulan tanpa penjualan), supaya sumbu grafik konsisten satu tahun."""
     t = ctx.tenant_id
-    ym = func.to_char(func.coalesce(Client.contract_date, func.date(Client.created_at)), "YYYY-MM")
+    date_col = func.coalesce(Client.contract_date, func.date(Client.created_at))
+    ym = func.to_char(date_col, "YYYY-MM")
     conds = [Client.tenant_id == t, Client.is_deleted == False,  # noqa: E712
              Client.status != ClientStatus.INACTIVE]
     if project_id:
         conds.append(Client.project_id == project_id)
+    if year:
+        conds.append(func.extract("year", date_col) == year)
     rows = (await db.execute(
         select(ym.label("ym"), func.count(), func.coalesce(func.sum(Client.contract_value), 0))
         .where(*conds).group_by(ym).order_by(ym)
     )).all()
-    return [SalesMonthly(month=m, count=c, value=Decimal(v)) for m, c, v in rows][-12:]
+    by_month = {m: SalesMonthly(month=m, count=c, value=Decimal(v)) for m, c, v in rows}
+    if year:
+        return [by_month.get(f"{year}-{mo:02d}") or SalesMonthly(month=f"{year}-{mo:02d}", count=0, value=Decimal(0)) for mo in range(1, 13)]
+    return list(by_month.values())[-12:]
 
 
 # ═══════════════════════ LAPORAN: PAJAK BULANAN (PPh) ═══════════════════════
