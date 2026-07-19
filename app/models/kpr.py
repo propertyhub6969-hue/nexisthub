@@ -52,7 +52,6 @@ class KprApplication(BaseModel, SoftDeleteMixin):
     tenor_months: Mapped[int] = mapped_column(Integer, nullable=True)
     interest_rate: Mapped[float] = mapped_column(Numeric(5, 2), nullable=True)  # % bunga
     sp3k_number: Mapped[str] = mapped_column(String(100), nullable=True)
-    sikasep_number: Mapped[str] = mapped_column(String(100), nullable=True)   # subsidi (SiKasep/SiKumbang)
     submitted_date: Mapped[Date] = mapped_column(Date, nullable=True)   # Tgl Collect Berkas — auto dari Client.created_at saat pengajuan dibuat
     bank_submission_date: Mapped[Date] = mapped_column(Date, nullable=True)  # Tgl berkas diserahkan/diajukan ke bank (tahap Berkas Masuk Bank)
     sp3k_date: Mapped[Date] = mapped_column(Date, nullable=True)

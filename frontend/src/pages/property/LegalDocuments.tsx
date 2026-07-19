@@ -16,7 +16,7 @@ import type {
   DocumentHandover, HandoverEvent, CustodyStatus, Notary, Bank, Client,
 } from '../../types'
 
-const LEGAL_PRESETS = ['Sertifikat SHM', 'Sertifikat HGB', 'SLF', 'IMB / PBG', 'PBB']
+const LEGAL_PRESETS = ['Sertifikat SHM', 'Sertifikat HGB', 'SLF', 'IMB / PBG', 'PBB', 'No. SiKasep/SiKumbang']
 // Checklist default untuk entry cepat (SHM & HGB alternatif; user isi yang relevan)
 const CHECKLIST_PRESETS = ['Sertifikat SHM', 'SLF', 'IMB / PBG', 'PBB']
 const isSertifikat = (t: string) => /shm|hgb|sertifikat/i.test(t)

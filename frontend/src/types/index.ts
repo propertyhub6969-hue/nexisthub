@@ -1000,7 +1000,6 @@ export interface KprApplication {
   tenor_months?: number
   interest_rate?: number
   sp3k_number?: string
-  sikasep_number?: string
   submitted_date?: string
   bank_submission_date?: string
   sp3k_date?: string
@@ -1025,7 +1024,6 @@ export interface KprCreate {
   tenor_months?: number
   interest_rate?: number
   sp3k_number?: string
-  sikasep_number?: string
   submitted_date?: string
   bank_submission_date?: string
   sp3k_date?: string

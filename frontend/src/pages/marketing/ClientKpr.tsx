@@ -92,7 +92,7 @@ export default function ClientKpr() {
       const k = await kprService.updateApplication(kpr.id, {
         bank_id: kpr.bank_id || undefined, stage: kpr.stage,
         plafond: kpr.plafond, tenor_months: kpr.tenor_months, interest_rate: kpr.interest_rate,
-        sp3k_number: kpr.sp3k_number || undefined, sikasep_number: kpr.sikasep_number || undefined,
+        sp3k_number: kpr.sp3k_number || undefined,
         submitted_date: kpr.submitted_date || undefined, bank_submission_date: kpr.bank_submission_date || undefined,
         sp3k_date: kpr.sp3k_date || undefined, akad_date: kpr.akad_date || undefined,
         notes: kpr.notes || undefined,
@@ -262,16 +262,11 @@ export default function ClientKpr() {
             {curIdx >= stageIndex('berkas_masuk_bank') && (
               <div className="pt-2 border-t border-slate-100">
                 <p className="text-xs font-medium text-slate-400 mb-2">Berkas Masuk Bank</p>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="label">Tgl Pengajuan ke Bank</label>
-                    <DateInput className="input" max={today()} value={kpr.bank_submission_date ?? ''} onChange={(v) => set('bank_submission_date', v)} />
-                  </div>
-                  <div>
-                    <label className="label">No. SiKasep/SiKumbang</label>
-                    <input className="input" placeholder="untuk subsidi" value={kpr.sikasep_number ?? ''} onChange={(e) => set('sikasep_number', e.target.value)} />
-                  </div>
+                <div>
+                  <label className="label">Tgl Pengajuan ke Bank</label>
+                  <DateInput className="input max-w-xs" max={today()} value={kpr.bank_submission_date ?? ''} onChange={(v) => set('bank_submission_date', v)} />
                 </div>
+                <p className="text-xs text-slate-400 mt-2">No. SiKasep/SiKumbang (utk subsidi) dicatat di <Link to={`/property/legal-docs`} className="text-brand-600 hover:underline">Dokumen Legalitas</Link> unit ini.</p>
               </div>
             )}
 

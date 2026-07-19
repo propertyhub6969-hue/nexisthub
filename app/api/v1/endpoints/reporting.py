@@ -655,6 +655,7 @@ async def sales_monthly(
 # ═══════════════════════ LAPORAN: PAJAK BULANAN (PPh) ═══════════════════════
 SHM_RE = re.compile(r'shm|hgb|sertifikat', re.I)
 PBB_RE = re.compile(r'pbb', re.I)
+SIKASEP_RE = re.compile(r'sikasep|sikumbang', re.I)
 
 
 class MonthlyTaxRow(BaseModel):
@@ -729,18 +730,6 @@ async def _build_monthly_tax_report(db: AsyncSession, t: uuid.UUID, month: str, 
         for pid, pname in (await db.execute(select(Project.id, Project.name).where(Project.id.in_(proj_ids)))).all():
             proj_names[pid] = pname
 
-    # KIR = No. SiKasep/SiKumbang — dari KPR TERBARU per klien (kosong utk pembeli cash)
-    sikumbang_by_client: dict = {}
-    if client_ids:
-        kpr_rows = (await db.execute(
-            select(KprApplication.client_id, KprApplication.sikasep_number, KprApplication.created_at)
-            .where(KprApplication.client_id.in_(client_ids), KprApplication.is_deleted == False)  # noqa: E712
-            .order_by(KprApplication.created_at.desc())
-        )).all()
-        for cid, sikasep, _ca in kpr_rows:
-            if cid not in sikumbang_by_client:
-                sikumbang_by_client[cid] = sikasep
-
     # Jumlah PPN & BPHTB per klien (tak terikat bulan — cukup nilai klien ybs, kalau ada)
     ppn_by_client: dict = {}
     bphtb_by_client: dict = {}
@@ -758,9 +747,10 @@ async def _build_monthly_tax_report(db: AsyncSession, t: uuid.UUID, month: str, 
         )).all()
         bphtb_by_client = {cid: amt for cid, amt in bphtb_rows}
 
-    # No. SHM & No. PBB — dari Dokumen Legalitas unit (doc_type teks bebas, dicocokkan pola sama FE)
+    # No. SHM & No. PBB & No. SiKasep/SiKumbang — dari Dokumen Legalitas unit (doc_type teks bebas, dicocokkan pola sama FE)
     shm_by_unit: dict = {}
     pbb_by_unit: dict = {}
+    sikumbang_by_unit: dict = {}
     if unit_ids:
         doc_rows = (await db.execute(
             select(Document.unit_id, Document.doc_type, Document.name)
@@ -771,6 +761,8 @@ async def _build_monthly_tax_report(db: AsyncSession, t: uuid.UUID, month: str, 
                 shm_by_unit[uid] = dname
             elif PBB_RE.search(doc_type or '') and uid not in pbb_by_unit:
                 pbb_by_unit[uid] = dname
+            elif SIKASEP_RE.search(doc_type or '') and uid not in sikumbang_by_unit:
+                sikumbang_by_unit[uid] = dname
 
     result_rows: list[MonthlyTaxRow] = []
     for r in rows:
@@ -786,7 +778,7 @@ async def _build_monthly_tax_report(db: AsyncSession, t: uuid.UUID, month: str, 
             ppn_amount=ppn_by_client.get(r.client_id), bphtb_amount=bphtb_by_client.get(r.client_id), ntpn=r.ntpn,
             shm_number=shm_by_unit.get(c.unit_id) if c.unit_id else None,
             pbb_number=pbb_by_unit.get(c.unit_id) if c.unit_id else None,
-            sikumbang_number=sikumbang_by_client.get(r.client_id),
+            sikumbang_number=sikumbang_by_unit.get(c.unit_id) if c.unit_id else None,
             notary_name=r.notary.name if r.notary else None, tax_date=r.tax_date,
         ))
 
