@@ -149,12 +149,13 @@ export const taxService = {
     return data
   },
   async publicNotarySubmit(token: string, payload: {
-    client_id: string; kind: 'ppjb_ajb' | 'tax' | 'fee'; target_id?: string
+    client_id: string; kind: 'ppjb_ajb' | 'tax' | 'fee' | 'custody'; target_id?: string
     ppjb_number?: string; ppjb_file?: File | null
     ajb_number?: string; ajb_file?: File | null
     tax_type?: string; tax_category?: string; tax_base_amount?: number; tax_amount?: number
     tax_id_billing?: string; tax_ntpn?: string; tax_date?: string; tax_status?: string
     fee_description?: string; fee_amount?: number; fee_date?: string
+    custody_document_id?: string; custody_event?: string; custody_at?: string
     file?: File | null; notes?: string
   }): Promise<void> {
     const fd = new FormData()
@@ -176,6 +177,9 @@ export const taxService = {
     if (payload.fee_description) fd.append('fee_description', payload.fee_description)
     if (payload.fee_amount != null) fd.append('fee_amount', String(payload.fee_amount))
     if (payload.fee_date) fd.append('fee_date', payload.fee_date)
+    if (payload.custody_document_id) fd.append('custody_document_id', payload.custody_document_id)
+    if (payload.custody_event) fd.append('custody_event', payload.custody_event)
+    if (payload.custody_at) fd.append('custody_at', payload.custody_at)
     if (payload.file) fd.append('file', payload.file)
     if (payload.notes) fd.append('notes', payload.notes)
     await api.post(`/public/notary/${token}/submissions`, fd, { headers: { 'Content-Type': 'multipart/form-data' } })

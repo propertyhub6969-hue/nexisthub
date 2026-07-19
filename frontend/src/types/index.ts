@@ -1120,7 +1120,7 @@ export interface PublicBankPage {
 }
 
 // ── Tautan bagikan ke Notaris (PPJB/AJB, pajak, biaya notaris) ─────
-export type NotarySubmissionKind = 'ppjb_ajb' | 'tax' | 'fee'
+export type NotarySubmissionKind = 'ppjb_ajb' | 'tax' | 'fee' | 'custody'
 export type NotarySubmissionStatus = 'pending' | 'accepted' | 'rejected'
 
 export interface NotaryShareLink {
@@ -1163,6 +1163,9 @@ export interface NotarySubmission {
   fee_description?: string
   fee_amount?: number
   fee_date?: string
+  custody_document_type?: string
+  custody_event?: NotaryHandoverEvent
+  custody_at?: string
   has_file: boolean
   file_name?: string
   submitted_notes?: string
@@ -1190,6 +1193,10 @@ export interface PublicNotaryFeeRow {
   fee_date?: string
   is_paid: boolean
 }
+export interface PublicNotaryDocumentRow {
+  id: string
+  doc_type: string
+}
 export interface PublicNotaryClientRow {
   client_id: string
   client_name: string
@@ -1203,6 +1210,7 @@ export interface PublicNotaryClientRow {
   fees: PublicNotaryFeeRow[]
   last_handover_event?: NotaryHandoverEvent
   last_handover_date?: string
+  documents: PublicNotaryDocumentRow[]
 }
 export type NotaryHandoverEvent = 'ambil' | 'serah_notaris' | 'terima_pembeli' | 'tahan_bank' | 'kembali_arsip'
 export interface PublicNotaryPage {

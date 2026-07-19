@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
-import { Loader2, AlertTriangle, Send, Check, Scale, FileSignature } from 'lucide-react'
+import { Loader2, AlertTriangle, Send, Check, Scale, FileSignature, ArrowLeftRight } from 'lucide-react'
 import { taxService } from '../../services/tax'
 import NexistLogo from '../../components/ui/NexistLogo'
 import Modal from '../../components/ui/Modal'
@@ -195,6 +195,26 @@ function ClientSubmitModal({ token, row, onClose }: { token: string; row: Public
     } catch { setErrFee('Gagal mengirim. Coba lagi.') } finally { setSavingFee(false) }
   }
 
+  // ── Serah-Terima Dokumen Asli ──
+  const [custodyDocId, setCustodyDocId] = useState('')
+  const [custodyEvent, setCustodyEvent] = useState<NotaryHandoverEvent>('serah_notaris')
+  const [custodyAt, setCustodyAt] = useState(() => new Date().toISOString().slice(0, 10))
+  const [savingCustody, setSavingCustody] = useState(false)
+  const [errCustody, setErrCustody] = useState('')
+
+  async function submitCustody() {
+    if (!custodyDocId || !custodyAt) return
+    setSavingCustody(true); setErrCustody('')
+    try {
+      await taxService.publicNotarySubmit(token, {
+        client_id: row.client_id, kind: 'custody',
+        custody_document_id: custodyDocId, custody_event: custodyEvent, custody_at: custodyAt,
+      })
+      setSentKinds((p) => new Set(p).add('custody'))
+      setCustodyDocId(''); setCustodyAt('')
+    } catch { setErrCustody('Gagal mengirim. Coba lagi.') } finally { setSavingCustody(false) }
+  }
+
   return (
     <Modal open onClose={onClose} title={`Kirim Update — ${row.client_name}`} size="lg">
       <div className="space-y-5">
@@ -317,6 +337,39 @@ function ClientSubmitModal({ token, row, onClose }: { token: string; row: Public
               {savingFee ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />} Kirim Biaya
             </button>
           </div>
+        </div>
+
+        {/* Serah-Terima Dokumen Asli */}
+        <div className="rounded-lg border border-slate-200 p-3 space-y-2">
+          <p className="text-sm font-semibold text-slate-800 flex items-center gap-1.5"><ArrowLeftRight size={14} /> Serah-Terima Dokumen Asli</p>
+          {row.last_handover_event && (
+            <p className="text-xs text-slate-500">
+              Kejadian terakhir: {HANDOVER_LABEL[row.last_handover_event]} — {fmtDate(row.last_handover_date)}
+            </p>
+          )}
+          {sentKinds.has('custody') && <p className="text-xs text-emerald-600 flex items-center gap-1"><Check size={13} /> Terkirim, menunggu persetujuan</p>}
+          {row.documents.length === 0 ? (
+            <p className="text-xs text-slate-400">Belum ada dokumen legalitas untuk unit ini.</p>
+          ) : (
+            <>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                <select className="input text-xs py-1.5" value={custodyDocId} onChange={(e) => setCustodyDocId(e.target.value)}>
+                  <option value="">Pilih dokumen…</option>
+                  {row.documents.map((d) => <option key={d.id} value={d.id}>{d.doc_type}</option>)}
+                </select>
+                <select className="input text-xs py-1.5" value={custodyEvent} onChange={(e) => setCustodyEvent(e.target.value as NotaryHandoverEvent)}>
+                  {(Object.keys(HANDOVER_LABEL) as NotaryHandoverEvent[]).map((k) => <option key={k} value={k}>{HANDOVER_LABEL[k]}</option>)}
+                </select>
+                <input className="input text-xs py-1.5" type="date" value={custodyAt} onChange={(e) => setCustodyAt(e.target.value)} />
+              </div>
+              {errCustody && <p className="text-xs text-red-600">{errCustody}</p>}
+              <div className="flex justify-end">
+                <button onClick={submitCustody} disabled={savingCustody || !custodyDocId || !custodyAt} className="inline-flex items-center gap-1 text-xs font-medium rounded-lg bg-brand-600 text-white px-2.5 py-1.5 hover:bg-brand-700 disabled:opacity-50">
+                  {savingCustody ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />} Kirim Serah-Terima
+                </button>
+              </div>
+            </>
+          )}
         </div>
       </div>
     </Modal>

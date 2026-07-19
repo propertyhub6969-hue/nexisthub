@@ -20,6 +20,7 @@ from app.models.tax import (
 from app.models.marketing import Client
 from app.models.property import Unit
 from app.models.user import User
+from app.models.document import Document, DocumentHandover, HandoverEvent
 from app.schemas.tax import (
     NotaryCreate, NotaryUpdate, NotaryResponse,
     TaxCreate, TaxUpdate, TaxResponse, TaxBulkCreate,
@@ -445,6 +446,9 @@ async def _submission_response(db, tenant_id, sub: NotarySubmission) -> NotarySu
     reviewer_name = None
     if sub.reviewed_by:
         reviewer_name = await db.scalar(select(User.full_name).where(User.id == sub.reviewed_by))
+    custody_document_type = None
+    if sub.custody_document_id:
+        custody_document_type = await db.scalar(select(Document.doc_type).where(Document.id == sub.custody_document_id))
     return NotarySubmissionResponse(
         id=sub.id, client_id=sub.client_id, client_name=client_name, unit_label=unit_label,
         notary_name=notary_name, kind=sub.kind, target_id=sub.target_id,
@@ -454,6 +458,7 @@ async def _submission_response(db, tenant_id, sub: NotarySubmission) -> NotarySu
         tax_amount=sub.tax_amount, tax_id_billing=sub.tax_id_billing, tax_ntpn=sub.tax_ntpn,
         tax_date=sub.tax_date, tax_status=sub.tax_status,
         fee_description=sub.fee_description, fee_amount=sub.fee_amount, fee_date=sub.fee_date,
+        custody_document_type=custody_document_type, custody_event=sub.custody_event, custody_at=sub.custody_at,
         has_file=sub.has_file, file_name=sub.file_name, submitted_notes=sub.submitted_notes,
         status=sub.status, reviewer_name=reviewer_name, reviewed_at=sub.reviewed_at,
         review_notes=sub.review_notes, created_at=sub.created_at,
@@ -570,6 +575,13 @@ async def accept_notary_submission(sub_id: uuid.UUID, ctx: AuthContext = Depends
         if sub.fee_amount is not None: nf.amount = sub.fee_amount
         if sub.fee_date: nf.fee_date = sub.fee_date
         if not nf.notary_id and notary_id: nf.notary_id = notary_id
+    elif sub.kind == NotarySubmissionKind.CUSTODY:
+        dh = DocumentHandover(
+            tenant_id=ctx.tenant_id, document_id=sub.custody_document_id,
+            event=sub.custody_event, at=sub.custody_at,
+            by_user_id=ctx.user_id, notary_id=notary_id, client_id=sub.client_id,
+        )
+        db.add(dh)
 
     sub.status = NotarySubmissionStatus.ACCEPTED
     sub.reviewed_by = ctx.user_id

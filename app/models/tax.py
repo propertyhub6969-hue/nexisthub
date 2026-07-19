@@ -5,6 +5,7 @@ from sqlalchemy import String, Text, ForeignKey, Enum as SAEnum, Numeric, Date, 
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID
 from app.models.base import BaseModel, SoftDeleteMixin
+from app.models.document import HandoverEvent
 
 
 class TaxType(str, enum.Enum):
@@ -173,6 +174,7 @@ class NotarySubmissionKind(str, enum.Enum):
     PPJB_AJB = "ppjb_ajb"   # nomor & file PPJB/AJB milik Client
     TAX = "tax"             # baris TaxRecord baru/update
     FEE = "fee"             # baris NotaryFee baru/update
+    CUSTODY = "custody"     # kejadian serah-terima dokumen ASLI (DocumentHandover baru)
 
 
 class NotarySubmissionStatus(str, enum.Enum):
@@ -226,6 +228,13 @@ class NotarySubmission(BaseModel):
     fee_description: Mapped[str] = mapped_column(String(200), nullable=True)
     fee_amount: Mapped[float] = mapped_column(Numeric(15, 2), nullable=True)
     fee_date: Mapped[Date] = mapped_column(Date, nullable=True)
+
+    # kind=custody — usulan kejadian serah-terima dokumen ASLI (jadi DocumentHandover baru saat diterima)
+    custody_document_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("documents.id", ondelete="SET NULL"), nullable=True
+    )
+    custody_event: Mapped[HandoverEvent] = mapped_column(SAEnum(HandoverEvent), nullable=True)
+    custody_at: Mapped[Date] = mapped_column(Date, nullable=True)
 
     # bukti generik — bukti bayar pajak (kind=tax) ATAU bukti lain terkait kiriman
     file_name: Mapped[str] = mapped_column(String(255), nullable=True)

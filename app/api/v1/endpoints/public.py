@@ -18,10 +18,10 @@ from app.models.tax import (
 from app.models.kpr import Bank, KprApplication, KprStage, BankShareLink, KprBankSubmission
 from app.models.marketing import Client
 from app.models.property import Unit, Project
-from app.models.document import Document, DocStatus, DocumentHandover
+from app.models.document import Document, DocStatus, DocumentHandover, HandoverEvent
 from app.schemas.kpr import PublicBankPageResponse, PublicBankRow
 from app.schemas.tax import (
-    PublicNotaryPageResponse, PublicNotaryClientRow, PublicNotaryTaxRow, PublicNotaryFeeRow,
+    PublicNotaryPageResponse, PublicNotaryClientRow, PublicNotaryTaxRow, PublicNotaryFeeRow, PublicNotaryDocumentRow,
 )
 from app.api.v1.endpoints.reporting import _build_monthly_tax_report, MonthlyTaxReport
 
@@ -276,6 +276,17 @@ async def public_notary_page(token: str, db: AsyncSession = Depends(get_db)):
         for uid, event, at in hrows:
             handover_by_unit[uid] = (event, at)  # baris terakhir menang (urut ascending) = terbaru
 
+    # Dokumen legalitas unit — supaya notaris bisa pilih dokumen mana saat kirim serah-terima
+    docs_by_unit: dict = {}
+    if unit_ids:
+        drows = (await db.execute(
+            select(Document.id, Document.unit_id, Document.doc_type)
+            .where(Document.unit_id.in_(unit_ids), Document.tenant_id == link.tenant_id, Document.is_deleted == False)  # noqa: E712
+            .order_by(Document.doc_type)
+        )).all()
+        for did, uid, dtype in drows:
+            docs_by_unit.setdefault(uid, []).append(PublicNotaryDocumentRow(id=did, doc_type=dtype))
+
     tax_by_client: dict = {}
     for t in tax_rows:
         tax_by_client.setdefault(t.client_id, []).append(PublicNotaryTaxRow(
@@ -302,6 +313,7 @@ async def public_notary_page(token: str, db: AsyncSession = Depends(get_db)):
             ppjb_number=c.ppjb_number, has_ppjb_file=c.has_ppjb_file,
             ajb_number=c.ajb_number, has_ajb_file=c.has_ajb_file,
             tax_records=tax_by_client.get(cid, []), fees=fee_by_client.get(cid, []),
+            documents=docs_by_unit.get(c.unit_id, []) if c.unit_id else [],
             last_handover_event=hv[0].value if hv else None, last_handover_date=hv[1] if hv else None,
         ))
     rows.sort(key=lambda r: r.client_name)
@@ -329,6 +341,9 @@ async def public_notary_submit(
     fee_description: str = Form(None),
     fee_amount: str = Form(None),
     fee_date: str = Form(None),
+    custody_document_id: str = Form(None),
+    custody_event: str = Form(None),
+    custody_at: str = Form(None),
     file: UploadFile = File(None),
     notes: str = Form(None),
     db: AsyncSession = Depends(get_db),
@@ -357,8 +372,20 @@ async def public_notary_submit(
         parsed_tax_date = date.fromisoformat(tax_date) if tax_date else None
         parsed_fee_amount = Decimal(fee_amount) if fee_amount else None
         parsed_fee_date = date.fromisoformat(fee_date) if fee_date else None
+        parsed_custody_doc_id = uuid.UUID(custody_document_id) if custody_document_id else None
+        parsed_custody_at = date.fromisoformat(custody_at) if custody_at else None
     except (ValueError, InvalidOperation):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Format data salah")
+
+    if kind == NotarySubmissionKind.CUSTODY:
+        if parsed_custody_doc_id is None or not custody_event or parsed_custody_at is None:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Dokumen, kejadian, & tanggal wajib diisi")
+        # dokumen harus benar-benar milik unit pembeli ini — cegah pilih dokumen tenant/unit lain
+        doc_ok = await db.scalar(select(func.count()).select_from(Document).where(
+            Document.id == parsed_custody_doc_id, Document.unit_id == c.unit_id,
+            Document.tenant_id == link.tenant_id, Document.is_deleted == False))  # noqa: E712
+        if not doc_ok:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Dokumen tidak ditemukan utk pembeli ini")
 
     sub = NotarySubmission(
         tenant_id=link.tenant_id, notary_share_link_id=link.id, client_id=client_id,
@@ -369,6 +396,9 @@ async def public_notary_submit(
         tax_id_billing=(tax_id_billing or None), tax_ntpn=(tax_ntpn or None),
         tax_date=parsed_tax_date, tax_status=(TaxStatus(tax_status) if tax_status else None),
         fee_description=(fee_description or None), fee_amount=parsed_fee_amount, fee_date=parsed_fee_date,
+        custody_document_id=parsed_custody_doc_id,
+        custody_event=(HandoverEvent(custody_event) if custody_event else None),
+        custody_at=parsed_custody_at,
         submitted_notes=(notes or None),
     )
     for f, key_field, name_field, type_field, size_field in [

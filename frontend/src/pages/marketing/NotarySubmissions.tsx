@@ -3,12 +3,20 @@ import { Link } from 'react-router-dom'
 import { Loader2, Check, X, Eye, Inbox } from 'lucide-react'
 import Modal from '../../components/ui/Modal'
 import { taxService } from '../../services/tax'
-import type { NotarySubmission, NotarySubmissionKind } from '../../types'
+import type { NotarySubmission, NotarySubmissionKind, NotaryHandoverEvent } from '../../types'
 
 const kindLabel: Record<NotarySubmissionKind, string> = {
   ppjb_ajb: 'PPJB / AJB',
   tax: 'Pajak',
   fee: 'Biaya Notaris',
+  custody: 'Serah-Terima Asli',
+}
+const HANDOVER_LABEL: Record<NotaryHandoverEvent, string> = {
+  ambil: 'Diambil dari arsip',
+  serah_notaris: 'Diserahkan ke notaris',
+  terima_pembeli: 'Diterima pembeli (cash)',
+  tahan_bank: 'Diserahkan ke bank (KPR/agunan)',
+  kembali_arsip: 'Kembali ke arsip',
 }
 const fmtDate = (d?: string) => d ? new Date(d).toLocaleDateString('id-ID') : '—'
 const fmtRp = (n?: number) => n == null ? '—' : new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(Number(n))
@@ -22,6 +30,9 @@ function summarize(s: NotarySubmission): string {
   }
   if (s.kind === 'tax') {
     return `${s.tax_type?.toUpperCase() ?? '—'} · ${fmtRp(s.tax_amount)}${s.tax_id_billing ? ` · ${s.tax_id_billing}` : ''}`
+  }
+  if (s.kind === 'custody') {
+    return `${s.custody_document_type ?? '—'} · ${s.custody_event ? HANDOVER_LABEL[s.custody_event] : '—'} · ${fmtDate(s.custody_at)}`
   }
   return `${s.fee_description ?? '—'} · ${fmtRp(s.fee_amount)}`
 }

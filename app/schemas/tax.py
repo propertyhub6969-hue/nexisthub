@@ -5,6 +5,7 @@ from decimal import Decimal
 import uuid
 
 from app.models.tax import TaxType, TaxStatus, NotarySubmissionKind, NotarySubmissionStatus
+from app.models.document import HandoverEvent
 
 
 # ── Notary ────────────────────────────────────────────────────────
@@ -187,6 +188,9 @@ class NotarySubmissionResponse(BaseModel):
     fee_description: Optional[str] = None
     fee_amount: Optional[Decimal] = None
     fee_date: Optional[date] = None
+    custody_document_type: Optional[str] = None
+    custody_event: Optional[HandoverEvent] = None
+    custody_at: Optional[date] = None
     has_file: bool = False
     file_name: Optional[str] = None
     submitted_notes: Optional[str] = None
@@ -224,6 +228,11 @@ class PublicNotaryFeeRow(BaseModel):
     is_paid: bool
 
 
+class PublicNotaryDocumentRow(BaseModel):
+    id: uuid.UUID
+    doc_type: str
+
+
 class PublicNotaryClientRow(BaseModel):
     client_id: uuid.UUID
     client_name: str
@@ -238,6 +247,8 @@ class PublicNotaryClientRow(BaseModel):
     # Kejadian serah-terima dokumen ASLI TERAKHIR yg melibatkan notaris ini (ringkas — bukan riwayat penuh)
     last_handover_event: Optional[str] = None
     last_handover_date: Optional[date] = None
+    # Dokumen legalitas unit ini — supaya notaris bisa pilih dokumen mana saat kirim serah-terima
+    documents: list[PublicNotaryDocumentRow] = []
 
 
 class PublicNotaryPageResponse(BaseModel):
