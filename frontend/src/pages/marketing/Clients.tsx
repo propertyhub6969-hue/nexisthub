@@ -81,6 +81,7 @@ export default function Clients() {
   const [form, setForm] = useState<ClientCreate>(emptyForm)
   const [saving, setSaving] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
+  const [formMarketingName, setFormMarketingName] = useState('')
 
   const [visibleCols, setVisibleCols] = useState<Record<ToggleColKey, boolean>>(loadVisibleCols)
   const [colMenuOpen, setColMenuOpen] = useState(false)
@@ -159,7 +160,7 @@ export default function Clients() {
     return () => clearTimeout(t)
   }, [search, projectFilter, unitFilter, page, load])
 
-  function openCreate() { setEditingId(null); setForm(emptyForm); setUnitFormQuery(''); setModalOpen(true) }
+  function openCreate() { setEditingId(null); setForm(emptyForm); setFormMarketingName(me?.full_name ?? '—'); setUnitFormQuery(''); setModalOpen(true) }
   function openEdit(c: Client) {
     setEditingId(c.id)
     setForm({
@@ -169,6 +170,8 @@ export default function Clients() {
       payment_type: c.payment_type,
       promo: c.promo ?? '', signature: c.signature ?? '', status: c.status,
     })
+    // tampilkan marketing ASLI yang mengentry data ini, bukan user yang sedang login/mengedit
+    setFormMarketingName(c.marketing_name ?? '—')
     setModalOpen(true)
   }
   function closeModal() { setModalOpen(false); setEditingId(null); setForm(emptyForm); setUnitFormQuery('') }
@@ -393,7 +396,8 @@ export default function Clients() {
           </div>
           <div>
             <label className="label">Marketing</label>
-            <input className="input bg-slate-50" value={me?.full_name ?? '—'} readOnly title="Otomatis dari user yang login" />
+            <input className="input bg-slate-50" value={formMarketingName} readOnly
+              title={editingId ? 'User yang pertama kali mengentry data ini — tidak berubah walau diedit user lain' : 'Otomatis dari user yang login'} />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
