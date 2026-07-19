@@ -19,6 +19,7 @@ const pageTitles: Record<string, string> = {
   '/procurement': 'Procurement',
   '/legal': 'Master Data',
   '/pemberkasan': 'Pemberkasan',
+  '/marketing/bank-submissions': 'Kiriman Bank',
   '/settings/team': 'Tim & Peran',
   '/settings/profile': 'Profil Perusahaan',
   '/settings/langganan': 'Langganan',

@@ -1013,6 +1013,10 @@ export interface KprApplication {
   rejection_reason?: string
   is_rejected?: boolean
   notes?: string
+  pic_bank_name?: string
+  pic_bank_signature?: string
+  has_sp3k_file?: boolean
+  sp3k_file_name?: string
   created_at: string
   updated_at: string
 }
@@ -1029,6 +1033,64 @@ export interface KprCreate {
   sp3k_date?: string
   akad_date?: string
   notes?: string
+  pic_bank_name?: string
+  pic_bank_signature?: string
+}
+
+// ── Tautan Bank & Kiriman menunggu persetujuan ─────────────────────
+export type BankSubmissionStatus = 'pending' | 'accepted' | 'rejected'
+
+export interface BankShareLink {
+  id: string
+  token: string
+  bank_id: string
+  bank_name_snapshot?: string
+  expires_at: string
+  revoked_at?: string
+  last_accessed_at?: string
+  access_count: number
+  is_active: boolean
+  created_at: string
+}
+export interface BankShareLinkCreate {
+  bank_id: string
+  expires_days: number
+}
+
+export interface BankSubmission {
+  id: string
+  kpr_application_id: string
+  client_id: string
+  client_name: string
+  unit_label?: string
+  bank_name?: string
+  submitted_stage: KprStage
+  submitted_sp3k_number?: string
+  submitted_sp3k_date?: string
+  has_file: boolean
+  file_name?: string
+  status: BankSubmissionStatus
+  reviewer_name?: string
+  reviewed_at?: string
+  notes?: string
+  created_at: string
+}
+
+export interface PublicBankRow {
+  kpr_application_id: string
+  client_name: string
+  unit_label?: string
+  project_name?: string
+  stage: KprStage
+  doc_total: number
+  doc_terbit: number
+  tax_total: number
+  tax_settled: number
+  kpr_days?: number
+}
+export interface PublicBankPage {
+  bank_name: string
+  rows: PublicBankRow[]
 }
 
 // ── Procurement ───────────────────────────────────────────────────

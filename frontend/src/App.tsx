@@ -11,6 +11,7 @@ import Clients from './pages/marketing/Clients'
 import ClientPayments from './pages/marketing/ClientPayments'
 import ClientTax from './pages/marketing/ClientTax'
 import ClientKpr from './pages/marketing/ClientKpr'
+import BankSubmissions from './pages/marketing/BankSubmissions'
 import Notaries from './pages/legal/Notaries'
 import Pemberkasan from './pages/legal/Pemberkasan'
 import Projects from './pages/property/Projects'
@@ -28,6 +29,7 @@ import PaymentApproval from './pages/finance/PaymentApproval'
 import CashBook from './pages/finance/CashBook'
 import Platform from './pages/platform/Platform'
 import PublicMonthlyTax from './pages/public/PublicMonthlyTax'
+import PublicBankFiling from './pages/public/PublicBankFiling'
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   return authService.isAuthenticated() ? <>{children}</> : <Navigate to="/login" replace />
@@ -45,6 +47,7 @@ export default function App() {
         <Route path="/login"    element={<PublicRoute><Login /></PublicRoute>} />
         <Route path="/register" element={<PublicRoute><Register /></PublicRoute>} />
         <Route path="/public/pajak/:token" element={<PublicMonthlyTax />} />
+        <Route path="/public/bank/:token" element={<PublicBankFiling />} />
 
         {/* Protected */}
         <Route
@@ -61,6 +64,7 @@ export default function App() {
           <Route path="/marketing/clients/:clientId/payments" element={<ClientPayments />} />
           <Route path="/marketing/clients/:clientId/tax" element={<ClientTax />} />
           <Route path="/marketing/clients/:clientId/kpr" element={<ClientKpr />} />
+          <Route path="/marketing/bank-submissions" element={<BankSubmissions />} />
           <Route path="/property/projects"                 element={<Projects />} />
           <Route path="/property/legal-docs"               element={<LegalDocuments />} />
           <Route path="/property/projects/:projectId/units" element={<ProjectUnits />} />

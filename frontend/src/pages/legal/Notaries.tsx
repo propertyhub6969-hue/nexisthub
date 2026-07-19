@@ -1,9 +1,10 @@
 import { useEffect, useState, useCallback } from 'react'
-import { Plus, Trash2, Pencil, Loader2, Scale, Landmark } from 'lucide-react'
+import { Plus, Trash2, Pencil, Loader2, Scale, Landmark, Share2, Copy, Check } from 'lucide-react'
 import Modal from '../../components/ui/Modal'
+import Badge from '../../components/ui/Badge'
 import { taxService } from '../../services/tax'
 import { kprService } from '../../services/kpr'
-import type { Notary, NotaryCreate, Bank, BankCreate } from '../../types'
+import type { Notary, NotaryCreate, Bank, BankCreate, BankShareLink } from '../../types'
 
 const emptyNotary: NotaryCreate = { name: '', sk_number: '', ktp: '', phone: '', address: '' }
 const emptyBank: BankCreate = { name: '', notes: '' }
@@ -23,6 +24,13 @@ export default function LegalMaster() {
   const [bModal, setBModal] = useState(false)
   const [bForm, setBForm] = useState<BankCreate>(emptyBank)
   const [bEditId, setBEditId] = useState<string | null>(null)
+  // bagikan ke bank (tautan bertoken)
+  const [shareBank, setShareBank] = useState<Bank | null>(null)
+  const [shareLinks, setShareLinks] = useState<BankShareLink[]>([])
+  const [shareLoading, setShareLoading] = useState(false)
+  const [shareDays, setShareDays] = useState(30)
+  const [shareSaving, setShareSaving] = useState(false)
+  const [copiedId, setCopiedId] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true); setError('')
@@ -64,6 +72,37 @@ export default function LegalMaster() {
   async function delB(id: string) {
     if (!confirm('Hapus bank ini?')) return
     try { await kprService.deleteBank(id); setBanks((p) => p.filter((b) => b.id !== id)) } catch { setError('Gagal menghapus.') }
+  }
+
+  // ── Bagikan ke Bank ──
+  function shareUrl(token: string): string { return `${window.location.origin}/public/bank/${token}` }
+  async function loadShareLinks(bankId: string) {
+    setShareLoading(true)
+    try { setShareLinks(await kprService.listBankShareLinks(bankId)) } catch { /* noop */ } finally { setShareLoading(false) }
+  }
+  function openShareModal(b: Bank) { setShareBank(b); loadShareLinks(b.id) }
+  async function createShareLink() {
+    if (!shareBank) return
+    setShareSaving(true)
+    try {
+      await kprService.createBankShareLink({ bank_id: shareBank.id, expires_days: shareDays })
+      await loadShareLinks(shareBank.id)
+    } catch { setError('Gagal membuat tautan.') } finally { setShareSaving(false) }
+  }
+  async function revokeShareLink(id: string) {
+    if (!shareBank || !confirm('Cabut tautan ini? Bank tak akan bisa akses lagi.')) return
+    try { await kprService.revokeBankShareLink(id); await loadShareLinks(shareBank.id) } catch { /* noop */ }
+  }
+  function copyLink(id: string, token: string) {
+    navigator.clipboard.writeText(shareUrl(token)).then(() => {
+      setCopiedId(id)
+      setTimeout(() => setCopiedId(null), 2000)
+    })
+  }
+  function linkStatus(l: BankShareLink): { label: string; variant: 'green' | 'red' | 'gray' } {
+    if (l.revoked_at) return { label: 'Dicabut', variant: 'gray' }
+    if (!l.is_active) return { label: 'Kedaluwarsa', variant: 'red' }
+    return { label: 'Aktif', variant: 'green' }
   }
 
   if (loading) return <div className="py-16 text-center text-slate-400"><Loader2 size={20} className="inline animate-spin" /></div>
@@ -117,6 +156,7 @@ export default function LegalMaster() {
                 <td className="px-4 py-2.5 font-medium text-slate-900">{b.name}</td>
                 <td className="px-4 py-2.5 text-slate-500">{b.notes ?? '—'}</td>
                 <td className="px-4 py-2.5"><div className="flex items-center justify-end gap-3">
+                  <button onClick={() => openShareModal(b)} className="text-slate-400 hover:text-brand-600" title="Bagikan ke Bank"><Share2 size={14} /></button>
                   <button onClick={() => openBEdit(b)} className="text-slate-400 hover:text-brand-600"><Pencil size={14} /></button>
                   <button onClick={() => delB(b.id)} className="text-slate-400 hover:text-red-600"><Trash2 size={14} /></button>
                 </div></td>
@@ -153,6 +193,65 @@ export default function LegalMaster() {
             <button type="submit" className="btn-primary text-sm flex items-center gap-2" disabled={saving}>{saving && <Loader2 size={14} className="animate-spin" />}Simpan</button>
           </div>
         </form>
+      </Modal>
+
+      {/* Modal Bagikan ke Bank */}
+      <Modal open={shareBank !== null} onClose={() => setShareBank(null)} title={`Bagikan ke ${shareBank?.name ?? 'Bank'}`} size="lg">
+        <div className="space-y-4">
+          <p className="text-sm text-slate-500">
+            Buat tautan khusus <b>{shareBank?.name}</b> yang bisa dibuka pihak bank <b>tanpa perlu akun/login</b> — lihat status pemberkasan pembeli yang ditanganinya & kirim update progres/SP3K (menunggu persetujuan Anda sebelum data berubah).
+          </p>
+          <div className="flex items-end gap-2">
+            <div>
+              <label className="label">Berlaku (hari)</label>
+              <input type="number" className="input w-28" min={1} max={365} value={shareDays} onChange={(e) => setShareDays(Math.max(1, Math.min(365, Number(e.target.value) || 30)))} />
+            </div>
+            <button className="btn-primary text-sm flex items-center gap-1.5" onClick={createShareLink} disabled={shareSaving}>
+              {shareSaving && <Loader2 size={14} className="animate-spin" />} Buat Tautan Baru
+            </button>
+          </div>
+
+          <div>
+            <label className="label">Tautan yang pernah dibuat</label>
+            {shareLoading ? (
+              <div className="flex justify-center py-6"><Loader2 size={16} className="animate-spin text-slate-400" /></div>
+            ) : shareLinks.length === 0 ? (
+              <p className="text-sm text-slate-400 text-center py-4">Belum ada tautan.</p>
+            ) : (
+              <div className="border border-slate-200 rounded-lg divide-y divide-slate-100 max-h-72 overflow-y-auto">
+                {shareLinks.map((l) => {
+                  const s = linkStatus(l)
+                  return (
+                    <div key={l.id} className="px-3 py-2.5 text-sm space-y-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-medium text-slate-800">Dibuat {new Date(l.created_at).toLocaleDateString('id-ID')}</span>
+                        <Badge label={s.label} variant={s.variant} />
+                      </div>
+                      <div className="flex items-center justify-between gap-2 text-xs text-slate-400">
+                        <span>
+                          Kedaluwarsa {new Date(l.expires_at).toLocaleDateString('id-ID')}
+                          {l.access_count > 0 && <> · diakses {l.access_count}x</>}
+                        </span>
+                        <div className="flex items-center gap-3 shrink-0">
+                          {s.variant === 'green' && (
+                            <button onClick={() => copyLink(l.id, l.token)} className="flex items-center gap-1 text-brand-600 hover:underline">
+                              {copiedId === l.id ? <><Check size={12} /> Tersalin</> : <><Copy size={12} /> Salin Tautan</>}
+                            </button>
+                          )}
+                          {!l.revoked_at && (
+                            <button onClick={() => revokeShareLink(l.id)} className="flex items-center gap-1 text-slate-400 hover:text-red-600">
+                              <Trash2 size={12} /> Cabut
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        </div>
       </Modal>
     </div>
   )

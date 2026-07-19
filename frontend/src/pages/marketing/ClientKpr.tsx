@@ -5,6 +5,7 @@ import { ArrowLeft, Loader2, Landmark, CheckCircle2, Banknote, Check, Plus, Tras
 import Modal from '../../components/ui/Modal'
 import DateInput from '../../components/ui/DateInput'
 import MoneyInput from '../../components/ui/MoneyInput'
+import SignaturePad from '../../components/ui/SignaturePad'
 import { marketingService } from '../../services/marketing'
 import { kprService } from '../../services/kpr'
 import type { Client, Bank, KprApplication, KprStage, Disbursement } from '../../types'
@@ -96,6 +97,12 @@ export default function ClientKpr() {
         submitted_date: kpr.submitted_date || undefined, bank_submission_date: kpr.bank_submission_date || undefined,
         sp3k_date: kpr.sp3k_date || undefined, akad_date: kpr.akad_date || undefined,
         notes: kpr.notes || undefined,
+        // PIC bank & ttd hanya dikirim selagi tahap Berkas Masuk Bank (backend kunci di tahap lain —
+        // jangan kirim nilai lama yg tersimpan saat tahap sudah lanjut, supaya save() tak ikut ditolak).
+        ...(kpr.stage === 'berkas_masuk_bank' ? {
+          pic_bank_name: kpr.pic_bank_name || undefined,
+          pic_bank_signature: kpr.pic_bank_signature || undefined,
+        } : {}),
       })
       setKpr(k)
       setSavedTick((t) => t + 1)
@@ -267,6 +274,28 @@ export default function ClientKpr() {
                   <DateInput className="input max-w-xs" max={today()} value={kpr.bank_submission_date ?? ''} onChange={(v) => set('bank_submission_date', v)} />
                 </div>
                 <p className="text-xs text-slate-400 mt-2">No. SiKasep/SiKumbang (utk subsidi) dicatat di <Link to={`/property/legal-docs`} className="text-brand-600 hover:underline">Dokumen Legalitas</Link> unit ini.</p>
+
+                <div className="mt-3">
+                  <label className="label">PIC Bank (penerima berkas)</label>
+                  <input
+                    className="input max-w-xs" placeholder="Nama petugas bank"
+                    disabled={kpr.stage !== 'berkas_masuk_bank'}
+                    value={kpr.pic_bank_name ?? ''} onChange={(e) => set('pic_bank_name', e.target.value)}
+                  />
+                  {kpr.stage !== 'berkas_masuk_bank' && (
+                    <p className="text-[11px] text-slate-400 mt-1">Terkunci — hanya bisa diisi/diubah selagi tahap Berkas Masuk Bank.</p>
+                  )}
+                </div>
+                <div className="mt-3">
+                  <label className="label">Tanda Tangan PIC Bank</label>
+                  {kpr.stage === 'berkas_masuk_bank' ? (
+                    <SignaturePad value={kpr.pic_bank_signature} onChange={(d) => set('pic_bank_signature', d)} />
+                  ) : kpr.pic_bank_signature ? (
+                    <img src={kpr.pic_bank_signature} alt="Tanda tangan PIC Bank" className="border border-slate-200 rounded-lg bg-white" style={{ maxWidth: 220 }} />
+                  ) : (
+                    <p className="text-sm text-slate-400">—</p>
+                  )}
+                </div>
               </div>
             )}
 
@@ -277,6 +306,11 @@ export default function ClientKpr() {
                   <div><label className="label">No. SP3K</label><input className="input" value={kpr.sp3k_number ?? ''} onChange={(e) => set('sp3k_number', e.target.value)} /></div>
                   <div><label className="label">Tgl SP3K</label><DateInput className="input" max={today()} value={kpr.sp3k_date ?? ''} onChange={(v) => set('sp3k_date', v)} /></div>
                 </div>
+                {kpr.has_sp3k_file && (
+                  <button type="button" onClick={() => kprService.openSp3kFile(kpr.id)} className="mt-2 inline-flex items-center gap-1 text-xs text-brand-600 hover:underline">
+                    <FileCheck size={13} /> Lihat file SP3K ({kpr.sp3k_file_name})
+                  </button>
+                )}
               </div>
             )}
 

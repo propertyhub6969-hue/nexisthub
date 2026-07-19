@@ -1,8 +1,9 @@
+import secrets
 import uuid
-from datetime import datetime, date
+from datetime import datetime, date, timedelta, timezone
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,13 +12,18 @@ from app.core.database import get_db
 from app.core.audit import record_audit
 from app.core.unit_status import unit_status_for_client, set_unit_status
 from app.core.cashbook import sync_payment_cashbook
+from app.core import storage
+from app.core.files import file_etag, not_modified_response, cached_file_response
 from app.api.deps import get_current_context, AuthContext
-from app.models.kpr import Bank, KprApplication, KprStage
+from app.models.kpr import Bank, KprApplication, KprStage, BankShareLink, KprBankSubmission, BankSubmissionStatus
 from app.models.marketing import Client, ClientStatus
+from app.models.property import Unit
+from app.models.user import User
 from app.models.payment import Payment, PaymentSource, PaymentMethod, PaymentPurpose, PaymentApprovalStatus
 from app.schemas.kpr import (
     BankCreate, BankUpdate, BankResponse,
     KprCreate, KprUpdate, KprResponse, DisburseRequest, DisbursementResponse, RejectRequest,
+    BankShareLinkCreate, BankShareLinkResponse, BankSubmissionResponse, BankSubmissionRejectRequest,
 )
 
 router = APIRouter()
@@ -59,6 +65,41 @@ async def update_bank(bank_id: uuid.UUID, payload: BankUpdate, ctx: AuthContext 
 async def delete_bank(bank_id: uuid.UUID, ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db)):
     b = await _get_bank(db, ctx.tenant_id, bank_id)
     b.is_deleted = True; b.deleted_at = datetime.utcnow()
+
+
+# ═══════════════════════ TAUTAN BAGIKAN KE BANK (tanpa login) ═══════════════════════
+@router.get("/bank-share", response_model=list[BankShareLinkResponse])
+async def list_bank_share_links(bank_id: uuid.UUID = Query(None), ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db)):
+    """Daftar tautan yang pernah dibuat tenant ini (termasuk expired/dicabut, utk histori)."""
+    conds = [BankShareLink.tenant_id == ctx.tenant_id]
+    if bank_id:
+        conds.append(BankShareLink.bank_id == bank_id)
+    r = await db.execute(select(BankShareLink).where(*conds).order_by(BankShareLink.created_at.desc()))
+    return r.scalars().all()
+
+
+@router.post("/bank-share", response_model=BankShareLinkResponse, status_code=status.HTTP_201_CREATED)
+async def create_bank_share_link(payload: BankShareLinkCreate, ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db)):
+    """Buat tautan bertoken (tanpa login) utk 1 bank lihat status pemberkasan & kirim update."""
+    bank = await _get_bank(db, ctx.tenant_id, payload.bank_id)
+    days = max(1, min(365, payload.expires_days))
+    link = BankShareLink(
+        tenant_id=ctx.tenant_id, token=secrets.token_urlsafe(32), bank_id=bank.id,
+        bank_name_snapshot=bank.name, created_by=ctx.user_id,
+        expires_at=datetime.now(timezone.utc) + timedelta(days=days),
+    )
+    db.add(link)
+    await db.flush(); await db.refresh(link)
+    return link
+
+
+@router.delete("/bank-share/{link_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def revoke_bank_share_link(link_id: uuid.UUID, ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db)):
+    link = (await db.execute(select(BankShareLink).where(BankShareLink.id == link_id, BankShareLink.tenant_id == ctx.tenant_id))).scalar_one_or_none()
+    if link is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Tautan tidak ditemukan")
+    link.revoked_at = datetime.now(timezone.utc)
+    await db.flush()
 
 
 # ═══════════════════════ KPR APPLICATIONS ═══════════════════════
@@ -140,6 +181,12 @@ async def create_kpr(payload: KprCreate, ctx: AuthContext = Depends(get_current_
 async def update_kpr(kpr_id: uuid.UUID, payload: KprUpdate, ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db)):
     k = await _load_kpr(db, ctx.tenant_id, kpr_id)
     data = payload.model_dump(exclude_unset=True)
+    # PIC bank + ttd = bukti serah berkas — hanya boleh diisi/diubah selagi tahap Berkas Masuk Bank
+    # (dikunci di tahap lain, bukan cuma disembunyikan di FE, supaya bukti tak bisa diutak-atik belakangan).
+    resulting_stage = data.get("stage", k.stage)
+    if ("pic_bank_name" in data or "pic_bank_signature" in data) and resulting_stage != KprStage.BERKAS_MASUK_BANK:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                            detail="PIC Bank & tanda tangan hanya bisa diisi/diubah selagi tahap 'Berkas Masuk Bank'")
     for f, v in data.items():
         setattr(k, f, v)
     await db.flush()
@@ -147,6 +194,27 @@ async def update_kpr(kpr_id: uuid.UUID, payload: KprUpdate, ctx: AuthContext = D
     await db.flush()
     await record_audit(db, ctx.tenant_id, ctx.user_id, "UPDATE", "kpr_applications", kpr_id, new_data=data)
     return await _load_kpr(db, ctx.tenant_id, kpr_id)
+
+
+@router.get("/applications/{kpr_id}/sp3k-file")
+async def download_sp3k_file(kpr_id: uuid.UUID, request: Request, ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db)):
+    """File SP3K resmi (hasil terima kiriman bank, atau diunggah manual bila nanti ditambahkan)."""
+    meta = (await db.execute(
+        select(KprApplication.sp3k_file_size, KprApplication.sp3k_file_type, KprApplication.sp3k_file_name,
+               KprApplication.updated_at, KprApplication.sp3k_file_key)
+        .where(KprApplication.id == kpr_id, KprApplication.tenant_id == ctx.tenant_id, NOTDEL(KprApplication))
+    )).first()
+    if meta is None or meta[0] is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="File tidak ditemukan")
+    size, ctype, fname, updated, fkey = meta
+    etag = file_etag(size, updated)
+    nm = not_modified_response(request, etag)
+    if nm is not None:
+        return nm
+    data = await storage.get(fkey) if fkey else None
+    if data is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="File tidak ditemukan")
+    return cached_file_response(data, ctype, fname, etag)
 
 
 @router.delete("/applications/{kpr_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -236,3 +304,130 @@ async def delete_disbursement(payment_id: uuid.UUID, ctx: AuthContext = Depends(
     if k is not None:
         k.pencairan_amount = await _disbursed_total(db, ctx.tenant_id, kpr_id)
     await record_audit(db, ctx.tenant_id, ctx.user_id, "DELETE", "payments", payment_id, old_data={"kpr_disbursement": str(pay.amount)})
+
+
+# ═══════════════════════ KIRIMAN DARI BANK (menunggu persetujuan) ═══════════════════════
+def _lbl(u: Unit) -> str:
+    return "-".join(x for x in [u.block, u.unit_number] if x) or "?"
+
+
+async def _submission_response(db, tenant_id, sub: KprBankSubmission) -> BankSubmissionResponse:
+    row = (await db.execute(
+        select(Client.id, Client.full_name, Client.unit_id, KprApplication.bank_id)
+        .join(KprApplication, KprApplication.client_id == Client.id)
+        .where(KprApplication.id == sub.kpr_application_id)
+    )).first()
+    client_id, client_name, unit_id, bank_id = row if row else (None, "?", None, None)
+    unit_label = None
+    if unit_id:
+        u = (await db.execute(select(Unit).where(Unit.id == unit_id))).scalar_one_or_none()
+        if u:
+            unit_label = _lbl(u)
+    bank_name = None
+    if bank_id:
+        bank_name = await db.scalar(select(Bank.name).where(Bank.id == bank_id))
+    reviewer_name = None
+    if sub.reviewed_by:
+        reviewer_name = await db.scalar(select(User.full_name).where(User.id == sub.reviewed_by))
+    return BankSubmissionResponse(
+        id=sub.id, kpr_application_id=sub.kpr_application_id, client_id=client_id, client_name=client_name,
+        unit_label=unit_label, bank_name=bank_name, submitted_stage=sub.submitted_stage,
+        submitted_sp3k_number=sub.submitted_sp3k_number, submitted_sp3k_date=sub.submitted_sp3k_date,
+        has_file=sub.has_file, file_name=sub.file_name, status=sub.status,
+        reviewer_name=reviewer_name, reviewed_at=sub.reviewed_at, notes=sub.notes, created_at=sub.created_at,
+    )
+
+
+@router.get("/bank-submissions", response_model=list[BankSubmissionResponse])
+async def list_bank_submissions(
+    status_filter: str = Query("pending", alias="status"),
+    ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db),
+):
+    """Kiriman dari bank lewat tautan — default hanya yang menunggu persetujuan."""
+    conds = [KprBankSubmission.tenant_id == ctx.tenant_id]
+    if status_filter and status_filter != "all":
+        conds.append(KprBankSubmission.status == BankSubmissionStatus(status_filter))
+    rows = (await db.execute(
+        select(KprBankSubmission).where(*conds).order_by(KprBankSubmission.created_at.desc())
+    )).scalars().all()
+    return [await _submission_response(db, ctx.tenant_id, s) for s in rows]
+
+
+@router.get("/bank-submissions/pending-count")
+async def bank_submissions_pending_count(ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db)):
+    count = await db.scalar(select(func.count()).select_from(KprBankSubmission).where(
+        KprBankSubmission.tenant_id == ctx.tenant_id, KprBankSubmission.status == BankSubmissionStatus.PENDING))
+    return {"count": count or 0}
+
+
+async def _get_submission(db, tenant_id, sub_id) -> KprBankSubmission:
+    sub = (await db.execute(
+        select(KprBankSubmission).where(KprBankSubmission.id == sub_id, KprBankSubmission.tenant_id == tenant_id)
+    )).scalar_one_or_none()
+    if sub is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Kiriman tidak ditemukan")
+    return sub
+
+
+@router.get("/bank-submissions/{sub_id}/file")
+async def download_submission_file(sub_id: uuid.UUID, request: Request, ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db)):
+    """Lihat file yang dikirim bank SEBELUM diterima — utk staf verifikasi dulu sebelum klik Terima."""
+    sub = await _get_submission(db, ctx.tenant_id, sub_id)
+    if not sub.has_file or not sub.file_key:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="File tidak ditemukan")
+    etag = file_etag(sub.file_size, sub.updated_at)
+    nm = not_modified_response(request, etag)
+    if nm is not None:
+        return nm
+    data = await storage.get(sub.file_key)
+    if data is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="File tidak ditemukan")
+    return cached_file_response(data, sub.file_type, sub.file_name, etag)
+
+
+@router.post("/bank-submissions/{sub_id}/accept", response_model=BankSubmissionResponse)
+async def accept_bank_submission(sub_id: uuid.UUID, ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db)):
+    """Terima kiriman bank — baru di titik ini data KPR pembeli resmi berubah."""
+    sub = await _get_submission(db, ctx.tenant_id, sub_id)
+    if sub.status != BankSubmissionStatus.PENDING:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Kiriman ini sudah diproses")
+    k = (await db.execute(
+        select(KprApplication).where(KprApplication.id == sub.kpr_application_id, KprApplication.tenant_id == ctx.tenant_id, NOTDEL(KprApplication))
+    )).scalar_one_or_none()
+    if k is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Pengajuan KPR tidak ditemukan")
+    k.stage = sub.submitted_stage
+    if sub.submitted_sp3k_number:
+        k.sp3k_number = sub.submitted_sp3k_number
+    if sub.submitted_sp3k_date:
+        k.sp3k_date = sub.submitted_sp3k_date
+    if sub.has_file:
+        k.sp3k_file_name = sub.file_name
+        k.sp3k_file_type = sub.file_type
+        k.sp3k_file_size = sub.file_size
+        k.sp3k_file_key = sub.file_key  # pakai ulang objek MinIO yang sama, tak diunggah ulang
+    sub.status = BankSubmissionStatus.ACCEPTED
+    sub.reviewed_by = ctx.user_id
+    sub.reviewed_at = datetime.now(timezone.utc)
+    await db.flush()
+    await _sync_client_on_kpr_stage(db, ctx.tenant_id, k.client_id, k.stage)
+    await db.flush()
+    await record_audit(db, ctx.tenant_id, ctx.user_id, "ACCEPT", "kpr_bank_submissions", sub_id,
+                       new_data={"stage": sub.submitted_stage.value}, client_id=k.client_id)
+    return await _submission_response(db, ctx.tenant_id, sub)
+
+
+@router.post("/bank-submissions/{sub_id}/reject", response_model=BankSubmissionResponse)
+async def reject_bank_submission(sub_id: uuid.UUID, payload: BankSubmissionRejectRequest, ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db)):
+    """Tolak kiriman bank — wajib alasan. Tak menyentuh data KPR."""
+    sub = await _get_submission(db, ctx.tenant_id, sub_id)
+    if sub.status != BankSubmissionStatus.PENDING:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Kiriman ini sudah diproses")
+    sub.status = BankSubmissionStatus.REJECTED
+    sub.reviewed_by = ctx.user_id
+    sub.reviewed_at = datetime.now(timezone.utc)
+    sub.notes = payload.reason.strip()
+    await db.flush()
+    await record_audit(db, ctx.tenant_id, ctx.user_id, "REJECT", "kpr_bank_submissions", sub_id,
+                       reason=payload.reason.strip())
+    return await _submission_response(db, ctx.tenant_id, sub)

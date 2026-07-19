@@ -22,11 +22,13 @@ import {
   Wallet,
   Receipt,
   TrendingUp,
+  Inbox,
   type LucideIcon,
 } from 'lucide-react'
 import { clsx } from 'clsx'
 import { useAuth } from '../../context/AuthContext'
 import { canAccessPath, canAccessFeature } from '../../utils/access'
+import { kprService } from '../../services/kpr'
 import NexistLogo from '../ui/NexistLogo'
 
 interface NavChild {
@@ -56,6 +58,7 @@ const marketingItem: NavItem = {
     { label: 'Prospek', to: '/marketing/prospects', icon: UserCheck },
     { label: 'Pembeli', to: '/marketing/clients', icon: Handshake },
     { label: 'Pemberkasan', to: '/pemberkasan', icon: ClipboardCheck },
+    { label: 'Kiriman Bank', to: '/marketing/bank-submissions', icon: Inbox },
   ],
 }
 
@@ -151,6 +154,13 @@ export default function Sidebar({ open = false, onClose }: { open?: boolean; onC
   ]
   // gabungan gating: akses role + feature-flag paket tenant
   const allow = (to: string) => canAccessPath(user?.role, to, user?.is_platform_admin) && canAccessFeature(user?.feature_flags, to)
+
+  // badge jumlah kiriman bank menunggu persetujuan (silent — 403/gagal cukup diabaikan, badge tetap 0)
+  const [bankPendingCount, setBankPendingCount] = useState(0)
+  useEffect(() => {
+    if (!user) return
+    kprService.bankSubmissionsPendingCount().then(setBankPendingCount).catch(() => {})
+  }, [user])
   // saring menu sesuai akses role (produksi = Dashboard/Konstruksi/Procurement; role lain penuh)
   const items = allItems.filter((it) =>
     it.to ? allow(it.to) : (it.children ?? []).some((c) => allow(c.to))
@@ -224,6 +234,9 @@ export default function Sidebar({ open = false, onClose }: { open?: boolean; onC
                 >
                   <child.icon size={16} />
                   {child.label}
+                  {child.to === '/marketing/bank-submissions' && bankPendingCount > 0 && (
+                    <span className="ml-auto text-[10px] font-semibold bg-brass-500 text-white rounded-full px-1.5 py-0.5 leading-none">{bankPendingCount}</span>
+                  )}
                 </NavLink>
               ))}
             </div>

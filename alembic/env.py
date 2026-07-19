@@ -19,7 +19,7 @@ from app.models.sale import Sale
 from app.models.payment import PaymentSchedule, Payment
 from app.models.tax import Notary, TaxRecord, NotaryFee, MonthlyTaxShareLink
 from app.models.document import Document, CertificateSplitBatch, CertificateSplitBatchItem, DocumentProgressLog
-from app.models.kpr import Bank, KprApplication
+from app.models.kpr import Bank, KprApplication, BankShareLink, KprBankSubmission
 from app.models.procurement import Vendor, PurchaseOrder, PurchaseOrderItem, VendorPayment
 from app.models.stock import StockMovement
 from app.models.expense import Expense
