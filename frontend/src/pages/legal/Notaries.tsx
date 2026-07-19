@@ -28,7 +28,7 @@ export default function LegalMaster() {
   const [shareBank, setShareBank] = useState<Bank | null>(null)
   const [shareLinks, setShareLinks] = useState<BankShareLink[]>([])
   const [shareLoading, setShareLoading] = useState(false)
-  const [shareDays, setShareDays] = useState(30)
+  const [shareDays, setShareDays] = useState('30')
   const [shareSaving, setShareSaving] = useState(false)
   const [copiedId, setCopiedId] = useState<string | null>(null)
 
@@ -80,12 +80,13 @@ export default function LegalMaster() {
     setShareLoading(true)
     try { setShareLinks(await kprService.listBankShareLinks(bankId)) } catch { /* noop */ } finally { setShareLoading(false) }
   }
-  function openShareModal(b: Bank) { setShareBank(b); loadShareLinks(b.id) }
+  function openShareModal(b: Bank) { setShareBank(b); setShareDays('30'); loadShareLinks(b.id) }
   async function createShareLink() {
     if (!shareBank) return
+    const days = Math.max(1, Math.min(365, Number(shareDays) || 30))
     setShareSaving(true)
     try {
-      await kprService.createBankShareLink({ bank_id: shareBank.id, expires_days: shareDays })
+      await kprService.createBankShareLink({ bank_id: shareBank.id, expires_days: days })
       await loadShareLinks(shareBank.id)
     } catch { setError('Gagal membuat tautan.') } finally { setShareSaving(false) }
   }
@@ -204,7 +205,7 @@ export default function LegalMaster() {
           <div className="flex items-end gap-2">
             <div>
               <label className="label">Berlaku (hari)</label>
-              <input type="number" className="input w-28" min={1} max={365} value={shareDays} onChange={(e) => setShareDays(Math.max(1, Math.min(365, Number(e.target.value) || 30)))} />
+              <input type="number" className="input w-28" min={1} max={365} value={shareDays} onChange={(e) => setShareDays(e.target.value)} />
             </div>
             <button className="btn-primary text-sm flex items-center gap-1.5" onClick={createShareLink} disabled={shareSaving}>
               {shareSaving && <Loader2 size={14} className="animate-spin" />} Buat Tautan Baru

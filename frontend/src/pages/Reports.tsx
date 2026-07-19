@@ -489,7 +489,7 @@ function MonthlyTaxTab() {
   const [shareModal, setShareModal] = useState(false)
   const [shareLinks, setShareLinks] = useState<MonthlyTaxShareLink[]>([])
   const [shareLoading, setShareLoading] = useState(false)
-  const [shareDays, setShareDays] = useState(30)
+  const [shareDays, setShareDays] = useState('30')
   const [shareSaving, setShareSaving] = useState(false)
   const [copiedId, setCopiedId] = useState<string | null>(null)
 
@@ -512,11 +512,12 @@ function MonthlyTaxTab() {
     setShareLoading(true)
     try { setShareLinks(await reportingService.listShareLinks()) } catch { /* noop */ } finally { setShareLoading(false) }
   }
-  function openShareModal() { setShareModal(true); loadShareLinks() }
+  function openShareModal() { setShareModal(true); setShareDays('30'); loadShareLinks() }
   async function createShareLink() {
+    const days = Math.max(1, Math.min(365, Number(shareDays) || 30))
     setShareSaving(true)
     try {
-      await reportingService.createShareLink({ month, project_id: projectId || undefined, expires_days: shareDays })
+      await reportingService.createShareLink({ month, project_id: projectId || undefined, expires_days: days })
       await loadShareLinks()
     } catch { setError('Gagal membuat tautan.') } finally { setShareSaving(false) }
   }
@@ -637,7 +638,7 @@ function MonthlyTaxTab() {
           <div className="flex items-end gap-2">
             <div>
               <label className="label">Berlaku (hari)</label>
-              <input type="number" className="input w-28" min={1} max={365} value={shareDays} onChange={(e) => setShareDays(Math.max(1, Math.min(365, Number(e.target.value) || 30)))} />
+              <input type="number" className="input w-28" min={1} max={365} value={shareDays} onChange={(e) => setShareDays(e.target.value)} />
             </div>
             <button className="btn-primary text-sm flex items-center gap-1.5" onClick={createShareLink} disabled={shareSaving}>
               {shareSaving && <Loader2 size={14} className="animate-spin" />} Buat Tautan Baru
