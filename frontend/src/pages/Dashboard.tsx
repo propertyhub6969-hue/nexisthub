@@ -84,6 +84,17 @@ export default function Dashboard() {
   const s = stats
   return (
     <div className="space-y-6">
+      {/* Keuangan */}
+      <div>
+        <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Keuangan</h2>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <StatCard icon={Wallet} label="Uang Masuk Bulan Ini" value={fmt(s?.payments_this_month)} color="text-emerald-500" bg="bg-emerald-50" />
+          <StatCard icon={TrendingUp} label="Total Terbayar" value={fmt(s?.total_paid)} color="text-blue-500" bg="bg-blue-50" sub={`dari ${fmt(s?.total_contract)} kontrak`} />
+          <StatCard icon={Wallet} label="Sisa Piutang" value={fmt(s?.outstanding)} color="text-amber-500" bg="bg-amber-50" />
+          <StatCard icon={AlertTriangle} label="Termin Terlambat" value={String(s?.overdue_count ?? 0)} color="text-red-500" bg="bg-red-50" />
+        </div>
+      </div>
+
       {/* Pemasaran */}
       <div>
         <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Pemasaran</h2>
@@ -106,17 +117,6 @@ export default function Dashboard() {
 
       {/* Grafik Penjualan */}
       <SalesChart />
-
-      {/* Keuangan */}
-      <div>
-        <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Keuangan</h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <StatCard icon={Wallet} label="Uang Masuk Bulan Ini" value={fmt(s?.payments_this_month)} color="text-emerald-500" bg="bg-emerald-50" />
-          <StatCard icon={TrendingUp} label="Total Terbayar" value={fmt(s?.total_paid)} color="text-blue-500" bg="bg-blue-50" sub={`dari ${fmt(s?.total_contract)} kontrak`} />
-          <StatCard icon={Wallet} label="Sisa Piutang" value={fmt(s?.outstanding)} color="text-amber-500" bg="bg-amber-50" />
-          <StatCard icon={AlertTriangle} label="Termin Terlambat" value={String(s?.overdue_count ?? 0)} color="text-red-500" bg="bg-red-50" />
-        </div>
-      </div>
 
       {(s?.leads_total ?? 0) === 0 && (s?.units_total ?? 0) === 0 && (
         <div className="card p-6">
