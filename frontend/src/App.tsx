@@ -73,7 +73,8 @@ export default function App() {
           <Route path="/settings/team"       element={<Team />} />
           <Route path="/settings/profile"    element={<Profile />} />
           <Route path="/settings/langganan"  element={<Subscription />} />
-          <Route path="/reports"             element={<Reports />} />
+          <Route path="/reports"             element={<Navigate to="/reports/marketing" replace />} />
+          <Route path="/reports/:category"   element={<Reports />} />
           <Route path="/payments/approval"   element={<PaymentApproval />} />
           <Route path="/cashbook"            element={<CashBook />} />
           <Route path="/platform/tenants"    element={<Platform />} />

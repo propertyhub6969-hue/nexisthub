@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 import {
   Loader2, Landmark, TrendingDown, CheckCircle2, XCircle, FileStack,
   Wallet, Users, Building2, PiggyBank, HandCoins, Home, AlertTriangle, Clock, HardHat, CalendarClock, Receipt,
@@ -797,39 +797,59 @@ const TABS = [
   { key: 'tax', label: 'Pajak Bulanan', desc: 'Rekap PPh per pembeli per bulan — nama, NIK, lokasi, AJB, jumlah, NTPN, notaris.' },
   { key: 'tax-checklist', label: 'Checklist Pajak', desc: 'Pembeli yang perpajakannya (PPh/BPHTB/PPN) belum tuntas — belum ada data, belum bayar, atau menunggu validasi.' },
 ] as const
+type TabKey = (typeof TABS)[number]['key']
+
+// Report dipecah per kategori (menu sidebar) — tiap kategori hanya menampilkan subset tab yang relevan.
+const CATEGORIES: Record<string, { label: string; tabs: TabKey[] }> = {
+  pajak: { label: 'Report Pajak', tabs: ['tax', 'tax-checklist'] },
+  keuangan: { label: 'Report Keuangan', tabs: ['cashflow'] },
+  marketing: { label: 'Report Marketing', tabs: ['kpr', 'sales', 'aging'] },
+  pembangunan: { label: 'Report Pembangunan', tabs: ['construction'] },
+}
+const DEFAULT_CATEGORY = 'marketing'
 
 export default function Reports() {
-  const [tab, setTab] = useState<(typeof TABS)[number]['key']>('cashflow')
-  const active = TABS.find((t) => t.key === tab)!
+  const { category = DEFAULT_CATEGORY } = useParams<{ category: string }>()
+  const cat = CATEGORIES[category] ?? CATEGORIES[DEFAULT_CATEGORY]
+  const catTabs = TABS.filter((t) => cat.tabs.includes(t.key))
+
+  const [tab, setTab] = useState<TabKey>(catTabs[0].key)
+  // pindah kategori (lewat sidebar) → reset ke tab pertama kategori itu kalau tab lama tak relevan lagi
+  useEffect(() => {
+    if (!catTabs.some((t) => t.key === tab)) setTab(catTabs[0].key)
+  }, [category])  // eslint-disable-line react-hooks/exhaustive-deps
+  const active = catTabs.find((t) => t.key === tab) ?? catTabs[0]
 
   return (
     <div className="space-y-5">
       <div>
-        <h2 className="text-lg font-semibold text-slate-800">Laporan</h2>
+        <h2 className="text-lg font-semibold text-slate-800">{cat.label}</h2>
         <p className="text-sm text-slate-500 mt-0.5">{active.desc}</p>
       </div>
 
-      <div className="flex gap-1 border-b border-slate-200">
-        {TABS.map((t) => (
-          <button
-            key={t.key}
-            onClick={() => setTab(t.key)}
-            className={`px-4 py-2 text-sm font-medium -mb-px border-b-2 transition-colors ${
-              tab === t.key ? 'border-brand-600 text-brand-600' : 'border-transparent text-slate-500 hover:text-slate-700'
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
+      {catTabs.length > 1 && (
+        <div className="flex gap-1 border-b border-slate-200">
+          {catTabs.map((t) => (
+            <button
+              key={t.key}
+              onClick={() => setTab(t.key)}
+              className={`px-4 py-2 text-sm font-medium -mb-px border-b-2 transition-colors ${
+                tab === t.key ? 'border-brand-600 text-brand-600' : 'border-transparent text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+      )}
 
-      {tab === 'cashflow' && <CashflowTab />}
-      {tab === 'sales' && <SalesRecapTab />}
-      {tab === 'construction' && <ConstructionProgressTab />}
-      {tab === 'aging' && <AgingTab />}
-      {tab === 'kpr' && <KprRejectionTab />}
-      {tab === 'tax' && <MonthlyTaxTab />}
-      {tab === 'tax-checklist' && <TaxChecklistTab />}
+      {active.key === 'cashflow' && <CashflowTab />}
+      {active.key === 'sales' && <SalesRecapTab />}
+      {active.key === 'construction' && <ConstructionProgressTab />}
+      {active.key === 'aging' && <AgingTab />}
+      {active.key === 'kpr' && <KprRejectionTab />}
+      {active.key === 'tax' && <MonthlyTaxTab />}
+      {active.key === 'tax-checklist' && <TaxChecklistTab />}
     </div>
   )
 }

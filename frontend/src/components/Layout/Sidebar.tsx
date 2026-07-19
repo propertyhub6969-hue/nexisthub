@@ -20,6 +20,8 @@ import {
   X,
   ShieldCheck,
   Wallet,
+  Receipt,
+  TrendingUp,
   type LucideIcon,
 } from 'lucide-react'
 import { clsx } from 'clsx'
@@ -89,7 +91,10 @@ const reportItem: NavItem = {
   label: 'Report',
   icon: BarChart3,
   children: [
-    { label: 'Report', to: '/reports', icon: BarChart3 },
+    { label: 'Marketing', to: '/reports/marketing', icon: TrendingUp },
+    { label: 'Arus Kas', to: '/reports/keuangan', icon: Wallet },
+    { label: 'Pajak', to: '/reports/pajak', icon: Receipt },
+    { label: 'Pembangunan', to: '/reports/pembangunan', icon: HardHat },
   ],
 }
 
