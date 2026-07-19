@@ -189,7 +189,20 @@ export default function Clients() {
   }
   function handleUnitFormQueryChange(text: string) {
     setUnitFormQuery(text)
-    const match = formUnits.find((u) => unitOptionLabel(u).toLowerCase() === text.trim().toLowerCase())
+    const q = text.trim().toLowerCase()
+    // cocokkan: label lengkap dropdown, lalu "blok-nomor" saja, lalu nomor unit polos
+    // (kalau nomornya unik di proyek ini — user sering cukup ketik nomornya tanpa blok/tipe).
+    let match = formUnits.find((u) => unitOptionLabel(u).toLowerCase() === q)
+    if (!match) match = formUnits.find((u) => (unitLabel(u) ?? '').toLowerCase() === q)
+    if (!match) {
+      const byNumber = formUnits.filter((u) => (u.unit_number ?? '').toLowerCase() === q)
+      if (byNumber.length === 1) match = byNumber[0]
+    }
+    // nomor kavling sering di-nol-padding (mis. "036") — user biasanya cukup ketik "36" tanpa nol di depan
+    if (!match && /^\d+$/.test(q)) {
+      const byNumeric = formUnits.filter((u) => /^\d+$/.test(u.unit_number ?? '') && String(Number(u.unit_number)) === String(Number(q)))
+      if (byNumeric.length === 1) match = byNumeric[0]
+    }
     onSelectUnit(match ? match.id : '')
   }
   // sinkron teks tampilan form HANYA saat unit_id sudah match (mis. buka Edit sebelum unit proyeknya
