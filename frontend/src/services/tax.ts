@@ -2,6 +2,7 @@ import api from './api'
 import type {
   Notary, NotaryCreate, TaxRecord, TaxCreate, TaxBulkCreate, NotaryFee, NotaryFeeCreate, FeeBulkCreate,
   NotaryShareLink, NotaryShareLinkCreate, NotarySubmission, PublicNotaryPage,
+  NotaryDebtResponse, NotaryWorklistResponse, BalikNamaStatus,
 } from '../types'
 
 export const taxService = {
@@ -141,6 +142,22 @@ export const taxService = {
     const url = URL.createObjectURL(res.data as Blob)
     window.open(url, '_blank')
     setTimeout(() => URL.revokeObjectURL(url), 60000)
+  },
+
+  // ── Pemantauan Notaris (hutang + pekerjaan belum selesai) ──
+  async notaryDebts(): Promise<NotaryDebtResponse> {
+    const { data } = await api.get<NotaryDebtResponse>('/legal/notary-performance/debts')
+    return data
+  },
+  async notaryWorklist(params?: { notary_id?: string; only_macet?: boolean }): Promise<NotaryWorklistResponse> {
+    const { data } = await api.get<NotaryWorklistResponse>('/legal/notary-performance/worklist', { params })
+    return data
+  },
+  async updateBalikNama(clientId: string, status: BalikNamaStatus, date?: string): Promise<void> {
+    await api.patch(`/legal/clients/${clientId}/balik-nama`, { status, date: date || null })
+  },
+  async markFeePaid(feeId: string): Promise<void> {
+    await api.patch(`/legal/notary-fees/${feeId}`, { is_paid: true })
   },
 
   // ── Publik (tanpa login) — akses via tautan notaris bertoken ──

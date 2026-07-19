@@ -37,6 +37,13 @@ class ClientPaymentType(str, enum.Enum):
     KPR = "kpr"      # Cara Beli: KPR
 
 
+class BalikNamaStatus(str, enum.Enum):
+    """Status balik nama sertifikat unit (dari nama developer → nama pembeli di BPN)."""
+    BELUM = "belum"      # belum diurus
+    PROSES = "proses"    # sudah diajukan ke BPN, menunggu
+    SELESAI = "selesai"  # sertifikat sudah atas nama pembeli
+
+
 class Lead(BaseModel):
     """Calon pembeli yang baru pertama kali kontak."""
     __tablename__ = "leads"
@@ -161,6 +168,11 @@ class Client(BaseModel, SoftDeleteMixin):
     ajb_file_size: Mapped[int] = mapped_column(Integer, nullable=True)
     ajb_file_data: Mapped[bytes] = mapped_column(LargeBinary, nullable=True, deferred=True)  # LEGACY
     ajb_file_key: Mapped[str] = mapped_column(String(600), nullable=True)
+    # Balik nama sertifikat (nama developer → pembeli di BPN) — milestone notaris wajib dilacak.
+    balik_nama_status: Mapped[BalikNamaStatus] = mapped_column(
+        SAEnum(BalikNamaStatus), default=BalikNamaStatus.BELUM, nullable=False, server_default="BELUM"
+    )
+    balik_nama_date: Mapped[Date] = mapped_column(Date, nullable=True)  # tanggal status terkini (utk aging)
 
     marketing_user: Mapped["User"] = relationship("User", foreign_keys=[marketing_user_id])
 

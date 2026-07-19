@@ -13,6 +13,7 @@ import ClientTax from './pages/marketing/ClientTax'
 import ClientKpr from './pages/marketing/ClientKpr'
 import BankSubmissions from './pages/marketing/BankSubmissions'
 import NotarySubmissions from './pages/marketing/NotarySubmissions'
+import NotaryMonitor from './pages/marketing/NotaryMonitor'
 import Notaries from './pages/legal/Notaries'
 import Pemberkasan from './pages/legal/Pemberkasan'
 import Projects from './pages/property/Projects'
@@ -69,6 +70,7 @@ export default function App() {
           <Route path="/marketing/clients/:clientId/kpr" element={<ClientKpr />} />
           <Route path="/marketing/bank-submissions" element={<BankSubmissions />} />
           <Route path="/marketing/notary-submissions" element={<NotarySubmissions />} />
+          <Route path="/marketing/notary-monitor" element={<NotaryMonitor />} />
           <Route path="/property/projects"                 element={<Projects />} />
           <Route path="/property/legal-docs"               element={<LegalDocuments />} />
           <Route path="/property/projects/:projectId/units" element={<ProjectUnits />} />

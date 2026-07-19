@@ -6,6 +6,7 @@ import uuid
 
 from app.models.tax import TaxType, TaxStatus, NotarySubmissionKind, NotarySubmissionStatus
 from app.models.document import HandoverEvent
+from app.models.marketing import BalikNamaStatus
 
 
 # ── Notary ────────────────────────────────────────────────────────
@@ -254,3 +255,62 @@ class PublicNotaryClientRow(BaseModel):
 class PublicNotaryPageResponse(BaseModel):
     notary_name: str
     rows: list[PublicNotaryClientRow]
+
+
+# ── Pemantauan Notaris: Hutang developer ke notaris ──────────────────
+class NotaryDebtFeeRow(BaseModel):
+    id: uuid.UUID
+    client_id: uuid.UUID
+    client_name: str
+    unit_label: Optional[str] = None
+    description: str
+    amount: Decimal
+    fee_date: Optional[date] = None
+    days_outstanding: Optional[int] = None   # umur sejak fee_date
+
+
+class NotaryDebtGroup(BaseModel):
+    notary_id: Optional[uuid.UUID] = None
+    notary_name: str
+    total: Decimal
+    count: int
+    aging_0_30: Decimal = Decimal(0)
+    aging_31_60: Decimal = Decimal(0)
+    aging_60_plus: Decimal = Decimal(0)
+    fees: list[NotaryDebtFeeRow] = []
+
+
+class NotaryDebtResponse(BaseModel):
+    grand_total: Decimal
+    groups: list[NotaryDebtGroup]
+
+
+# ── Pemantauan Notaris: Pekerjaan belum selesai (worklist) ───────────
+class NotaryWorklistRow(BaseModel):
+    client_id: uuid.UUID
+    client_name: str
+    unit_label: Optional[str] = None
+    project_name: Optional[str] = None
+    notary_id: Optional[uuid.UUID] = None
+    notary_name: Optional[str] = None
+    payment_type: Optional[str] = None
+    balik_nama_status: BalikNamaStatus
+    balik_nama_date: Optional[date] = None
+    last_handover_event: Optional[str] = None
+    last_handover_date: Optional[date] = None
+    stage: str          # 'belum_balik_nama' | 'belum_serah'
+    stage_label: str
+    last_activity: Optional[date] = None
+    days_idle: Optional[int] = None
+    is_macet: bool = False
+
+
+class NotaryWorklistResponse(BaseModel):
+    macet_count: int
+    total: int
+    rows: list[NotaryWorklistRow]
+
+
+class BalikNamaUpdate(BaseModel):
+    status: BalikNamaStatus
+    date: Optional[date] = None

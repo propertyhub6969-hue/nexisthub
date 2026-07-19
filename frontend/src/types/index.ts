@@ -1218,6 +1218,58 @@ export interface PublicNotaryPage {
   rows: PublicNotaryClientRow[]
 }
 
+// ── Pemantauan Notaris (hutang + pekerjaan belum selesai) ──────────
+export type BalikNamaStatus = 'belum' | 'proses' | 'selesai'
+
+export interface NotaryDebtFeeRow {
+  id: string
+  client_id: string
+  client_name: string
+  unit_label?: string
+  description: string
+  amount: number
+  fee_date?: string
+  days_outstanding?: number
+}
+export interface NotaryDebtGroup {
+  notary_id?: string
+  notary_name: string
+  total: number
+  count: number
+  aging_0_30: number
+  aging_31_60: number
+  aging_60_plus: number
+  fees: NotaryDebtFeeRow[]
+}
+export interface NotaryDebtResponse {
+  grand_total: number
+  groups: NotaryDebtGroup[]
+}
+
+export interface NotaryWorklistRow {
+  client_id: string
+  client_name: string
+  unit_label?: string
+  project_name?: string
+  notary_id?: string
+  notary_name?: string
+  payment_type?: string
+  balik_nama_status: BalikNamaStatus
+  balik_nama_date?: string
+  last_handover_event?: NotaryHandoverEvent
+  last_handover_date?: string
+  stage: 'belum_balik_nama' | 'belum_serah'
+  stage_label: string
+  last_activity?: string
+  days_idle?: number
+  is_macet: boolean
+}
+export interface NotaryWorklistResponse {
+  macet_count: number
+  total: number
+  rows: NotaryWorklistRow[]
+}
+
 // ── Procurement ───────────────────────────────────────────────────
 export type VendorStatus = 'active' | 'inactive' | 'blacklisted'
 export type POStatus = 'draft' | 'ordered' | 'partial' | 'received' | 'cancelled'

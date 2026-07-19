@@ -1,6 +1,7 @@
 import secrets
 import uuid
-from datetime import datetime, timedelta, timezone
+from decimal import Decimal
+from datetime import datetime, timedelta, timezone, date
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status, UploadFile, File, Request
 from fastapi.responses import Response
@@ -17,8 +18,8 @@ from app.models.tax import (
     Notary, TaxRecord, NotaryFee, NotaryShareLink, NotarySubmission,
     NotarySubmissionKind, NotarySubmissionStatus,
 )
-from app.models.marketing import Client
-from app.models.property import Unit
+from app.models.marketing import Client, BalikNamaStatus
+from app.models.property import Unit, Project
 from app.models.user import User
 from app.models.document import Document, DocumentHandover, HandoverEvent
 from app.schemas.tax import (
@@ -27,6 +28,8 @@ from app.schemas.tax import (
     FeeCreate, FeeUpdate, FeeResponse, FeeBulkCreate,
     NotaryShareLinkCreate, NotaryShareLinkResponse,
     NotarySubmissionResponse, NotarySubmissionRejectRequest,
+    NotaryDebtFeeRow, NotaryDebtGroup, NotaryDebtResponse,
+    NotaryWorklistRow, NotaryWorklistResponse, BalikNamaUpdate,
 )
 
 router = APIRouter()
@@ -606,3 +609,175 @@ async def reject_notary_submission(sub_id: uuid.UUID, payload: NotarySubmissionR
     await record_audit(db, ctx.tenant_id, ctx.user_id, "REJECT", "notary_submissions", sub_id,
                        reason=payload.reason.strip())
     return await _submission_response(db, ctx.tenant_id, sub)
+
+
+# ═══════════════════════ PEMANTAUAN NOTARIS ═══════════════════════
+# Dua sisi satu hubungan: (1) hutang jasa yg belum dibayar developer, (2) pekerjaan
+# pemberkasan yg masih tertahan di notaris. Keduanya aging-first — yg menua naik ke atas.
+
+@router.get("/notary-performance/debts", response_model=NotaryDebtResponse)
+async def notary_debts(ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db)):
+    """Hutang developer ke notaris = biaya jasa (NotaryFee) yang belum dibayar, dikelompokkan per notaris."""
+    today = date.today()
+    rows = (await db.execute(
+        select(NotaryFee, Client.full_name, Notary.name, Unit.block, Unit.unit_number)
+        .join(Client, Client.id == NotaryFee.client_id)
+        .outerjoin(Notary, Notary.id == NotaryFee.notary_id)
+        .outerjoin(Unit, Unit.id == Client.unit_id)
+        .where(NotaryFee.tenant_id == ctx.tenant_id, NotaryFee.is_paid == False, NOTDEL(NotaryFee))  # noqa: E712
+    )).all()
+
+    groups: dict = {}
+    for fee, client_name, notary_name, block, unit_number in rows:
+        g = groups.get(fee.notary_id)
+        if g is None:
+            g = groups[fee.notary_id] = {
+                "notary_id": fee.notary_id, "notary_name": notary_name or "Tanpa notaris",
+                "total": Decimal(0), "count": 0,
+                "a0": Decimal(0), "a1": Decimal(0), "a2": Decimal(0), "fees": [],
+            }
+        amt = fee.amount or Decimal(0)
+        g["total"] += amt
+        g["count"] += 1
+        days = (today - fee.fee_date).days if fee.fee_date else None
+        if days is None or days <= 30:
+            g["a0"] += amt
+        elif days <= 60:
+            g["a1"] += amt
+        else:
+            g["a2"] += amt
+        label = "-".join(x for x in [block, unit_number] if x) or None
+        g["fees"].append(NotaryDebtFeeRow(
+            id=fee.id, client_id=fee.client_id, client_name=client_name, unit_label=label,
+            description=fee.description, amount=amt, fee_date=fee.fee_date, days_outstanding=days,
+        ))
+
+    group_models = []
+    for g in groups.values():
+        g["fees"].sort(key=lambda f: (f.days_outstanding is None, -(f.days_outstanding or 0)))
+        group_models.append(NotaryDebtGroup(
+            notary_id=g["notary_id"], notary_name=g["notary_name"], total=g["total"], count=g["count"],
+            aging_0_30=g["a0"], aging_31_60=g["a1"], aging_60_plus=g["a2"], fees=g["fees"],
+        ))
+    group_models.sort(key=lambda x: x.total, reverse=True)
+    grand = sum((g.total for g in group_models), Decimal(0))
+    return NotaryDebtResponse(grand_total=grand, groups=group_models)
+
+
+_TERMINAL_HANDOVER = {HandoverEvent.TAHAN_BANK, HandoverEvent.TERIMA_PEMBELI, HandoverEvent.KEMBALI_ARSIP}
+
+
+@router.get("/notary-performance/worklist", response_model=NotaryWorklistResponse)
+async def notary_worklist(
+    notary_id: uuid.UUID = Query(None),
+    only_macet: bool = Query(False),
+    ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db),
+):
+    """Pekerjaan notaris yang BELUM selesai. Selesai = dokumen asli sudah mendarat di tujuan akhir
+    (bank/arsip/pembeli). Macet = >15 hari tanpa kejadian bertanggal baru."""
+    today = date.today()
+
+    # 1) Peta pembeli → notaris (dari pajak lebih dulu, lalu biaya) + tanggal aktivitas terbaru
+    notary_of: dict = {}
+    activity: dict = {}
+    trows = (await db.execute(
+        select(TaxRecord.client_id, TaxRecord.notary_id, TaxRecord.tax_date)
+        .where(TaxRecord.tenant_id == ctx.tenant_id, NOTDEL(TaxRecord))
+    )).all()
+    frows = (await db.execute(
+        select(NotaryFee.client_id, NotaryFee.notary_id, NotaryFee.fee_date)
+        .where(NotaryFee.tenant_id == ctx.tenant_id, NOTDEL(NotaryFee))
+    )).all()
+    for cid, nid, d in list(trows) + list(frows):
+        if nid and cid not in notary_of:
+            notary_of[cid] = nid
+        if d and (cid not in activity or d > activity[cid]):
+            activity[cid] = d
+
+    client_ids = list(notary_of.keys())
+    if not client_ids:
+        return NotaryWorklistResponse(macet_count=0, total=0, rows=[])
+
+    notary_name_of = {nid: name for nid, name in (await db.execute(
+        select(Notary.id, Notary.name).where(Notary.id.in_(set(notary_of.values())))
+    )).all()}
+
+    clients = {c.id: c for c in (await db.execute(
+        select(Client).where(Client.id.in_(client_ids), Client.tenant_id == ctx.tenant_id, NOTDEL(Client))
+    )).scalars()}
+
+    unit_ids = [c.unit_id for c in clients.values() if c.unit_id]
+    units = {u.id: u for u in (await db.execute(select(Unit).where(Unit.id.in_(unit_ids)))).scalars()} if unit_ids else {}
+    proj_ids = {c.project_id for c in clients.values() if c.project_id}
+    proj_names = {pid: name for pid, name in (await db.execute(
+        select(Project.id, Project.name).where(Project.id.in_(proj_ids))
+    )).all()} if proj_ids else {}
+
+    # Kejadian serah-terima dokumen asli TERAKHIR per unit
+    handover_by_unit: dict = {}
+    if unit_ids:
+        hrows = (await db.execute(
+            select(DocumentHandover.event, DocumentHandover.at, Document.unit_id)
+            .join(Document, Document.id == DocumentHandover.document_id)
+            .where(Document.unit_id.in_(unit_ids), DocumentHandover.tenant_id == ctx.tenant_id, NOTDEL(DocumentHandover))
+            .order_by(DocumentHandover.at.asc(), DocumentHandover.created_at.asc())
+        )).all()
+        for event, at, uid in hrows:
+            handover_by_unit[uid] = (event, at)  # asc → yang terakhir = terbaru
+
+    result = []
+    macet = 0
+    for cid, c in clients.items():
+        nid = notary_of.get(cid)
+        if notary_id and nid != notary_id:
+            continue
+        hv = handover_by_unit.get(c.unit_id) if c.unit_id else None
+        last_event, last_at = (hv[0], hv[1]) if hv else (None, None)
+        if last_event in _TERMINAL_HANDOVER:
+            continue  # SELESAI — dokumen asli sudah mendarat
+
+        if c.balik_nama_status != BalikNamaStatus.SELESAI:
+            stage, stage_label = "belum_balik_nama", "Belum balik nama"
+        else:
+            stage, stage_label = "belum_serah", "Belum serah dokumen asli"
+
+        candidates = [d for d in [c.balik_nama_date, last_at, activity.get(cid), c.contract_date] if d]
+        last_activity = max(candidates) if candidates else (c.created_at.date() if c.created_at else None)
+        days_idle = (today - last_activity).days if last_activity else None
+        is_macet = days_idle is not None and days_idle > 15
+        if only_macet and not is_macet:
+            continue
+        if is_macet:
+            macet += 1
+
+        u = units.get(c.unit_id) if c.unit_id else None
+        label = "-".join(x for x in [u.block, u.unit_number] if x) if u else (c.unit_number or None)
+        result.append(NotaryWorklistRow(
+            client_id=cid, client_name=c.full_name, unit_label=label,
+            project_name=proj_names.get(c.project_id),
+            notary_id=nid, notary_name=notary_name_of.get(nid),
+            payment_type=(c.payment_type.value if c.payment_type else None),
+            balik_nama_status=c.balik_nama_status, balik_nama_date=c.balik_nama_date,
+            last_handover_event=(last_event.value if last_event else None), last_handover_date=last_at,
+            stage=stage, stage_label=stage_label,
+            last_activity=last_activity, days_idle=days_idle, is_macet=is_macet,
+        ))
+
+    result.sort(key=lambda r: (not r.is_macet, -(r.days_idle or 0)))
+    return NotaryWorklistResponse(macet_count=macet, total=len(result), rows=result)
+
+
+@router.patch("/clients/{client_id}/balik-nama")
+async def update_balik_nama(client_id: uuid.UUID, payload: BalikNamaUpdate,
+                            ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db)):
+    """Catat status balik nama sertifikat unit (BELUM/PROSES/SELESAI) — aksi staf internal."""
+    c = (await db.execute(select(Client).where(Client.id == client_id, Client.tenant_id == ctx.tenant_id, NOTDEL(Client)))).scalar_one_or_none()
+    if c is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Pembeli tidak ditemukan")
+    c.balik_nama_status = payload.status
+    # tanggal: pakai kiriman, atau default hari ini saat maju ke PROSES/SELESAI (utk aging)
+    c.balik_nama_date = payload.date or (date.today() if payload.status != BalikNamaStatus.BELUM else None)
+    await db.flush()
+    await record_audit(db, ctx.tenant_id, ctx.user_id, "UPDATE", "clients", client_id,
+                       new_data={"balik_nama_status": payload.status.value}, client_id=client_id)
+    return {"status": c.balik_nama_status.value, "date": c.balik_nama_date.isoformat() if c.balik_nama_date else None}

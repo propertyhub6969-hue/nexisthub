@@ -23,6 +23,7 @@ import {
   Receipt,
   TrendingUp,
   Inbox,
+  Scale,
   type LucideIcon,
 } from 'lucide-react'
 import { clsx } from 'clsx'
@@ -61,6 +62,7 @@ const marketingItem: NavItem = {
     { label: 'Pemberkasan', to: '/pemberkasan', icon: ClipboardCheck },
     { label: 'Kiriman Bank', to: '/marketing/bank-submissions', icon: Inbox },
     { label: 'Kiriman Notaris', to: '/marketing/notary-submissions', icon: Inbox },
+    { label: 'Pemantauan Notaris', to: '/marketing/notary-monitor', icon: Scale },
   ],
 }
 

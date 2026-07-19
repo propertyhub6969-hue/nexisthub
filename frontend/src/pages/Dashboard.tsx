@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
-import { Users, UserCheck, Handshake, Home, KeyRound, CheckCircle2, Wallet, TrendingUp, AlertTriangle, Loader2, BarChart3 } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { Users, UserCheck, Handshake, Home, KeyRound, CheckCircle2, Wallet, TrendingUp, AlertTriangle, Loader2, BarChart3, ClipboardList, ChevronRight } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { reportingService } from '../services/reporting'
 import { propertyService } from '../services/property'
+import { taxService } from '../services/tax'
 import type { DashboardStats, SalesMonthly, Project } from '../types'
 
 const fmt = (n?: number) =>
@@ -79,6 +81,47 @@ function StatCard({ icon: Icon, label, value, color, bg, sub }: {
   )
 }
 
+function NotaryDashboardCard() {
+  const [debt, setDebt] = useState<number | null>(null)
+  const [macet, setMacet] = useState<number | null>(null)
+
+  useEffect(() => {
+    // gagal (mis. modul pajak mati / tanpa akses) → diam-diam sembunyi
+    taxService.notaryDebts().then((d) => setDebt(d.grand_total)).catch(() => {})
+    taxService.notaryWorklist({ only_macet: true }).then((w) => setMacet(w.macet_count)).catch(() => {})
+  }, [])
+
+  // sembunyikan bila belum ada data ATAU tak ada tunggakan sama sekali
+  if (debt == null && macet == null) return null
+  if ((debt ?? 0) === 0 && (macet ?? 0) === 0) return null
+
+  return (
+    <div>
+      <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Notaris</h2>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <Link to="/marketing/notary-monitor" className="card p-4 flex items-center gap-4 hover:bg-slate-50 transition-colors">
+          <div className="w-10 h-10 rounded-lg bg-amber-50 flex items-center justify-center shrink-0"><Wallet size={18} className="text-amber-500" /></div>
+          <div className="flex-1 min-w-0">
+            <p className="text-xs text-slate-400">Hutang ke Notaris</p>
+            <p className="text-lg font-bold text-slate-900 truncate">{fmt(debt ?? 0)}</p>
+          </div>
+          <ChevronRight size={16} className="text-slate-300 shrink-0" />
+        </Link>
+        <Link to="/marketing/notary-monitor" className="card p-4 flex items-center gap-4 hover:bg-slate-50 transition-colors">
+          <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${(macet ?? 0) > 0 ? 'bg-red-50' : 'bg-emerald-50'}`}>
+            <ClipboardList size={18} className={(macet ?? 0) > 0 ? 'text-red-500' : 'text-emerald-500'} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-xs text-slate-400">Pekerjaan Macet (&gt;15 hari)</p>
+            <p className={`text-lg font-bold ${(macet ?? 0) > 0 ? 'text-red-600' : 'text-slate-900'}`}>{macet ?? 0}</p>
+          </div>
+          <ChevronRight size={16} className="text-slate-300 shrink-0" />
+        </Link>
+      </div>
+    </div>
+  )
+}
+
 export default function Dashboard() {
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [loading, setLoading] = useState(true)
@@ -122,6 +165,9 @@ export default function Dashboard() {
           <StatCard icon={CheckCircle2} label="Terjual" value={String(s?.units_sold ?? 0)} color="text-blue-500" bg="bg-blue-50" />
         </div>
       </div>
+
+      {/* Notaris — hutang & pekerjaan tertahan (mandiri, sembunyi bila modul mati / tak ada tunggakan) */}
+      <NotaryDashboardCard />
 
       {/* Grafik Penjualan */}
       <SalesChart />
