@@ -1396,6 +1396,7 @@ export interface UnitConstructionRow {
   finish_date?: string
   notes?: string
   last_log_date?: string | null
+  kpr_stage?: KprStage | null
 }
 export interface ConstructionSummary {
   total_units: number

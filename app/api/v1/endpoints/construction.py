@@ -19,6 +19,8 @@ from app.models.property import Unit
 from app.models.user import User
 from app.models.expense import Expense, ExpenseCategory
 from app.models.rab import RabTemplateLine, UnitRabAdjustment
+from app.models.marketing import Client, ClientPaymentType
+from app.models.kpr import KprApplication
 from app.schemas.construction import (
     ConstructionUpsert, UnitConstructionRow, ConstructionSummary, ConstructionList, ProgressLogResponse,
     UpahResumeRow,
@@ -100,6 +102,31 @@ async def list_construction(
         .offset((page - 1) * size).limit(size)
     )).scalars().all()
 
+    # Status Berkas KPR pembeli unit ini (None = cash / belum ada pembeli / belum ajukan)
+    page_unit_ids = [u.id for u in page_units]
+    kpr_stage_by_unit: dict = {}
+    if page_unit_ids:
+        client_rows = (await db.execute(
+            select(Client.id, Client.unit_id)
+            .where(Client.unit_id.in_(page_unit_ids), Client.tenant_id == ctx.tenant_id,
+                   Client.is_deleted == False, Client.payment_type == ClientPaymentType.KPR)  # noqa: E712
+        )).all()
+        client_by_unit = {unit_id: client_id for client_id, unit_id in client_rows}
+        if client_by_unit:
+            kpr_rows = (await db.execute(
+                select(KprApplication.client_id, KprApplication.stage)
+                .where(KprApplication.client_id.in_(client_by_unit.values()), KprApplication.tenant_id == ctx.tenant_id,
+                       KprApplication.is_deleted == False)  # noqa: E712
+                .order_by(KprApplication.created_at.desc())
+            )).all()
+            stage_by_client = {}
+            for client_id, stage_val in kpr_rows:
+                stage_by_client.setdefault(client_id, stage_val)  # baris pertama per klien = paling baru
+            kpr_stage_by_unit = {
+                unit_id: stage_by_client[client_id].value
+                for unit_id, client_id in client_by_unit.items() if client_id in stage_by_client
+            }
+
     rows = []
     for u in page_units:
         c = cmap.get(u.id)
@@ -111,6 +138,7 @@ async def list_construction(
             start_date=c.start_date if c else None, target_date=c.target_date if c else None,
             finish_date=c.finish_date if c else None, notes=c.notes if c else None,
             last_log_date=last_log.get(u.id),
+            kpr_stage=kpr_stage_by_unit.get(u.id),
         ))
 
     return ConstructionList(

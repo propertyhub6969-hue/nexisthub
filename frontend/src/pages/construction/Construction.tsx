@@ -31,6 +31,14 @@ function isLate(r: UnitConstructionRow): boolean {
   return d != null && d > REMINDER_DAYS
 }
 
+const KPR_STAGE_CFG: Record<string, { label: string; variant: 'gray' | 'yellow' | 'blue' | 'orange' | 'green' }> = {
+  collect_berkas: { label: 'Collect Berkas', variant: 'gray' },
+  berkas_masuk_bank: { label: 'Berkas di Bank', variant: 'yellow' },
+  sp3k: { label: 'SP3K', variant: 'blue' },
+  akad_kredit: { label: 'Akad Kredit', variant: 'orange' },
+  pencairan: { label: 'Pencairan', variant: 'green' },
+}
+
 const STAGES: { key: ConstructionStage; label: string; variant: 'gray' | 'yellow' | 'blue' | 'orange' | 'green' }[] = [
   { key: 'persiapan', label: 'Persiapan', variant: 'gray' },
   { key: 'pondasi', label: 'Pondasi', variant: 'yellow' },
@@ -365,36 +373,40 @@ export default function Construction() {
                 </datalist>
               </div>
             </div>
-            <table className="w-full text-sm">
-              <thead className="bg-slate-50 border-b border-slate-200"><tr>{['Unit', 'Tipe', 'Tahap', 'Progres', 'Mulai', 'Selesai', ''].map((h, i) => (
-                <th key={i} className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">{h}</th>))}</tr></thead>
-              <tbody className="divide-y divide-slate-100">
-                {rows.length === 0 ? (
-                  <tr><td colSpan={7} className="px-4 py-8 text-center text-slate-400 text-sm">
-                    {!project ? 'Pilih proyek dulu.' : progresSearchQ ? `Tidak ada kavling cocok "${progresSearchQ}".` : 'Belum ada unit.'}
-                  </td></tr>
-                ) : rows.map((r) => {
-                  const s = stageCfg(r.stage)
-                  return (
-                    <tr key={r.unit_id} className="hover:bg-slate-50">
-                      <td className="px-4 py-2.5 font-medium text-slate-900">{r.unit_label}</td>
-                      <td className="px-4 py-2.5 text-slate-500">{r.unit_type ?? '—'}</td>
-                      <td className="px-4 py-2.5">
-                        <Badge label={s.label} variant={s.variant} />
-                        {isLate(r) && <p className="text-[11px] text-red-500 mt-0.5">Terlambat {daysSince(r.last_log_date ?? r.start_date)} hari</p>}
-                      </td>
-                      <td className="px-4 py-2.5"><div className="flex items-center gap-2"><div className="h-2 w-24 rounded-full bg-slate-100 overflow-hidden"><div className="h-full bg-brand-500" style={{ width: `${r.percent}%` }} /></div><span className="text-xs text-slate-500">{r.percent}%</span></div></td>
-                      <td className="px-4 py-2.5 text-slate-500 text-xs">{fmtDate(r.start_date)}</td>
-                      <td className="px-4 py-2.5 text-slate-500 text-xs">{fmtDate(r.finish_date)}</td>
-                      <td className="px-4 py-2.5 text-right"><div className="flex items-center justify-end gap-3">
-                        <button onClick={() => openLog(r)} className="text-slate-400 hover:text-brand-600" title="Log progres & foto"><Camera size={15} /></button>
-                        <button onClick={() => openEdit(r)} className="text-slate-400 hover:text-brand-600" title="Update"><Pencil size={15} /></button>
-                      </div></td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm min-w-[820px]">
+                <thead className="bg-slate-50 border-b border-slate-200"><tr>{['Unit', 'Tipe', 'Tahap', 'Progres', 'Mulai', 'Selesai', 'Status Berkas', ''].map((h, i) => (
+                  <th key={i} className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">{h}</th>))}</tr></thead>
+                <tbody className="divide-y divide-slate-100">
+                  {rows.length === 0 ? (
+                    <tr><td colSpan={8} className="px-4 py-8 text-center text-slate-400 text-sm">
+                      {!project ? 'Pilih proyek dulu.' : progresSearchQ ? `Tidak ada kavling cocok "${progresSearchQ}".` : 'Belum ada unit.'}
+                    </td></tr>
+                  ) : rows.map((r) => {
+                    const s = stageCfg(r.stage)
+                    const ks = r.kpr_stage ? KPR_STAGE_CFG[r.kpr_stage] : null
+                    return (
+                      <tr key={r.unit_id} className="hover:bg-slate-50">
+                        <td className="px-4 py-2.5 font-medium text-slate-900 whitespace-nowrap">{r.unit_label}</td>
+                        <td className="px-4 py-2.5 text-slate-500 whitespace-nowrap">{r.unit_type ?? '—'}</td>
+                        <td className="px-4 py-2.5 whitespace-nowrap">
+                          <Badge label={s.label} variant={s.variant} />
+                          {isLate(r) && <p className="text-[11px] text-red-500 mt-0.5">Terlambat {daysSince(r.last_log_date ?? r.start_date)} hari</p>}
+                        </td>
+                        <td className="px-4 py-2.5"><div className="flex items-center gap-2"><div className="h-2 w-24 rounded-full bg-slate-100 overflow-hidden"><div className="h-full bg-brand-500" style={{ width: `${r.percent}%` }} /></div><span className="text-xs text-slate-500">{r.percent}%</span></div></td>
+                        <td className="px-4 py-2.5 text-slate-500 text-xs whitespace-nowrap">{fmtDate(r.start_date)}</td>
+                        <td className="px-4 py-2.5 text-slate-500 text-xs whitespace-nowrap">{fmtDate(r.finish_date)}</td>
+                        <td className="px-4 py-2.5 whitespace-nowrap">{ks ? <Badge label={ks.label} variant={ks.variant} /> : <span className="text-slate-400 text-xs">—</span>}</td>
+                        <td className="px-4 py-2.5 text-right"><div className="flex items-center justify-end gap-3">
+                          <button onClick={() => openLog(r)} className="text-slate-400 hover:text-brand-600" title="Log progres & foto"><Camera size={15} /></button>
+                          <button onClick={() => openEdit(r)} className="text-slate-400 hover:text-brand-600" title="Update"><Pencil size={15} /></button>
+                        </div></td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
             <Pagination page={progresPage} pages={progresPages} total={progresTotal} onPage={setProgresPage} />
           </div>
         </>

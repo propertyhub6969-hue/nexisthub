@@ -27,6 +27,7 @@ class UnitConstructionRow(BaseModel):
     finish_date: Optional[date] = None
     notes: Optional[str] = None
     last_log_date: Optional[date] = None  # entri log progres terbaru — dasar hitung "terlambat"
+    kpr_stage: Optional[str] = None  # tahap KPR pembeli unit ini (None = cash / belum ada pembeli / belum ajukan)
 
 
 class ConstructionSummary(BaseModel):
