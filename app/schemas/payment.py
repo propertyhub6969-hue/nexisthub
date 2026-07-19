@@ -4,7 +4,7 @@ from datetime import datetime, date
 from decimal import Decimal
 import uuid
 
-from app.models.payment import ScheduleStatus, PaymentMethod, PaymentSource, PaymentPurpose
+from app.models.payment import ScheduleStatus, PaymentMethod, PaymentSource, PaymentPurpose, PaymentApprovalStatus
 
 
 # ── Payment Schedule (Termin) ─────────────────────────────────────
@@ -80,11 +80,26 @@ class PaymentResponse(PaymentBase):
     kpr_id: Optional[uuid.UUID] = None
     has_file: bool = False
     file_name: Optional[str] = None
+    approval_status: PaymentApprovalStatus = PaymentApprovalStatus.PENDING
+    approver_id: Optional[uuid.UUID] = None
+    approver_name: Optional[str] = None
+    approved_at: Optional[datetime] = None
+    rejection_reason: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 
     class Config:
         from_attributes = True
+
+
+class PendingPaymentResponse(PaymentResponse):
+    """Untuk halaman Persetujuan Pembayaran — daftar lintas-pembeli, perlu label pembeli/unit."""
+    client_name: str
+    unit_label: Optional[str] = None
+
+
+class RejectPaymentRequest(BaseModel):
+    reason: str = Field(..., min_length=1)
 
 
 # ── Summary ───────────────────────────────────────────────────────
@@ -105,3 +120,4 @@ class PaymentSummary(BaseModel):
     buyer_remaining: Decimal = Decimal(0)     # sisa KEWAJIBAN PEMBELI = price − dari pembeli − plafon KPR
     retention_remaining: Decimal = Decimal(0)  # RETENSI menunggu pencairan bank = plafon − sudah cair
     has_kpr: bool = False
+    pending_amount: Decimal = Decimal(0)       # pembayaran menunggu persetujuan finance — belum dihitung sbg kas

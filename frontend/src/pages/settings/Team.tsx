@@ -12,13 +12,14 @@ const roleConfig: Record<UserRole, { label: string; variant: 'orange' | 'blue' |
   manager:   { label: 'Manager',   variant: 'green' },
   produksi:  { label: 'Produksi',  variant: 'yellow' },
   marketing: { label: 'Marketing', variant: 'blue' },
+  finance:   { label: 'Finance',   variant: 'green' },
   viewer:    { label: 'Viewer',    variant: 'gray' },
 }
 
 // Roles an actor is allowed to assign (mirrors backend rules).
 function assignableRoles(actorRole?: UserRole): UserRole[] {
-  if (actorRole === 'owner') return ['admin', 'manager', 'produksi', 'marketing', 'viewer']
-  return ['manager', 'produksi', 'marketing', 'viewer'] // admin cannot appoint admins
+  if (actorRole === 'owner') return ['admin', 'manager', 'produksi', 'marketing', 'finance', 'viewer']
+  return ['manager', 'produksi', 'marketing', 'finance', 'viewer'] // admin cannot appoint admins
 }
 
 const emptyCreate: TeamMemberCreate = { email: '', full_name: '', password: '', phone: '', role: 'marketing' }

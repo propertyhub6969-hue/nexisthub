@@ -12,6 +12,7 @@ class UserRole(str, enum.Enum):
     MANAGER = "manager"       # Manager - bisa approve, lihat report
     PRODUKSI = "produksi"     # Produksi - akses Konstruksi & Procurement saja
     MARKETING = "marketing"   # Marketing - akses grup Marketing & Properti saja (dulu 'staff')
+    FINANCE = "finance"       # Finance - setujui/tolak pembayaran (sengaja terpisah dari manager)
     VIEWER = "viewer"         # Read-only access
 
 

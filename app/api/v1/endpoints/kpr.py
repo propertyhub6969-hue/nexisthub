@@ -13,7 +13,7 @@ from app.core.unit_status import unit_status_for_client, set_unit_status
 from app.api.deps import get_current_context, AuthContext
 from app.models.kpr import Bank, KprApplication, KprStage
 from app.models.marketing import Client, ClientStatus
-from app.models.payment import Payment, PaymentSource, PaymentMethod, PaymentPurpose
+from app.models.payment import Payment, PaymentSource, PaymentMethod, PaymentPurpose, PaymentApprovalStatus
 from app.schemas.kpr import (
     BankCreate, BankUpdate, BankResponse,
     KprCreate, KprUpdate, KprResponse, DisburseRequest, DisbursementResponse, RejectRequest,
@@ -65,7 +65,8 @@ async def _disbursed_total(db, tenant_id, kpr_id) -> Decimal:
     """Total pencairan yang sudah cair (jumlah semua uang masuk Bank bertautan KPR ini)."""
     return Decimal(await db.scalar(
         select(func.coalesce(func.sum(Payment.amount), 0)).where(
-            Payment.kpr_id == kpr_id, Payment.tenant_id == tenant_id, NOTDEL(Payment))
+            Payment.kpr_id == kpr_id, Payment.tenant_id == tenant_id, NOTDEL(Payment),
+            Payment.approval_status == PaymentApprovalStatus.APPROVED)
     ))
 
 
@@ -196,6 +197,8 @@ async def disburse_kpr(kpr_id: uuid.UUID, payload: DisburseRequest, ctx: AuthCon
         payment_date=pay_date, method=PaymentMethod.TRANSFER, source=PaymentSource.BANK,
         purpose=PaymentPurpose.REALISASI_KPR,
         notes=payload.notes or "Pencairan KPR",
+        # auto-approved: pencairan KPR sudah dikendalikan alur tahapan KPR sendiri (bukan antrean finance)
+        approval_status=PaymentApprovalStatus.APPROVED, approved_at=datetime.utcnow(),
     )
     db.add(pay)
     await db.flush()

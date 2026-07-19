@@ -24,6 +24,7 @@ import Team from './pages/settings/Team'
 import Profile from './pages/settings/Profile'
 import Subscription from './pages/settings/Subscription'
 import Reports from './pages/Reports'
+import PaymentApproval from './pages/finance/PaymentApproval'
 import Platform from './pages/platform/Platform'
 import PublicMonthlyTax from './pages/public/PublicMonthlyTax'
 
@@ -72,6 +73,7 @@ export default function App() {
           <Route path="/settings/profile"    element={<Profile />} />
           <Route path="/settings/langganan"  element={<Subscription />} />
           <Route path="/reports"             element={<Reports />} />
+          <Route path="/payments/approval"   element={<PaymentApproval />} />
           <Route path="/platform/tenants"    element={<Platform />} />
         </Route>
 

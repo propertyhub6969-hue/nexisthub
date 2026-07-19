@@ -14,7 +14,7 @@ from app.core import storage
 from app.api.deps import get_current_context, AuthContext
 from app.models.marketing import Lead, Prospect, Client, LeadStatus, ProspectStatus, ClientStatus
 from app.models.property import Unit, UnitStatus
-from app.models.payment import Payment, PaymentSource
+from app.models.payment import Payment, PaymentSource, PaymentApprovalStatus
 from app.models.kpr import KprApplication, KprStage
 from app.core.audit import record_audit
 from app.core.unit_status import unit_status_for_client as _unit_status_for_client, set_unit_status as _set_unit_status
@@ -289,7 +289,8 @@ async def _attach_client_extras(db: AsyncSession, clients: list[Client]) -> None
 
     paid_rows = (await db.execute(
         select(Payment.client_id, func.coalesce(func.sum(Payment.amount), 0))
-        .where(Payment.client_id.in_(ids), Payment.source == PaymentSource.PEMBELI, Payment.is_deleted == False)  # noqa: E712
+        .where(Payment.client_id.in_(ids), Payment.source == PaymentSource.PEMBELI, Payment.is_deleted == False,  # noqa: E712
+               Payment.approval_status == PaymentApprovalStatus.APPROVED)
         .group_by(Payment.client_id)
     )).all()
     from_buyer_by_client = {row[0]: row[1] for row in paid_rows}

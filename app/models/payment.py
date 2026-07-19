@@ -1,7 +1,7 @@
 import uuid
 import enum
-from datetime import date
-from sqlalchemy import String, Text, ForeignKey, Enum as SAEnum, Numeric, Integer, Date, LargeBinary
+from datetime import date, datetime
+from sqlalchemy import String, Text, ForeignKey, Enum as SAEnum, Numeric, Integer, Date, DateTime, LargeBinary
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID
 from app.models.base import BaseModel, SoftDeleteMixin
@@ -29,6 +29,12 @@ class PaymentPurpose(str, enum.Enum):
     CICILAN_TERMIN = "cicilan_termin"     # Cicilan / Angsuran Termin
     REALISASI_KPR = "realisasi_kpr"       # Pencairan/Realisasi KPR dari bank
     PELUNASAN_TERMIN = "pelunasan_termin"  # Pelunasan (termin akhir)
+
+
+class PaymentApprovalStatus(str, enum.Enum):
+    PENDING = "pending"     # baru dicatat, menunggu finance/owner/admin
+    APPROVED = "approved"   # disetujui — final, dihitung sbg kas & laporan
+    REJECTED = "rejected"   # ditolak — tidak dihitung, kembali ke staff utk diperbaiki
 
 
 class PaymentSchedule(BaseModel, SoftDeleteMixin):
@@ -109,9 +115,26 @@ class Payment(BaseModel, SoftDeleteMixin):
     file_data: Mapped[bytes] = mapped_column(LargeBinary, nullable=True, deferred=True)  # LEGACY (pra-MinIO)
     file_key: Mapped[str] = mapped_column(String(600), nullable=True)  # key objek MinIO
 
+    # Persetujuan (Fase A) — pembayaran baru MENUNGGU, baru dihitung kas/laporan setelah approved.
+    # Pencairan KPR (kpr_id terisi) dibuat auto-approved — sudah dikendalikan alur tahapan KPR sendiri.
+    approval_status: Mapped[PaymentApprovalStatus] = mapped_column(
+        SAEnum(PaymentApprovalStatus), default=PaymentApprovalStatus.PENDING, nullable=False
+    )
+    approver_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    approved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
+    rejection_reason: Mapped[str] = mapped_column(Text, nullable=True)
+
+    approver: Mapped["User"] = relationship("User", foreign_keys=[approver_id])
+
     @property
     def has_file(self) -> bool:
         return self.file_name is not None
+
+    @property
+    def approver_name(self) -> str | None:
+        return self.approver.full_name if self.approver else None
 
     def __repr__(self) -> str:
         return f"<Payment {self.amount} [{self.source}]>"

@@ -15,7 +15,7 @@ from app.core.database import get_db
 from app.api.deps import get_current_context, AuthContext
 from app.models.marketing import Lead, Prospect, Client, ProspectStatus, ClientStatus
 from app.models.property import Project, Unit, UnitStatus
-from app.models.payment import Payment, PaymentSchedule, ScheduleStatus, PaymentSource
+from app.models.payment import Payment, PaymentSchedule, ScheduleStatus, PaymentSource, PaymentApprovalStatus
 from app.models.kpr import KprApplication, KprStage
 from app.models.construction import UnitConstruction, ConstructionStage, ConstructionProgressLog
 from app.models.tax import TaxRecord, TaxType, MonthlyTaxShareLink
@@ -64,10 +64,11 @@ async def get_dashboard(
     units_sold = await _count(db, Unit, Unit.tenant_id == t,
                               Unit.status.in_([UnitStatus.SOLD, UnitStatus.HANDOVER]))
 
+    _approved = Payment.approval_status == PaymentApprovalStatus.APPROVED
     payments_this_month = Decimal(await db.scalar(
         select(func.coalesce(func.sum(Payment.amount), 0)).where(
             Payment.tenant_id == t, Payment.is_deleted == False,  # noqa: E712
-            Payment.payment_date >= month_start)
+            Payment.payment_date >= month_start, _approved)
     ))
     total_contract = Decimal(await db.scalar(
         select(func.coalesce(func.sum(Client.contract_value), 0)).where(
@@ -76,7 +77,7 @@ async def get_dashboard(
     ))
     total_paid = Decimal(await db.scalar(
         select(func.coalesce(func.sum(Payment.amount), 0)).where(
-            Payment.tenant_id == t, Payment.is_deleted == False)  # noqa: E712
+            Payment.tenant_id == t, Payment.is_deleted == False, _approved)  # noqa: E712
     ))
     overdue_count = await _count(db, PaymentSchedule, PaymentSchedule.tenant_id == t,
                                  PaymentSchedule.is_deleted == False,  # noqa: E712
@@ -210,7 +211,8 @@ async def cashflow(
 ):
     """Arus kas se-tenant: kas masuk dari pembeli vs bank, ditambah sisa kewajiban pembeli & retensi bank."""
     t = ctx.tenant_id
-    notdel_p = Payment.is_deleted == False  # noqa: E712
+    # hanya pembayaran yang sudah disetujui finance — pending/rejected belum dihitung sbg kas
+    notdel_p = (Payment.is_deleted == False) & (Payment.approval_status == PaymentApprovalStatus.APPROVED)  # noqa: E712
 
     # Hanya hitung pembayaran milik PEMBELI yang masih ada (bukan soft-deleted/orphan). Pembatalan
     # deal pakai status INACTIVE (tetap terhitung sbg kas diterima), soft-delete = data keliru → dikecualikan.
@@ -355,10 +357,11 @@ async def sales_recap(
             Client.tenant_id == t, Client.is_deleted == False,  # noqa: E712
             Client.status != ClientStatus.INACTIVE)
     )).all()
-    # kas masuk per pembeli
+    # kas masuk per pembeli (hanya yang sudah disetujui finance)
     pay_rows = (await db.execute(
         select(Payment.client_id, func.coalesce(func.sum(Payment.amount), 0))
-        .where(Payment.tenant_id == t, Payment.is_deleted == False)  # noqa: E712
+        .where(Payment.tenant_id == t, Payment.is_deleted == False,  # noqa: E712
+               Payment.approval_status == PaymentApprovalStatus.APPROVED)
         .group_by(Payment.client_id)
     )).all()
     paid_by_client = {cid: Decimal(v) for cid, v in pay_rows}
@@ -565,11 +568,11 @@ async def aging(
                PaymentSchedule.due_date.isnot(None), PaymentSchedule.due_date < today)
     )).all()
 
-    # sudah dibayar per schedule (pembayaran yang dialokasikan ke termin ini)
+    # sudah dibayar per schedule (pembayaran yang dialokasikan ke termin ini, hanya yang disetujui)
     paid_rows = (await db.execute(
         select(Payment.schedule_id, func.coalesce(func.sum(Payment.amount), 0))
         .where(Payment.tenant_id == t, Payment.is_deleted == False,  # noqa: E712
-               Payment.schedule_id.isnot(None))
+               Payment.schedule_id.isnot(None), Payment.approval_status == PaymentApprovalStatus.APPROVED)
         .group_by(Payment.schedule_id)
     )).all()
     paid_by_sched = {sid: Decimal(v) for sid, v in paid_rows}

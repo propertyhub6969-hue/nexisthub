@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { today } from '../../utils/date'
 import { useParams, Link } from 'react-router-dom'
-import { ArrowLeft, Plus, Trash2, Pencil, Loader2, CalendarClock, Wallet, History, Eye, Printer, Landmark } from 'lucide-react'
+import { ArrowLeft, Plus, Trash2, Pencil, Loader2, CalendarClock, Wallet, History, Eye, Printer, Landmark, Check, X } from 'lucide-react'
 import { printReceipt } from '../../utils/receipt'
 import MoneyInput from '../../components/ui/MoneyInput'
 import DateInput from '../../components/ui/DateInput'
@@ -59,6 +59,11 @@ const purposeLabel: Record<PaymentPurpose, string> = {
   realisasi_kpr: 'Realisasi KPR',
   pelunasan_termin: 'Pelunasan Termin',
 }
+const approvalConfig: Record<Payment['approval_status'], { label: string; variant: 'yellow' | 'green' | 'red' }> = {
+  pending: { label: 'Menunggu', variant: 'yellow' },
+  approved: { label: 'Disetujui', variant: 'green' },
+  rejected: { label: 'Ditolak', variant: 'red' },
+}
 
 const emptySchedule = (clientId: string): PaymentScheduleCreate => ({ client_id: clientId, label: '', sequence: 0, amount: 0, due_date: '' })
 const emptyPayment = (clientId: string): PaymentCreate => ({ client_id: clientId, schedule_id: '', amount: 0, payment_date: '', method: 'transfer', source: 'pembeli', purpose: undefined, receipt_number: '' })
@@ -88,6 +93,11 @@ export default function ClientPayments() {
   const [schReason, setSchReason] = useState('')
   const [delTarget, setDelTarget] = useState<{ type: 'payment' | 'schedule'; id: string; label: string } | null>(null)
   const [delReason, setDelReason] = useState('')
+  const [busyId, setBusyId] = useState<string | null>(null)
+  const [rejectTarget, setRejectTarget] = useState<Payment | null>(null)
+  const [rejectReason, setRejectReason] = useState('')
+
+  const canApprove = user?.role === 'owner' || user?.role === 'admin' || user?.role === 'finance'
 
   const load = useCallback(async () => {
     setLoading(true); setError('')
@@ -192,6 +202,22 @@ export default function ClientPayments() {
     } catch { setError('Gagal menghapus.') } finally { setSaving(false) }
   }
 
+  async function handleApprove(p: Payment) {
+    setBusyId(p.id); setError('')
+    try { await paymentService.approvePayment(p.id); await reload() }
+    catch { setError('Gagal menyetujui pembayaran.') } finally { setBusyId(null) }
+  }
+  function openReject(p: Payment) { setRejectReason(''); setRejectTarget(p) }
+  async function submitReject(e: React.FormEvent) {
+    e.preventDefault()
+    if (!rejectTarget || !rejectReason.trim()) return
+    setSaving(true)
+    try {
+      await paymentService.rejectPayment(rejectTarget.id, rejectReason.trim())
+      setRejectTarget(null); await reload()
+    } catch { setError('Gagal menolak pembayaran.') } finally { setSaving(false) }
+  }
+
   const scheduleLabel = (id?: string) => schedules.find((s) => s.id === id)?.label
   const unitCode = unit ? [unit.block, unit.unit_number].filter(Boolean).join('-') : ''
   const selSchedule = schedules.find((s) => s.id === payForm.schedule_id)
@@ -255,6 +281,15 @@ export default function ClientPayments() {
               <p className="text-lg sm:text-xl font-bold text-amber-700 shrink-0">{fmt(summary.retention_remaining)}</p>
             </div>
           )}
+          {summary.pending_amount > 0 && (
+            <div className="card p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 bg-yellow-50/50 border-yellow-200">
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-yellow-700">Menunggu Persetujuan</p>
+                <p className="text-xs text-slate-500 mt-0.5">Belum dihitung sebagai kas diterima sampai disetujui finance/owner/admin.</p>
+              </div>
+              <p className="text-lg sm:text-xl font-bold text-yellow-700 shrink-0">{fmt(summary.pending_amount)}</p>
+            </div>
+          )}
         </>
       )}
 
@@ -305,14 +340,15 @@ export default function ClientPayments() {
         </div>
         <table className="w-full text-sm">
           <thead className="bg-slate-50 border-b border-slate-200">
-            <tr>{['Tanggal', 'Nominal', 'Jenis', 'Sumber', 'Metode', 'Untuk Termin', 'No. Kwitansi', 'Bukti', ''].map((h, i) => (
+            <tr>{['Tanggal', 'Nominal', 'Jenis', 'Sumber', 'Metode', 'Untuk Termin', 'No. Kwitansi', 'Bukti', 'Status', ''].map((h, i) => (
               <th key={i} className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">{h}</th>))}</tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {payments.length === 0 ? (
-              <tr><td colSpan={9} className="px-4 py-6 text-center text-slate-400 text-sm">Belum ada pembayaran tercatat.</td></tr>
+              <tr><td colSpan={10} className="px-4 py-6 text-center text-slate-400 text-sm">Belum ada pembayaran tercatat.</td></tr>
             ) : payments.map((p) => {
               const src = sourceConfig[p.source]
+              const ac = approvalConfig[p.approval_status]
               return (
                 <tr key={p.id} className="hover:bg-slate-50">
                   <td className="px-4 py-2.5 text-slate-500 text-xs">{fmtDate(p.payment_date)}</td>
@@ -330,7 +366,23 @@ export default function ClientPayments() {
                     ) : <span className="text-slate-400 text-xs">—</span>}
                   </td>
                   <td className="px-4 py-2.5">
+                    <Badge label={ac.label} variant={ac.variant} />
+                    {p.approval_status === 'rejected' && p.rejection_reason && (
+                      <div className="text-[11px] text-red-500 mt-0.5 max-w-[140px] truncate" title={p.rejection_reason}>{p.rejection_reason}</div>
+                    )}
+                  </td>
+                  <td className="px-4 py-2.5">
                     <div className="flex items-center justify-end gap-3">
+                      {canApprove && p.approval_status === 'pending' && (
+                        <>
+                          <button onClick={() => handleApprove(p)} disabled={busyId === p.id} className="text-emerald-500 hover:text-emerald-700 disabled:opacity-50" title="Setujui">
+                            {busyId === p.id ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+                          </button>
+                          <button onClick={() => openReject(p)} disabled={busyId === p.id} className="text-red-400 hover:text-red-600 disabled:opacity-50" title="Tolak">
+                            <X size={14} />
+                          </button>
+                        </>
+                      )}
                       <button onClick={() => handlePrint(p)} className="text-slate-400 hover:text-brand-600" title="Cetak Kuitansi"><Printer size={14} /></button>
                       {p.kpr_id ? (
                         <Link to={`/marketing/clients/${clientId}/kpr`} className="inline-flex items-center gap-1 text-[11px] text-amber-600 hover:underline" title="Pencairan dikelola di modul KPR">
@@ -512,6 +564,26 @@ export default function ClientPayments() {
             <button type="button" className="btn-secondary text-sm" onClick={() => setDelTarget(null)}>Batal</button>
             <button type="submit" className="text-sm flex items-center gap-2 rounded-lg bg-red-600 text-white px-4 py-2 font-medium hover:bg-red-700 disabled:opacity-50" disabled={saving || !delReason.trim()}>
               {saving && <Loader2 size={14} className="animate-spin" />}Hapus
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Modal Tolak Pembayaran — wajib alasan */}
+      <Modal open={rejectTarget !== null} onClose={() => setRejectTarget(null)} title="Tolak Pembayaran — wajib isi alasan">
+        <form onSubmit={submitReject} className="space-y-3">
+          <p className="text-sm text-slate-600">
+            Menolak pembayaran <b>{fmt(rejectTarget?.amount)}</b>. Tidak akan dihitung sebagai kas; staf perlu memperbaiki dan mencatat ulang.
+          </p>
+          <div>
+            <label className="label">Alasan penolakan *</label>
+            <textarea className="input" rows={2} required autoFocus placeholder="mis. nominal tidak sesuai bukti transfer"
+              value={rejectReason} onChange={(e) => setRejectReason(e.target.value)} />
+          </div>
+          <div className="flex justify-end gap-2 pt-1">
+            <button type="button" className="btn-secondary text-sm" onClick={() => setRejectTarget(null)}>Batal</button>
+            <button type="submit" className="text-sm flex items-center gap-2 rounded-lg bg-red-600 text-white px-4 py-2 font-medium hover:bg-red-700 disabled:opacity-50" disabled={saving || !rejectReason.trim()}>
+              {saving && <Loader2 size={14} className="animate-spin" />}Tolak
             </button>
           </div>
         </form>

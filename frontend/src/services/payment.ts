@@ -1,7 +1,7 @@
 import api from './api'
 import type {
   PaymentSchedule, PaymentScheduleCreate,
-  Payment, PaymentCreate, PaymentSummary,
+  Payment, PaymentCreate, PaymentSummary, PendingPayment,
 } from '../types'
 
 export const paymentService = {
@@ -56,5 +56,19 @@ export const paymentService = {
     const url = URL.createObjectURL(res.data as Blob)
     window.open(url, '_blank')
     setTimeout(() => URL.revokeObjectURL(url), 60000)
+  },
+
+  // ── Persetujuan (Fase A) ──
+  async listPending(): Promise<PendingPayment[]> {
+    const { data } = await api.get<PendingPayment[]>('/payments/pending')
+    return data
+  },
+  async approvePayment(id: string): Promise<Payment> {
+    const { data } = await api.post<Payment>(`/payments/records/${id}/approve`)
+    return data
+  },
+  async rejectPayment(id: string, reason: string): Promise<Payment> {
+    const { data } = await api.post<Payment>(`/payments/records/${id}/reject`, { reason })
+    return data
   },
 }

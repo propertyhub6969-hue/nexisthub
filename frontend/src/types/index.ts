@@ -21,7 +21,7 @@ export interface Token {
   token_type: string
 }
 
-export type UserRole = 'owner' | 'admin' | 'manager' | 'produksi' | 'marketing' | 'viewer'
+export type UserRole = 'owner' | 'admin' | 'manager' | 'produksi' | 'marketing' | 'finance' | 'viewer'
 
 export interface UserResponse {
   id: string
@@ -409,6 +409,7 @@ export type ScheduleStatus = 'pending' | 'paid'
 export type PaymentMethod = 'transfer' | 'tunai' | 'lainnya'
 export type PaymentSource = 'pembeli' | 'bank'
 export type PaymentPurpose = 'dp' | 'booking_fee' | 'cicilan_termin' | 'realisasi_kpr' | 'pelunasan_termin'
+export type PaymentApprovalStatus = 'pending' | 'approved' | 'rejected'
 
 export interface PaymentSchedule {
   id: string
@@ -450,8 +451,18 @@ export interface Payment {
   has_file?: boolean
   file_name?: string
   notes?: string
+  approval_status: PaymentApprovalStatus
+  approver_id?: string
+  approver_name?: string
+  approved_at?: string
+  rejection_reason?: string
   created_at: string
   updated_at: string
+}
+
+export interface PendingPayment extends Payment {
+  client_name: string
+  unit_label?: string
 }
 
 export interface Disbursement {
@@ -491,6 +502,7 @@ export interface PaymentSummary {
   buyer_remaining: number
   retention_remaining: number
   has_kpr: boolean
+  pending_amount: number
 }
 
 // ── Dashboard ─────────────────────────────────────────────────────

@@ -8,17 +8,23 @@ from app.core.files import file_etag, not_modified_response, cached_file_respons
 from app.core import storage
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
-from app.api.deps import get_current_context, AuthContext
+from app.api.deps import get_current_context, AuthContext, require_role
 from app.core.audit import record_audit
+from app.models.user import User, UserRole
 from app.models.marketing import Client
-from app.models.payment import PaymentSchedule, Payment, ScheduleStatus, PaymentSource
+from app.models.property import Unit
+from app.models.payment import PaymentSchedule, Payment, ScheduleStatus, PaymentSource, PaymentApprovalStatus
 from app.models.kpr import KprApplication, KprStage
 from app.schemas.payment import (
     ScheduleCreate, ScheduleUpdate, ScheduleResponse,
     PaymentCreate, PaymentUpdate, PaymentResponse, PaymentSummary,
+    PendingPaymentResponse, RejectPaymentRequest,
 )
+
+APPROVERS = (UserRole.OWNER, UserRole.ADMIN, UserRole.FINANCE)
 
 router = APIRouter()
 
@@ -44,7 +50,8 @@ async def _recompute_schedule(db, tenant_id, schedule_id):
         return
     paid = await db.scalar(
         select(func.coalesce(func.sum(Payment.amount), 0)).where(
-            Payment.schedule_id == schedule_id, Payment.is_deleted == False)  # noqa: E712
+            Payment.schedule_id == schedule_id, Payment.is_deleted == False,  # noqa: E712
+            Payment.approval_status == PaymentApprovalStatus.APPROVED)
     )
     sch.status = ScheduleStatus.PAID if Decimal(paid) >= sch.amount else ScheduleStatus.PENDING
 
@@ -60,13 +67,18 @@ async def payment_summary(
     price = Decimal(client.contract_value or 0)
 
     _notdel = Payment.is_deleted == False  # noqa: E712
+    _approved = Payment.approval_status == PaymentApprovalStatus.APPROVED
     from_buyer = Decimal(await db.scalar(
         select(func.coalesce(func.sum(Payment.amount), 0)).where(
-            Payment.client_id == client_id, Payment.source == PaymentSource.PEMBELI, _notdel)
+            Payment.client_id == client_id, Payment.source == PaymentSource.PEMBELI, _notdel, _approved)
     ))
     from_bank = Decimal(await db.scalar(
         select(func.coalesce(func.sum(Payment.amount), 0)).where(
-            Payment.client_id == client_id, Payment.source == PaymentSource.BANK, _notdel)
+            Payment.client_id == client_id, Payment.source == PaymentSource.BANK, _notdel, _approved)
+    ))
+    pending_amount = Decimal(await db.scalar(
+        select(func.coalesce(func.sum(Payment.amount), 0)).where(
+            Payment.client_id == client_id, _notdel, Payment.approval_status == PaymentApprovalStatus.PENDING)
     ))
     total_paid = from_buyer + from_bank
     remaining = price - total_paid
@@ -105,6 +117,7 @@ async def payment_summary(
         schedule_pending=(sch_total or 0) - (sch_paid or 0), overdue_count=overdue or 0,
         from_buyer=from_buyer, from_bank=from_bank, kpr_plafond=kpr_plafond,
         buyer_remaining=buyer_remaining, retention_remaining=retention_remaining, has_kpr=has_kpr,
+        pending_amount=pending_amount,
     )
 
 
@@ -127,7 +140,8 @@ async def list_schedules(
     paid_rows = await db.execute(
         select(Payment.schedule_id, func.coalesce(func.sum(Payment.amount), 0))
         .where(Payment.client_id == client_id, Payment.tenant_id == ctx.tenant_id,
-               Payment.is_deleted == False, Payment.schedule_id.isnot(None))  # noqa: E712
+               Payment.is_deleted == False, Payment.schedule_id.isnot(None),  # noqa: E712
+               Payment.approval_status == PaymentApprovalStatus.APPROVED)
         .group_by(Payment.schedule_id)
     )
     paid_by_sched = {sid: Decimal(v) for sid, v in paid_rows.all()}
@@ -219,12 +233,36 @@ async def list_payments(
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(
-        select(Payment)
+        select(Payment).options(selectinload(Payment.approver))
         .where(Payment.client_id == client_id, Payment.tenant_id == ctx.tenant_id,
                Payment.is_deleted == False)  # noqa: E712
         .order_by(Payment.payment_date.desc(), Payment.created_at.desc())
     )
     return result.scalars().all()
+
+
+@router.get("/pending", response_model=list[PendingPaymentResponse])
+async def list_pending_payments(
+    ctx: AuthContext = Depends(get_current_context),
+    db: AsyncSession = Depends(get_db),
+):
+    """Semua pembayaran menunggu persetujuan, lintas pembeli — halaman Persetujuan Pembayaran."""
+    rows = (await db.execute(
+        select(Payment, Client.full_name, Unit.block, Unit.unit_number)
+        .options(selectinload(Payment.approver))
+        .select_from(Payment)
+        .join(Client, Client.id == Payment.client_id)
+        .outerjoin(Unit, Unit.id == Client.unit_id)
+        .where(Payment.tenant_id == ctx.tenant_id, Payment.is_deleted == False,  # noqa: E712
+               Payment.approval_status == PaymentApprovalStatus.PENDING)
+        .order_by(Payment.payment_date, Payment.created_at)
+    )).all()
+    out = []
+    for pay, client_name, block, unit_number in rows:
+        unit_label = ((f"{block} " if block else "") + (unit_number or "")).strip() or None
+        base = PaymentResponse.model_validate(pay).model_dump()
+        out.append(PendingPaymentResponse(**base, client_name=client_name, unit_label=unit_label))
+    return out
 
 
 async def _generate_receipt_number(db, tenant_id) -> str:
@@ -256,11 +294,64 @@ async def create_payment(
 
 async def _get_payment(db, tenant_id, payment_id) -> Payment:
     pay = (await db.execute(
-        select(Payment).where(Payment.id == payment_id, Payment.tenant_id == tenant_id,
-                              Payment.is_deleted == False)  # noqa: E712
+        select(Payment).options(selectinload(Payment.approver))
+        .where(Payment.id == payment_id, Payment.tenant_id == tenant_id,
+              Payment.is_deleted == False)  # noqa: E712
     )).scalar_one_or_none()
     if pay is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Pembayaran tidak ditemukan")
+    return pay
+
+
+@router.post("/records/{payment_id}/approve", response_model=PaymentResponse)
+async def approve_payment(
+    payment_id: uuid.UUID,
+    ctx: AuthContext = Depends(get_current_context),
+    approver: User = Depends(require_role(*APPROVERS)),
+    db: AsyncSession = Depends(get_db),
+):
+    """Setujui pembayaran — baru dihitung sbg kas final & masuk laporan setelah ini."""
+    pay = await _get_payment(db, ctx.tenant_id, payment_id)
+    if pay.approval_status == PaymentApprovalStatus.APPROVED:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Pembayaran sudah disetujui")
+    pay.approval_status = PaymentApprovalStatus.APPROVED
+    pay.approver = approver
+    pay.approved_at = datetime.utcnow()
+    pay.rejection_reason = None
+    await db.flush()
+    await _recompute_schedule(db, ctx.tenant_id, pay.schedule_id)
+    await record_audit(db, ctx.tenant_id, ctx.user_id, "APPROVE", "payments", payment_id,
+                       new_data={"amount": str(pay.amount)}, client_id=pay.client_id)
+    await db.refresh(pay)
+    pay.approver = approver  # refresh() melepas relationship; set ulang tanpa query (lazy-load async tak aman di sini)
+    return pay
+
+
+@router.post("/records/{payment_id}/reject", response_model=PaymentResponse)
+async def reject_payment(
+    payment_id: uuid.UUID,
+    payload: RejectPaymentRequest,
+    ctx: AuthContext = Depends(get_current_context),
+    approver: User = Depends(require_role(*APPROVERS)),
+    db: AsyncSession = Depends(get_db),
+):
+    """Tolak pembayaran — wajib alasan. Tak dihitung kas/laporan; kembali ke staff utk diperbaiki."""
+    pay = await _get_payment(db, ctx.tenant_id, payment_id)
+    if pay.approval_status == PaymentApprovalStatus.REJECTED:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Pembayaran sudah ditolak")
+    was_approved = pay.approval_status == PaymentApprovalStatus.APPROVED
+    pay.approval_status = PaymentApprovalStatus.REJECTED
+    pay.approver = approver
+    pay.approved_at = datetime.utcnow()
+    pay.rejection_reason = payload.reason.strip()
+    await db.flush()
+    if was_approved:
+        await _recompute_schedule(db, ctx.tenant_id, pay.schedule_id)  # sebelumnya lunas → hitung ulang
+    await record_audit(db, ctx.tenant_id, ctx.user_id, "REJECT", "payments", payment_id,
+                       new_data={"amount": str(pay.amount)}, client_id=pay.client_id,
+                       reason=payload.reason.strip())
+    await db.refresh(pay)
+    pay.approver = approver  # refresh() melepas relationship; set ulang tanpa query
     return pay
 
 
@@ -285,6 +376,12 @@ async def update_payment(
     if material_changed and not (reason and reason.strip()):
         raise HTTPException(status.HTTP_400_BAD_REQUEST,
                             detail="Alasan wajib diisi untuk perubahan nominal/sumber/tanggal/termin pembayaran")
+    # nominal/sumber/tanggal/termin berubah setelah disetujui/ditolak → wajib direview ulang finance
+    if material_changed and pay.approval_status != PaymentApprovalStatus.PENDING:
+        pay.approval_status = PaymentApprovalStatus.PENDING
+        pay.approver_id = None
+        pay.approved_at = None
+        pay.rejection_reason = None
     await db.flush()
     await _recompute_schedule(db, ctx.tenant_id, old_schedule)
     if pay.schedule_id != old_schedule:

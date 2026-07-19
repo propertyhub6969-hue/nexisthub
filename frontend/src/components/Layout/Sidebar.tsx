@@ -18,6 +18,7 @@ import {
   Server,
   ChevronDown,
   X,
+  ShieldCheck,
 } from 'lucide-react'
 import { clsx } from 'clsx'
 import { useAuth } from '../../context/AuthContext'
@@ -80,6 +81,15 @@ const settingsItem = {
   ],
 }
 
+// Keuangan — hanya owner/admin/finance (persetujuan pembayaran, lihat require_role di backend)
+const financeItem = {
+  label: 'Keuangan',
+  icon: ShieldCheck,
+  children: [
+    { label: 'Persetujuan Pembayaran', to: '/payments/approval', icon: ShieldCheck },
+  ],
+}
+
 // Control Plane — hanya super-admin platform (vendor)
 const platformItem = {
   label: 'Platform',
@@ -89,7 +99,7 @@ const platformItem = {
   ],
 }
 
-const allGroups = [...navItems, settingsItem, platformItem]
+const allGroups = [...navItems, settingsItem, financeItem, platformItem]
 
 // Grup dianggap "aktif" bila halaman yang sedang dibuka ada di dalam children-nya (termasuk sub-rute).
 function isGroupActive(item: (typeof allGroups)[number], pathname: string): boolean {
@@ -102,9 +112,11 @@ export default function Sidebar({ open = false, onClose }: { open?: boolean; onC
   const location = useLocation()
 
   const canManageTeam = user?.role === 'owner' || user?.role === 'admin'
+  const canApprovePayments = user?.role === 'owner' || user?.role === 'admin' || user?.role === 'finance'
   const allItems = [
     ...navItems,
     ...(canManageTeam ? [settingsItem] : []),
+    ...(canApprovePayments ? [financeItem] : []),
     ...(user?.is_platform_admin ? [platformItem] : []),
   ]
   // gabungan gating: akses role + feature-flag paket tenant

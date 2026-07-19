@@ -14,6 +14,7 @@ const roleLabel: Record<string, string> = {
   manager: 'Manager',
   produksi: 'Produksi',
   marketing: 'Marketing',
+  finance: 'Finance',
   viewer: 'Viewer',
 }
 
