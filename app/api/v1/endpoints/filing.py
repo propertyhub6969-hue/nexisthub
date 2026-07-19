@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.api.deps import get_current_context, AuthContext
-from app.models.marketing import Client
+from app.models.marketing import Client, ClientPaymentType
 from app.models.property import Project, Unit
 from app.models.document import Document, DocStatus
 from app.models.tax import TaxRecord, TaxStatus
@@ -20,9 +20,11 @@ async def filing_summary(
     ctx: AuthContext = Depends(get_current_context),
     db: AsyncSession = Depends(get_db),
 ):
-    """Ringkasan pemberkasan (dokumen+pajak+KPR) lintas pembeli — read-only, tanpa aksi edit."""
+    """Ringkasan pemberkasan (dokumen+pajak+KPR) lintas pembeli — read-only, tanpa aksi edit.
+    Hanya pembeli cara beli KPR (kolom kpr_stage/bank/durasi tak relevan utk pembeli cash)."""
     clients = (await db.execute(
-        select(Client).where(Client.tenant_id == ctx.tenant_id, Client.is_deleted == False)  # noqa: E712
+        select(Client).where(Client.tenant_id == ctx.tenant_id, Client.is_deleted == False,  # noqa: E712
+                             Client.payment_type == ClientPaymentType.KPR)
         .order_by(Client.created_at.desc())
     )).scalars().all()
     if not clients:

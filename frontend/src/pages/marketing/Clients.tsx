@@ -291,9 +291,11 @@ export default function Clients() {
                 <Link to={`/marketing/clients/${c.id}/tax`} onClick={() => setActionMenuId(null)} className="flex items-center gap-2.5 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50">
                   <Scale size={15} className="text-slate-400" /> Pajak & Notaris
                 </Link>
-                <Link to={`/marketing/clients/${c.id}/kpr`} onClick={() => setActionMenuId(null)} className="flex items-center gap-2.5 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50">
-                  <Landmark size={15} className="text-slate-400" /> KPR
-                </Link>
+                {c.payment_type === 'kpr' && (
+                  <Link to={`/marketing/clients/${c.id}/kpr`} onClick={() => setActionMenuId(null)} className="flex items-center gap-2.5 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50">
+                    <Landmark size={15} className="text-slate-400" /> KPR
+                  </Link>
+                )}
                 <button onClick={() => { setActionMenuId(null); openEdit(c) }} className="flex items-center gap-2.5 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 w-full text-left">
                   <Pencil size={15} className="text-slate-400" /> Edit
                 </button>
