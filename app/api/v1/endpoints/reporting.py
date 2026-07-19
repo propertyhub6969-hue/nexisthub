@@ -18,7 +18,7 @@ from app.models.property import Project, Unit, UnitStatus
 from app.models.payment import Payment, PaymentSchedule, ScheduleStatus, PaymentSource, PaymentApprovalStatus
 from app.models.kpr import KprApplication, KprStage
 from app.models.construction import UnitConstruction, ConstructionStage, ConstructionProgressLog
-from app.models.tax import TaxRecord, TaxType, MonthlyTaxShareLink
+from app.models.tax import TaxRecord, TaxType, TaxStatus, MonthlyTaxShareLink
 from app.models.document import Document
 
 router = APIRouter()
@@ -807,6 +807,100 @@ async def monthly_tax(
     db: AsyncSession = Depends(get_db),
 ):
     return await _build_monthly_tax_report(db, ctx.tenant_id, month, project_id)
+
+
+# ═══════════════════════ CHECKLIST PAJAK BELUM DIURUS ═══════════════════════
+# "Selesai" = ada TaxRecord dgn status validasi/dtp/bebas (terminal). "Belum" = tak ada baris
+# sama sekali, ATAU ada baris tapi status masih belum/dibayar (masih berjalan, belum tuntas).
+TAX_COMPLETE_STATUSES = (TaxStatus.VALIDASI, TaxStatus.DTP, TaxStatus.BEBAS)
+
+
+class TaxChecklistItem(BaseModel):
+    has_record: bool
+    status: str   # nilai TaxStatus, atau 'belum_ada' bila tak ada baris sama sekali
+    is_complete: bool
+
+
+class TaxChecklistRow(BaseModel):
+    client_id: uuid.UUID
+    full_name: str
+    unit_label: Optional[str] = None
+    project_name: Optional[str] = None
+    contract_date: Optional[date] = None
+    days_since_contract: Optional[int] = None
+    pph: TaxChecklistItem
+    bphtb: TaxChecklistItem
+    ppn: TaxChecklistItem
+    incomplete_count: int   # 0-3, dari pph/bphtb/ppn yang belum tuntas
+
+
+class TaxChecklistReport(BaseModel):
+    rows: list[TaxChecklistRow]
+    total_clients: int
+    total_incomplete_clients: int
+
+
+def _tax_item(rec: Optional[TaxRecord]) -> TaxChecklistItem:
+    if rec is None:
+        return TaxChecklistItem(has_record=False, status="belum_ada", is_complete=False)
+    return TaxChecklistItem(has_record=True, status=rec.status.value, is_complete=rec.status in TAX_COMPLETE_STATUSES)
+
+
+@router.get("/tax-checklist", response_model=TaxChecklistReport)
+async def tax_checklist(
+    project_id: Optional[uuid.UUID] = Query(None),
+    only_incomplete: bool = Query(True, description="Hanya tampilkan pembeli dgn minimal 1 jenis pajak belum tuntas"),
+    ctx: AuthContext = Depends(get_current_context),
+    db: AsyncSession = Depends(get_db),
+):
+    """Checklist per-pembeli: status PPh/BPHTB/PPN mana yang belum diurus (tak ada baris,
+    atau masih belum/dibayar — belum divalidasi/DTP/bebas). Pembeli batal (INACTIVE) dikecualikan."""
+    t = ctx.tenant_id
+    cconds = [Client.tenant_id == t, Client.is_deleted == False, Client.status != ClientStatus.INACTIVE]  # noqa: E712
+    if project_id:
+        cconds.append(Client.project_id == project_id)
+    clients = (await db.execute(select(Client).where(*cconds).order_by(Client.contract_date))).scalars().all()
+    if not clients:
+        return TaxChecklistReport(rows=[], total_clients=0, total_incomplete_clients=0)
+
+    client_ids = [c.id for c in clients]
+    tax_rows = (await db.execute(
+        select(TaxRecord).where(TaxRecord.tenant_id == t, TaxRecord.client_id.in_(client_ids),
+                                TaxRecord.is_deleted == False)  # noqa: E712
+    )).scalars().all()
+    by_key: dict = {(r.client_id, r.tax_type): r for r in tax_rows}
+
+    unit_ids = {c.unit_id for c in clients if c.unit_id}
+    units = {u.id: u for u in (await db.execute(select(Unit).where(Unit.id.in_(unit_ids)))).scalars().all()} if unit_ids else {}
+    proj_ids = {c.project_id for c in clients if c.project_id}
+    proj_names = dict((await db.execute(select(Project.id, Project.name).where(Project.id.in_(proj_ids)))).all()) if proj_ids else {}
+
+    today = date.today()
+    rows: list[TaxChecklistRow] = []
+    for c in clients:
+        pph = _tax_item(by_key.get((c.id, TaxType.PPH)))
+        bphtb = _tax_item(by_key.get((c.id, TaxType.BPHTB)))
+        ppn = _tax_item(by_key.get((c.id, TaxType.PPN)))
+        incomplete = sum(1 for it in (pph, bphtb, ppn) if not it.is_complete)
+        if only_incomplete and incomplete == 0:
+            continue
+        u = units.get(c.unit_id) if c.unit_id else None
+        rows.append(TaxChecklistRow(
+            client_id=c.id, full_name=c.full_name,
+            unit_label=("-".join(x for x in [u.block, u.unit_number] if x) if u else None),
+            project_name=proj_names.get(c.project_id),
+            contract_date=c.contract_date,
+            days_since_contract=(today - c.contract_date).days if c.contract_date else None,
+            pph=pph, bphtb=bphtb, ppn=ppn, incomplete_count=incomplete,
+        ))
+    rows.sort(key=lambda r: (-(r.days_since_contract or 0), -r.incomplete_count))
+
+    return TaxChecklistReport(
+        rows=rows, total_clients=len(clients),
+        total_incomplete_clients=sum(1 for c in clients
+            if sum(1 for tt in (TaxType.PPH, TaxType.BPHTB, TaxType.PPN)
+                   if not _tax_item(by_key.get((c.id, tt))).is_complete) > 0),
+    )
 
 
 # ── Tautan bagikan Laporan Pajak Bulanan ke pihak luar (mis. konsultan pajak), tanpa login ──

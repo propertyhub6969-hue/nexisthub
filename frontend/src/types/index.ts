@@ -837,6 +837,30 @@ export interface MonthlyTaxReport {
   total_bphtb_amount: number
 }
 
+export type TaxChecklistStatus = 'belum_ada' | 'belum' | 'dibayar' | 'validasi' | 'dtp' | 'bebas'
+export interface TaxChecklistItem {
+  has_record: boolean
+  status: TaxChecklistStatus
+  is_complete: boolean
+}
+export interface TaxChecklistRow {
+  client_id: string
+  full_name: string
+  unit_label?: string
+  project_name?: string
+  contract_date?: string
+  days_since_contract?: number
+  pph: TaxChecklistItem
+  bphtb: TaxChecklistItem
+  ppn: TaxChecklistItem
+  incomplete_count: number
+}
+export interface TaxChecklistReport {
+  rows: TaxChecklistRow[]
+  total_clients: number
+  total_incomplete_clients: number
+}
+
 export interface MonthlyTaxShareLink {
   id: string
   token: string

@@ -1,15 +1,16 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import {
   Loader2, Landmark, TrendingDown, CheckCircle2, XCircle, FileStack,
   Wallet, Users, Building2, PiggyBank, HandCoins, Home, AlertTriangle, Clock, HardHat, CalendarClock, Receipt,
-  Printer, FileDown, Share2, Copy, Trash2, Check,
+  Printer, FileDown, Share2, Copy, Trash2, Check, ExternalLink,
 } from 'lucide-react'
 import { reportingService } from '../services/reporting'
 import { propertyService } from '../services/property'
 import { printMonthlyTax, downloadMonthlyTaxCsv } from '../utils/monthlyTax'
 import Modal from '../components/ui/Modal'
 import Badge from '../components/ui/Badge'
-import type { KprRejectionReport, CashflowReport, SalesRecapReport, AgingReport, ConstructionProgressReport, MonthlyTaxReport, MonthlyTaxShareLink, Project } from '../types'
+import type { KprRejectionReport, CashflowReport, SalesRecapReport, AgingReport, ConstructionProgressReport, MonthlyTaxReport, MonthlyTaxShareLink, Project, TaxChecklistReport, TaxChecklistItem, TaxChecklistStatus } from '../types'
 
 const fmtRp = (n?: number | null) =>
   n == null ? '—' : new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(Number(n))
@@ -689,6 +690,103 @@ function MonthlyTaxTab() {
   )
 }
 
+// ═══════════════════════ CHECKLIST PAJAK BELUM DIURUS ═══════════════════════
+const taxStatusCfg: Record<TaxChecklistStatus, { label: string; variant: 'gray' | 'red' | 'yellow' | 'green' }> = {
+  belum_ada: { label: 'Belum Ada', variant: 'gray' },
+  belum: { label: 'Belum Bayar', variant: 'red' },
+  dibayar: { label: 'Menunggu Validasi', variant: 'yellow' },
+  validasi: { label: 'Tervalidasi', variant: 'green' },
+  dtp: { label: 'DTP', variant: 'green' },
+  bebas: { label: 'Bebas Pajak', variant: 'green' },
+}
+function TaxStatusBadge({ item }: { item: TaxChecklistItem }) {
+  const c = taxStatusCfg[item.status]
+  return <Badge label={c.label} variant={c.variant} />
+}
+
+function TaxChecklistTab() {
+  const [projects, setProjects] = useState<Project[]>([])
+  const [projectId, setProjectId] = useState('')
+  const [onlyIncomplete, setOnlyIncomplete] = useState(true)
+  const [rep, setRep] = useState<TaxChecklistReport | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    propertyService.listProjects({ size: 500 }).then((r) => setProjects(r.items)).catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    setLoading(true); setError('')
+    reportingService.taxChecklist(projectId || undefined, onlyIncomplete)
+      .then(setRep)
+      .catch(() => setError('Gagal memuat checklist pajak.'))
+      .finally(() => setLoading(false))
+  }, [projectId, onlyIncomplete])
+
+  return (
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-3">
+          <select className="input w-56" value={projectId} onChange={(e) => setProjectId(e.target.value)}>
+            <option value="">Semua Proyek</option>
+            {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+          <label className="flex items-center gap-1.5 text-sm text-slate-600 cursor-pointer select-none">
+            <input type="checkbox" checked={onlyIncomplete} onChange={(e) => setOnlyIncomplete(e.target.checked)} />
+            Hanya yang belum tuntas
+          </label>
+        </div>
+        {rep && (
+          <span className="text-sm text-slate-500">
+            <b className="text-slate-800">{rep.total_incomplete_clients}</b> dari {rep.total_clients} pembeli belum tuntas pajaknya
+          </span>
+        )}
+      </div>
+
+      {loading ? (
+        <div className="card p-12 text-center text-slate-400"><Loader2 size={20} className="inline animate-spin" /></div>
+      ) : error ? (
+        <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-2">{error}</div>
+      ) : (
+        <div className="card overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-slate-50 border-b border-slate-200">
+              <tr>
+                {['Pembeli', 'Unit / Proyek', 'Tanggal Kontrak', 'Umur', 'PPh', 'BPHTB', 'PPN', ''].map((h, i) => (
+                  <th key={i} className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {!rep || rep.rows.length === 0 ? (
+                <tr><td colSpan={8} className="px-4 py-8 text-center text-slate-400 text-sm">
+                  {onlyIncomplete ? 'Semua pembeli sudah tuntas perpajakannya. 🎉' : 'Belum ada pembeli.'}
+                </td></tr>
+              ) : rep.rows.map((r) => (
+                <tr key={r.client_id} className="hover:bg-slate-50 transition-colors">
+                  <td className="px-4 py-3 font-medium text-slate-900 whitespace-nowrap">{r.full_name}</td>
+                  <td className="px-4 py-3 text-slate-500 whitespace-nowrap">{[r.unit_label, r.project_name].filter(Boolean).join(' · ') || '—'}</td>
+                  <td className="px-4 py-3 text-slate-500 whitespace-nowrap">{r.contract_date ? new Date(r.contract_date).toLocaleDateString('id-ID') : '—'}</td>
+                  <td className="px-4 py-3 text-slate-500 whitespace-nowrap">{r.days_since_contract != null ? `${r.days_since_contract} hari` : '—'}</td>
+                  <td className="px-4 py-3"><TaxStatusBadge item={r.pph} /></td>
+                  <td className="px-4 py-3"><TaxStatusBadge item={r.bphtb} /></td>
+                  <td className="px-4 py-3"><TaxStatusBadge item={r.ppn} /></td>
+                  <td className="px-4 py-3 text-right">
+                    <Link to={`/marketing/clients/${r.client_id}/tax`} className="inline-flex items-center gap-1 text-xs text-brand-600 hover:underline whitespace-nowrap">
+                      Urus <ExternalLink size={12} />
+                    </Link>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ═══════════════════════ PAGE ═══════════════════════
 const TABS = [
   { key: 'cashflow', label: 'Arus Kas', desc: 'Kas masuk dari pembeli vs bank, plus piutang & retensi.' },
@@ -697,6 +795,7 @@ const TABS = [
   { key: 'aging', label: 'Tunggakan', desc: 'Termin lewat jatuh tempo, dikelompokkan umur & per pembeli.' },
   { key: 'kpr', label: 'Rejection-Rate KPR', desc: 'Persentase pengajuan KPR ditolak per bank penyalur.' },
   { key: 'tax', label: 'Pajak Bulanan', desc: 'Rekap PPh per pembeli per bulan — nama, NIK, lokasi, AJB, jumlah, NTPN, notaris.' },
+  { key: 'tax-checklist', label: 'Checklist Pajak', desc: 'Pembeli yang perpajakannya (PPh/BPHTB/PPN) belum tuntas — belum ada data, belum bayar, atau menunggu validasi.' },
 ] as const
 
 export default function Reports() {
@@ -730,6 +829,7 @@ export default function Reports() {
       {tab === 'aging' && <AgingTab />}
       {tab === 'kpr' && <KprRejectionTab />}
       {tab === 'tax' && <MonthlyTaxTab />}
+      {tab === 'tax-checklist' && <TaxChecklistTab />}
     </div>
   )
 }
