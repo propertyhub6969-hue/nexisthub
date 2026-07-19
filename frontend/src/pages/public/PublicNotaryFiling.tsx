@@ -5,7 +5,15 @@ import { taxService } from '../../services/tax'
 import NexistLogo from '../../components/ui/NexistLogo'
 import Modal from '../../components/ui/Modal'
 import MoneyInput from '../../components/ui/MoneyInput'
-import type { PublicNotaryPage, PublicNotaryClientRow, TaxType, TaxStatus } from '../../types'
+import type { PublicNotaryPage, PublicNotaryClientRow, TaxType, TaxStatus, NotaryHandoverEvent } from '../../types'
+
+const HANDOVER_LABEL: Record<NotaryHandoverEvent, string> = {
+  ambil: 'Diambil dari arsip',
+  serah_notaris: 'Diserahkan ke notaris',
+  terima_pembeli: 'Diterima pembeli (cash)',
+  tahan_bank: 'Diserahkan ke bank (KPR/agunan)',
+  kembali_arsip: 'Kembali ke arsip',
+}
 
 const TAX_TYPES: { key: TaxType; label: string }[] = [
   { key: 'pph', label: 'PPh' },
@@ -67,17 +75,17 @@ export default function PublicNotaryFiling() {
             </div>
 
             <div className="card overflow-x-auto">
-              <table className="w-full text-sm min-w-[760px]">
+              <table className="w-full text-sm min-w-[920px]">
                 <thead className="bg-slate-50 border-b border-slate-200">
                   <tr>
-                    {['Pembeli', 'Unit / Proyek', 'PPJB', 'AJB', 'Pajak', 'Biaya', ''].map((h, i) => (
+                    {['Pembeli', 'Unit / Proyek', 'PPJB', 'AJB', 'Pajak', 'Biaya', 'Serah-Terima Asli', ''].map((h, i) => (
                       <th key={i} className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {page.rows.length === 0 ? (
-                    <tr><td colSpan={7} className="px-4 py-8 text-center text-slate-400 text-sm">Belum ada pembeli.</td></tr>
+                    <tr><td colSpan={8} className="px-4 py-8 text-center text-slate-400 text-sm">Belum ada pembeli.</td></tr>
                   ) : page.rows.map((r) => (
                     <tr key={r.client_id} className="hover:bg-slate-50 align-top">
                       <td className="px-4 py-3 font-medium text-slate-900 whitespace-nowrap">{r.client_name}</td>
@@ -86,6 +94,14 @@ export default function PublicNotaryFiling() {
                       <td className="px-4 py-3 text-slate-500 whitespace-nowrap">{r.ajb_number || '—'}</td>
                       <td className="px-4 py-3 text-slate-500 whitespace-nowrap">{r.tax_records.length} baris</td>
                       <td className="px-4 py-3 text-slate-500 whitespace-nowrap">{r.fees.length} baris</td>
+                      <td className="px-4 py-3 text-slate-500 whitespace-nowrap">
+                        {r.last_handover_event ? (
+                          <>
+                            {HANDOVER_LABEL[r.last_handover_event]}
+                            <div className="text-xs text-slate-400">{fmtDate(r.last_handover_date)}</div>
+                          </>
+                        ) : '—'}
+                      </td>
                       <td className="px-4 py-3">
                         <button
                           onClick={() => setDetailRow(r)}

@@ -235,6 +235,9 @@ class PublicNotaryClientRow(BaseModel):
     has_ajb_file: bool = False
     tax_records: list[PublicNotaryTaxRow] = []
     fees: list[PublicNotaryFeeRow] = []
+    # Kejadian serah-terima dokumen ASLI TERAKHIR yg melibatkan notaris ini (ringkas — bukan riwayat penuh)
+    last_handover_event: Optional[str] = None
+    last_handover_date: Optional[date] = None
 
 
 class PublicNotaryPageResponse(BaseModel):

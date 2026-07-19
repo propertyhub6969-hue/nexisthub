@@ -18,7 +18,7 @@ from app.models.tax import (
 from app.models.kpr import Bank, KprApplication, KprStage, BankShareLink, KprBankSubmission
 from app.models.marketing import Client
 from app.models.property import Unit, Project
-from app.models.document import Document, DocStatus
+from app.models.document import Document, DocStatus, DocumentHandover
 from app.schemas.kpr import PublicBankPageResponse, PublicBankRow
 from app.schemas.tax import (
     PublicNotaryPageResponse, PublicNotaryClientRow, PublicNotaryTaxRow, PublicNotaryFeeRow,
@@ -261,6 +261,21 @@ async def public_notary_page(token: str, db: AsyncSession = Depends(get_db)):
     proj_ids = {c.project_id for c in clients.values() if c.project_id}
     proj_names = dict((await db.execute(select(Project.id, Project.name).where(Project.id.in_(proj_ids)))).all()) if proj_ids else {}
 
+    # Kejadian serah-terima dokumen ASLI terakhir yg melibatkan notaris ini (ringkas, per unit) —
+    # cakupan sempit: hanya handover yg notary_id-nya = notaris ini, bukan riwayat penuh/pihak lain.
+    handover_by_unit: dict = {}
+    if unit_ids:
+        hrows = (await db.execute(
+            select(Document.unit_id, DocumentHandover.event, DocumentHandover.at)
+            .join(Document, Document.id == DocumentHandover.document_id)
+            .where(Document.unit_id.in_(unit_ids), DocumentHandover.notary_id == link.notary_id,
+                   DocumentHandover.tenant_id == link.tenant_id, DocumentHandover.is_deleted == False,  # noqa: E712
+                   Document.is_deleted == False)  # noqa: E712
+            .order_by(DocumentHandover.at, DocumentHandover.created_at)
+        )).all()
+        for uid, event, at in hrows:
+            handover_by_unit[uid] = (event, at)  # baris terakhir menang (urut ascending) = terbaru
+
     tax_by_client: dict = {}
     for t in tax_rows:
         tax_by_client.setdefault(t.client_id, []).append(PublicNotaryTaxRow(
@@ -280,12 +295,14 @@ async def public_notary_page(token: str, db: AsyncSession = Depends(get_db)):
             continue
         u = units.get(c.unit_id) if c.unit_id else None
         unit_label = "-".join(x for x in [u.block, u.unit_number] if x) if u else None
+        hv = handover_by_unit.get(c.unit_id) if c.unit_id else None
         rows.append(PublicNotaryClientRow(
             client_id=c.id, client_name=c.full_name, unit_label=unit_label,
             project_name=proj_names.get(c.project_id),
             ppjb_number=c.ppjb_number, has_ppjb_file=c.has_ppjb_file,
             ajb_number=c.ajb_number, has_ajb_file=c.has_ajb_file,
             tax_records=tax_by_client.get(cid, []), fees=fee_by_client.get(cid, []),
+            last_handover_event=hv[0].value if hv else None, last_handover_date=hv[1] if hv else None,
         ))
     rows.sort(key=lambda r: r.client_name)
     return PublicNotaryPageResponse(notary_name=notary_name, rows=rows)

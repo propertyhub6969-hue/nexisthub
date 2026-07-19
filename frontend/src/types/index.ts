@@ -1201,7 +1201,10 @@ export interface PublicNotaryClientRow {
   has_ajb_file: boolean
   tax_records: PublicNotaryTaxRow[]
   fees: PublicNotaryFeeRow[]
+  last_handover_event?: NotaryHandoverEvent
+  last_handover_date?: string
 }
+export type NotaryHandoverEvent = 'ambil' | 'serah_notaris' | 'terima_pembeli' | 'tahan_bank' | 'kembali_arsip'
 export interface PublicNotaryPage {
   notary_name: string
   rows: PublicNotaryClientRow[]
