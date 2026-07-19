@@ -29,6 +29,7 @@ import { clsx } from 'clsx'
 import { useAuth } from '../../context/AuthContext'
 import { canAccessPath, canAccessFeature, effectiveRoles, hasAnyRole } from '../../utils/access'
 import { kprService } from '../../services/kpr'
+import { taxService } from '../../services/tax'
 import NexistLogo from '../ui/NexistLogo'
 
 interface NavChild {
@@ -59,6 +60,7 @@ const marketingItem: NavItem = {
     { label: 'Pembeli', to: '/marketing/clients', icon: Handshake },
     { label: 'Pemberkasan', to: '/pemberkasan', icon: ClipboardCheck },
     { label: 'Kiriman Bank', to: '/marketing/bank-submissions', icon: Inbox },
+    { label: 'Kiriman Notaris', to: '/marketing/notary-submissions', icon: Inbox },
   ],
 }
 
@@ -155,11 +157,13 @@ export default function Sidebar({ open = false, onClose }: { open?: boolean; onC
   // gabungan gating: akses role + feature-flag paket tenant
   const allow = (to: string) => canAccessPath(effectiveRoles(user), to, user?.is_platform_admin) && canAccessFeature(user?.feature_flags, to)
 
-  // badge jumlah kiriman bank menunggu persetujuan (silent — 403/gagal cukup diabaikan, badge tetap 0)
+  // badge jumlah kiriman bank/notaris menunggu persetujuan (silent — 403/gagal cukup diabaikan, badge tetap 0)
   const [bankPendingCount, setBankPendingCount] = useState(0)
+  const [notaryPendingCount, setNotaryPendingCount] = useState(0)
   useEffect(() => {
     if (!user) return
     kprService.bankSubmissionsPendingCount().then(setBankPendingCount).catch(() => {})
+    taxService.notarySubmissionsPendingCount().then(setNotaryPendingCount).catch(() => {})
   }, [user])
   // saring menu sesuai akses role (produksi = Dashboard/Konstruksi/Procurement; role lain penuh)
   const items = allItems.filter((it) =>
@@ -236,6 +240,9 @@ export default function Sidebar({ open = false, onClose }: { open?: boolean; onC
                   {child.label}
                   {child.to === '/marketing/bank-submissions' && bankPendingCount > 0 && (
                     <span className="ml-auto text-[10px] font-semibold bg-brass-500 text-white rounded-full px-1.5 py-0.5 leading-none">{bankPendingCount}</span>
+                  )}
+                  {child.to === '/marketing/notary-submissions' && notaryPendingCount > 0 && (
+                    <span className="ml-auto text-[10px] font-semibold bg-brass-500 text-white rounded-full px-1.5 py-0.5 leading-none">{notaryPendingCount}</span>
                   )}
                 </NavLink>
               ))}

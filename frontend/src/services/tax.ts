@@ -1,6 +1,7 @@
 import api from './api'
 import type {
   Notary, NotaryCreate, TaxRecord, TaxCreate, TaxBulkCreate, NotaryFee, NotaryFeeCreate,
+  NotaryShareLink, NotaryShareLinkCreate, NotarySubmission, PublicNotaryPage,
 } from '../types'
 
 export const taxService = {
@@ -99,5 +100,80 @@ export const taxService = {
   },
   async deleteFee(id: string): Promise<void> {
     await api.delete(`/legal/notary-fees/${id}`)
+  },
+
+  // ── Tautan bagikan ke Notaris ──
+  async listNotaryShareLinks(notaryId?: string): Promise<NotaryShareLink[]> {
+    const { data } = await api.get<NotaryShareLink[]>('/legal/notary-share', { params: { notary_id: notaryId || undefined } })
+    return data
+  },
+  async createNotaryShareLink(payload: NotaryShareLinkCreate): Promise<NotaryShareLink> {
+    const { data } = await api.post<NotaryShareLink>('/legal/notary-share', payload)
+    return data
+  },
+  async revokeNotaryShareLink(id: string): Promise<void> {
+    await api.delete(`/legal/notary-share/${id}`)
+  },
+
+  // ── Kiriman dari Notaris (menunggu persetujuan) ──
+  async listNotarySubmissions(status: string = 'pending'): Promise<NotarySubmission[]> {
+    const { data } = await api.get<NotarySubmission[]>('/legal/notary-submissions', { params: { status } })
+    return data
+  },
+  async notarySubmissionsPendingCount(): Promise<number> {
+    const { data } = await api.get<{ count: number }>('/legal/notary-submissions/pending-count')
+    return data.count
+  },
+  async acceptNotarySubmission(id: string): Promise<NotarySubmission> {
+    const { data } = await api.post<NotarySubmission>(`/legal/notary-submissions/${id}/accept`)
+    return data
+  },
+  async rejectNotarySubmission(id: string, reason: string): Promise<NotarySubmission> {
+    const { data } = await api.post<NotarySubmission>(`/legal/notary-submissions/${id}/reject`, { reason })
+    return data
+  },
+  async openSubmissionFile(id: string, kind: 'main' | 'ppjb' | 'ajb' = 'main'): Promise<void> {
+    const res = await api.get(`/legal/notary-submissions/${id}/file`, { params: { kind }, responseType: 'blob' })
+    const url = URL.createObjectURL(res.data as Blob)
+    window.open(url, '_blank')
+    setTimeout(() => URL.revokeObjectURL(url), 60000)
+  },
+
+  // ── Publik (tanpa login) — akses via tautan notaris bertoken ──
+  async publicNotaryPage(token: string): Promise<PublicNotaryPage> {
+    const { data } = await api.get<PublicNotaryPage>(`/public/notary/${token}`)
+    return data
+  },
+  async publicNotarySubmit(token: string, payload: {
+    client_id: string; kind: 'ppjb_ajb' | 'tax' | 'fee'; target_id?: string
+    ppjb_number?: string; ppjb_file?: File | null
+    ajb_number?: string; ajb_file?: File | null
+    tax_type?: string; tax_category?: string; tax_base_amount?: number; tax_amount?: number
+    tax_id_billing?: string; tax_ntpn?: string; tax_date?: string; tax_status?: string
+    fee_description?: string; fee_amount?: number; fee_date?: string
+    file?: File | null; notes?: string
+  }): Promise<void> {
+    const fd = new FormData()
+    fd.append('client_id', payload.client_id)
+    fd.append('kind', payload.kind)
+    if (payload.target_id) fd.append('target_id', payload.target_id)
+    if (payload.ppjb_number) fd.append('ppjb_number', payload.ppjb_number)
+    if (payload.ppjb_file) fd.append('ppjb_file', payload.ppjb_file)
+    if (payload.ajb_number) fd.append('ajb_number', payload.ajb_number)
+    if (payload.ajb_file) fd.append('ajb_file', payload.ajb_file)
+    if (payload.tax_type) fd.append('tax_type', payload.tax_type)
+    if (payload.tax_category) fd.append('tax_category', payload.tax_category)
+    if (payload.tax_base_amount != null) fd.append('tax_base_amount', String(payload.tax_base_amount))
+    if (payload.tax_amount != null) fd.append('tax_amount', String(payload.tax_amount))
+    if (payload.tax_id_billing) fd.append('tax_id_billing', payload.tax_id_billing)
+    if (payload.tax_ntpn) fd.append('tax_ntpn', payload.tax_ntpn)
+    if (payload.tax_date) fd.append('tax_date', payload.tax_date)
+    if (payload.tax_status) fd.append('tax_status', payload.tax_status)
+    if (payload.fee_description) fd.append('fee_description', payload.fee_description)
+    if (payload.fee_amount != null) fd.append('fee_amount', String(payload.fee_amount))
+    if (payload.fee_date) fd.append('fee_date', payload.fee_date)
+    if (payload.file) fd.append('file', payload.file)
+    if (payload.notes) fd.append('notes', payload.notes)
+    await api.post(`/public/notary/${token}/submissions`, fd, { headers: { 'Content-Type': 'multipart/form-data' } })
   },
 }

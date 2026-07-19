@@ -4,7 +4,7 @@ import Modal from '../../components/ui/Modal'
 import Badge from '../../components/ui/Badge'
 import { taxService } from '../../services/tax'
 import { kprService } from '../../services/kpr'
-import type { Notary, NotaryCreate, Bank, BankCreate, BankShareLink } from '../../types'
+import type { Notary, NotaryCreate, Bank, BankCreate, BankShareLink, NotaryShareLink } from '../../types'
 
 const emptyNotary: NotaryCreate = { name: '', sk_number: '', ktp: '', phone: '', address: '' }
 const emptyBank: BankCreate = { name: '', notes: '' }
@@ -31,6 +31,13 @@ export default function LegalMaster() {
   const [shareDays, setShareDays] = useState('30')
   const [shareSaving, setShareSaving] = useState(false)
   const [copiedId, setCopiedId] = useState<string | null>(null)
+  // bagikan ke notaris (tautan bertoken)
+  const [shareNotary, setShareNotary] = useState<Notary | null>(null)
+  const [notaryShareLinks, setNotaryShareLinks] = useState<NotaryShareLink[]>([])
+  const [notaryShareLoading, setNotaryShareLoading] = useState(false)
+  const [notaryShareDays, setNotaryShareDays] = useState('30')
+  const [notaryShareSaving, setNotaryShareSaving] = useState(false)
+  const [notaryCopiedId, setNotaryCopiedId] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true); setError('')
@@ -100,10 +107,37 @@ export default function LegalMaster() {
       setTimeout(() => setCopiedId(null), 2000)
     })
   }
-  function linkStatus(l: BankShareLink): { label: string; variant: 'green' | 'red' | 'gray' } {
+  function linkStatus(l: BankShareLink | NotaryShareLink): { label: string; variant: 'green' | 'red' | 'gray' } {
     if (l.revoked_at) return { label: 'Dicabut', variant: 'gray' }
     if (!l.is_active) return { label: 'Kedaluwarsa', variant: 'red' }
     return { label: 'Aktif', variant: 'green' }
+  }
+
+  // ── Bagikan ke Notaris ──
+  function notaryShareUrl(token: string): string { return `${window.location.origin}/public/notary/${token}` }
+  async function loadNotaryShareLinks(notaryId: string) {
+    setNotaryShareLoading(true)
+    try { setNotaryShareLinks(await taxService.listNotaryShareLinks(notaryId)) } catch { /* noop */ } finally { setNotaryShareLoading(false) }
+  }
+  function openNotaryShareModal(n: Notary) { setShareNotary(n); setNotaryShareDays('30'); loadNotaryShareLinks(n.id) }
+  async function createNotaryShareLink() {
+    if (!shareNotary) return
+    const days = Math.max(1, Math.min(365, Number(notaryShareDays) || 30))
+    setNotaryShareSaving(true)
+    try {
+      await taxService.createNotaryShareLink({ notary_id: shareNotary.id, expires_days: days })
+      await loadNotaryShareLinks(shareNotary.id)
+    } catch { setError('Gagal membuat tautan.') } finally { setNotaryShareSaving(false) }
+  }
+  async function revokeNotaryShareLinkAction(id: string) {
+    if (!shareNotary || !confirm('Cabut tautan ini? Notaris tak akan bisa akses lagi.')) return
+    try { await taxService.revokeNotaryShareLink(id); await loadNotaryShareLinks(shareNotary.id) } catch { /* noop */ }
+  }
+  function copyNotaryLink(id: string, token: string) {
+    navigator.clipboard.writeText(notaryShareUrl(token)).then(() => {
+      setNotaryCopiedId(id)
+      setTimeout(() => setNotaryCopiedId(null), 2000)
+    })
   }
 
   if (loading) return <div className="py-16 text-center text-slate-400"><Loader2 size={20} className="inline animate-spin" /></div>
@@ -131,6 +165,7 @@ export default function LegalMaster() {
                 <td className="px-4 py-2.5 text-slate-500">{n.ktp ?? '—'}</td>
                 <td className="px-4 py-2.5 text-slate-500">{n.phone ?? '—'}</td>
                 <td className="px-4 py-2.5"><div className="flex items-center justify-end gap-3">
+                  <button onClick={() => openNotaryShareModal(n)} className="text-slate-400 hover:text-brand-600" title="Bagikan ke Notaris"><Share2 size={14} /></button>
                   <button onClick={() => openNEdit(n)} className="text-slate-400 hover:text-brand-600"><Pencil size={14} /></button>
                   <button onClick={() => delN(n.id)} className="text-slate-400 hover:text-red-600"><Trash2 size={14} /></button>
                 </div></td>
@@ -241,6 +276,65 @@ export default function LegalMaster() {
                           )}
                           {!l.revoked_at && (
                             <button onClick={() => revokeShareLink(l.id)} className="flex items-center gap-1 text-slate-400 hover:text-red-600">
+                              <Trash2 size={12} /> Cabut
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      </Modal>
+
+      {/* Modal Bagikan ke Notaris */}
+      <Modal open={shareNotary !== null} onClose={() => setShareNotary(null)} title={`Bagikan ke ${shareNotary?.name ?? 'Notaris'}`} size="lg">
+        <div className="space-y-4">
+          <p className="text-sm text-slate-500">
+            Buat tautan khusus <b>{shareNotary?.name}</b> yang bisa dibuka pihak notaris <b>tanpa perlu akun/login</b> — lihat PPJB/AJB, pajak, & biaya jasanya utk pembeli yang dia tangani, & kirim update (menunggu persetujuan Anda sebelum data berubah).
+          </p>
+          <div className="flex items-end gap-2">
+            <div>
+              <label className="label">Berlaku (hari)</label>
+              <input type="number" className="input w-28" min={1} max={365} value={notaryShareDays} onChange={(e) => setNotaryShareDays(e.target.value)} />
+            </div>
+            <button className="btn-primary text-sm flex items-center gap-1.5" onClick={createNotaryShareLink} disabled={notaryShareSaving}>
+              {notaryShareSaving && <Loader2 size={14} className="animate-spin" />} Buat Tautan Baru
+            </button>
+          </div>
+
+          <div>
+            <label className="label">Tautan yang pernah dibuat</label>
+            {notaryShareLoading ? (
+              <div className="flex justify-center py-6"><Loader2 size={16} className="animate-spin text-slate-400" /></div>
+            ) : notaryShareLinks.length === 0 ? (
+              <p className="text-sm text-slate-400 text-center py-4">Belum ada tautan.</p>
+            ) : (
+              <div className="border border-slate-200 rounded-lg divide-y divide-slate-100 max-h-72 overflow-y-auto">
+                {notaryShareLinks.map((l) => {
+                  const s = linkStatus(l)
+                  return (
+                    <div key={l.id} className="px-3 py-2.5 text-sm space-y-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-medium text-slate-800">Dibuat {new Date(l.created_at).toLocaleDateString('id-ID')}</span>
+                        <Badge label={s.label} variant={s.variant} />
+                      </div>
+                      <div className="flex items-center justify-between gap-2 text-xs text-slate-400">
+                        <span>
+                          Kedaluwarsa {new Date(l.expires_at).toLocaleDateString('id-ID')}
+                          {l.access_count > 0 && <> · diakses {l.access_count}x</>}
+                        </span>
+                        <div className="flex items-center gap-3 shrink-0">
+                          {s.variant === 'green' && (
+                            <button onClick={() => copyNotaryLink(l.id, l.token)} className="flex items-center gap-1 text-brand-600 hover:underline">
+                              {notaryCopiedId === l.id ? <><Check size={12} /> Tersalin</> : <><Copy size={12} /> Salin Tautan</>}
+                            </button>
+                          )}
+                          {!l.revoked_at && (
+                            <button onClick={() => revokeNotaryShareLinkAction(l.id)} className="flex items-center gap-1 text-slate-400 hover:text-red-600">
                               <Trash2 size={12} /> Cabut
                             </button>
                           )}

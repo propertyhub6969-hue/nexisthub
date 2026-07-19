@@ -140,6 +140,125 @@ class NotaryFee(BaseModel, SoftDeleteMixin):
         return f"<NotaryFee {self.description}>"
 
 
+class NotaryShareLink(BaseModel):
+    """Tautan bertoken (tanpa login) utk 1 notaris — notaris lihat PPJB/AJB, pajak, & biaya jasanya
+    utk pembeli yang dia tangani, & kirim update (menunggu persetujuan developer). Pola sama BankShareLink."""
+    __tablename__ = "notary_share_links"
+
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    token: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
+    notary_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("notaries.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    notary_name_snapshot: Mapped[str] = mapped_column(String(200), nullable=True)
+    created_by: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revoked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_accessed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
+    access_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+    @property
+    def is_active(self) -> bool:
+        return self.revoked_at is None and self.expires_at > datetime.now(timezone.utc)
+
+    def __repr__(self) -> str:
+        return f"<NotaryShareLink {self.notary_name_snapshot} [{self.token[:8]}...]>"
+
+
+class NotarySubmissionKind(str, enum.Enum):
+    PPJB_AJB = "ppjb_ajb"   # nomor & file PPJB/AJB milik Client
+    TAX = "tax"             # baris TaxRecord baru/update
+    FEE = "fee"             # baris NotaryFee baru/update
+
+
+class NotarySubmissionStatus(str, enum.Enum):
+    PENDING = "pending"    # menunggu diterima/ditolak developer
+    ACCEPTED = "accepted"  # sudah diterapkan
+    REJECTED = "rejected"  # ditolak, tak menyentuh data
+
+
+class NotarySubmission(BaseModel):
+    """Kiriman dari notaris lewat tautan (belum resmi) — developer terima/tolak sebelum data berubah.
+    Satu tabel lebar dgn diskriminator `kind` (bukan 3 tabel terpisah) krn tiap kiriman cuma isi
+    SATU jenis data sekaligus; field yg tak relevan dgn `kind`-nya dibiarkan kosong."""
+    __tablename__ = "notary_submissions"
+
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    notary_share_link_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("notary_share_links.id", ondelete="SET NULL"), nullable=True
+    )
+    client_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("clients.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    kind: Mapped[NotarySubmissionKind] = mapped_column(SAEnum(NotarySubmissionKind), nullable=False)
+    # baris TaxRecord/NotaryFee yg diperbarui (kind=tax/fee) — kosong = usulan baris BARU
+    target_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=True)
+
+    # kind=ppjb_ajb
+    ppjb_number: Mapped[str] = mapped_column(String(100), nullable=True)
+    ppjb_file_name: Mapped[str] = mapped_column(String(255), nullable=True)
+    ppjb_file_type: Mapped[str] = mapped_column(String(100), nullable=True)
+    ppjb_file_size: Mapped[int] = mapped_column(Integer, nullable=True)
+    ppjb_file_key: Mapped[str] = mapped_column(String(600), nullable=True)
+    ajb_number: Mapped[str] = mapped_column(String(100), nullable=True)
+    ajb_file_name: Mapped[str] = mapped_column(String(255), nullable=True)
+    ajb_file_type: Mapped[str] = mapped_column(String(100), nullable=True)
+    ajb_file_size: Mapped[int] = mapped_column(Integer, nullable=True)
+    ajb_file_key: Mapped[str] = mapped_column(String(600), nullable=True)
+
+    # kind=tax
+    tax_type: Mapped[TaxType] = mapped_column(SAEnum(TaxType), nullable=True)
+    tax_category: Mapped[str] = mapped_column(String(20), nullable=True)
+    tax_base_amount: Mapped[float] = mapped_column(Numeric(15, 2), nullable=True)
+    tax_amount: Mapped[float] = mapped_column(Numeric(15, 2), nullable=True)
+    tax_id_billing: Mapped[str] = mapped_column(String(50), nullable=True)
+    tax_ntpn: Mapped[str] = mapped_column(String(50), nullable=True)
+    tax_date: Mapped[Date] = mapped_column(Date, nullable=True)
+    tax_status: Mapped[TaxStatus] = mapped_column(SAEnum(TaxStatus), nullable=True)
+
+    # kind=fee
+    fee_description: Mapped[str] = mapped_column(String(200), nullable=True)
+    fee_amount: Mapped[float] = mapped_column(Numeric(15, 2), nullable=True)
+    fee_date: Mapped[Date] = mapped_column(Date, nullable=True)
+
+    # bukti generik — bukti bayar pajak (kind=tax) ATAU bukti lain terkait kiriman
+    file_name: Mapped[str] = mapped_column(String(255), nullable=True)
+    file_type: Mapped[str] = mapped_column(String(100), nullable=True)
+    file_size: Mapped[int] = mapped_column(Integer, nullable=True)
+    file_key: Mapped[str] = mapped_column(String(600), nullable=True)
+
+    submitted_notes: Mapped[str] = mapped_column(Text, nullable=True)  # catatan dari notaris saat kirim
+    status: Mapped[NotarySubmissionStatus] = mapped_column(
+        SAEnum(NotarySubmissionStatus), default=NotarySubmissionStatus.PENDING, nullable=False
+    )
+    reviewed_by: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    reviewed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
+    review_notes: Mapped[str] = mapped_column(Text, nullable=True)  # mis. alasan tolak
+
+    @property
+    def has_ppjb_file(self) -> bool:
+        return self.ppjb_file_name is not None
+
+    @property
+    def has_ajb_file(self) -> bool:
+        return self.ajb_file_name is not None
+
+    @property
+    def has_file(self) -> bool:
+        return self.file_name is not None
+
+    def __repr__(self) -> str:
+        return f"<NotarySubmission {self.kind} [{self.status}]>"
+
+
 class MonthlyTaxShareLink(BaseModel):
     """Tautan bertoken (tanpa login) utk bagikan Laporan Pajak Bulanan ke pihak luar
     (mis. konsultan pajak) — scoped ke SATU bulan (+ opsional satu proyek), bisa expired/dicabut."""

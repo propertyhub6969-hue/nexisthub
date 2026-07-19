@@ -20,6 +20,7 @@ const pageTitles: Record<string, string> = {
   '/legal': 'Master Data',
   '/pemberkasan': 'Pemberkasan',
   '/marketing/bank-submissions': 'Kiriman Bank',
+  '/marketing/notary-submissions': 'Kiriman Notaris',
   '/settings/team': 'Tim & Peran',
   '/settings/profile': 'Profil Perusahaan',
   '/settings/langganan': 'Langganan',

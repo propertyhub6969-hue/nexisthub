@@ -4,7 +4,7 @@ from datetime import datetime, date
 from decimal import Decimal
 import uuid
 
-from app.models.tax import TaxType, TaxStatus
+from app.models.tax import TaxType, TaxStatus, NotarySubmissionKind, NotarySubmissionStatus
 
 
 # ── Notary ────────────────────────────────────────────────────────
@@ -129,3 +129,104 @@ class FeeResponse(FeeBase):
 
     class Config:
         from_attributes = True
+
+
+# ── Tautan bagikan ke Notaris ────────────────────────────────────────
+class NotaryShareLinkCreate(BaseModel):
+    notary_id: uuid.UUID
+    expires_days: int = 30
+
+
+class NotaryShareLinkResponse(BaseModel):
+    id: uuid.UUID
+    token: str
+    notary_id: uuid.UUID
+    notary_name_snapshot: Optional[str] = None
+    expires_at: datetime
+    revoked_at: Optional[datetime] = None
+    last_accessed_at: Optional[datetime] = None
+    access_count: int
+    is_active: bool
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# ── Kiriman dari Notaris (menunggu persetujuan) ──────────────────────
+class NotarySubmissionResponse(BaseModel):
+    id: uuid.UUID
+    client_id: uuid.UUID
+    client_name: str
+    unit_label: Optional[str] = None
+    notary_name: Optional[str] = None
+    kind: NotarySubmissionKind
+    target_id: Optional[uuid.UUID] = None
+    ppjb_number: Optional[str] = None
+    has_ppjb_file: bool = False
+    ajb_number: Optional[str] = None
+    has_ajb_file: bool = False
+    tax_type: Optional[TaxType] = None
+    tax_category: Optional[str] = None
+    tax_base_amount: Optional[Decimal] = None
+    tax_amount: Optional[Decimal] = None
+    tax_id_billing: Optional[str] = None
+    tax_ntpn: Optional[str] = None
+    tax_date: Optional[date] = None
+    tax_status: Optional[TaxStatus] = None
+    fee_description: Optional[str] = None
+    fee_amount: Optional[Decimal] = None
+    fee_date: Optional[date] = None
+    has_file: bool = False
+    file_name: Optional[str] = None
+    submitted_notes: Optional[str] = None
+    status: NotarySubmissionStatus
+    reviewer_name: Optional[str] = None
+    reviewed_at: Optional[datetime] = None
+    review_notes: Optional[str] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class NotarySubmissionRejectRequest(BaseModel):
+    reason: str = Field(..., min_length=1)
+
+
+# ── Halaman publik Notaris (tautan bertoken) ─────────────────────────
+class PublicNotaryTaxRow(BaseModel):
+    id: uuid.UUID
+    tax_type: TaxType
+    category: str
+    amount: Optional[Decimal] = None
+    id_billing: Optional[str] = None
+    ntpn: Optional[str] = None
+    tax_date: Optional[date] = None
+    status: TaxStatus
+
+
+class PublicNotaryFeeRow(BaseModel):
+    id: uuid.UUID
+    description: str
+    amount: Decimal
+    fee_date: Optional[date] = None
+    is_paid: bool
+
+
+class PublicNotaryClientRow(BaseModel):
+    client_id: uuid.UUID
+    client_name: str
+    unit_label: Optional[str] = None
+    project_name: Optional[str] = None
+    ppjb_number: Optional[str] = None
+    has_ppjb_file: bool = False
+    ajb_number: Optional[str] = None
+    has_ajb_file: bool = False
+    tax_records: list[PublicNotaryTaxRow] = []
+    fees: list[PublicNotaryFeeRow] = []
+
+
+class PublicNotaryPageResponse(BaseModel):
+    notary_name: str
+    rows: list[PublicNotaryClientRow]

@@ -1107,6 +1107,94 @@ export interface PublicBankPage {
   rows: PublicBankRow[]
 }
 
+// ── Tautan bagikan ke Notaris (PPJB/AJB, pajak, biaya notaris) ─────
+export type NotarySubmissionKind = 'ppjb_ajb' | 'tax' | 'fee'
+export type NotarySubmissionStatus = 'pending' | 'accepted' | 'rejected'
+
+export interface NotaryShareLink {
+  id: string
+  token: string
+  notary_id: string
+  notary_name_snapshot?: string
+  expires_at: string
+  revoked_at?: string
+  last_accessed_at?: string
+  access_count: number
+  is_active: boolean
+  created_at: string
+}
+export interface NotaryShareLinkCreate {
+  notary_id: string
+  expires_days: number
+}
+
+export interface NotarySubmission {
+  id: string
+  client_id: string
+  client_name: string
+  unit_label?: string
+  notary_name?: string
+  kind: NotarySubmissionKind
+  target_id?: string
+  ppjb_number?: string
+  has_ppjb_file: boolean
+  ajb_number?: string
+  has_ajb_file: boolean
+  tax_type?: TaxType
+  tax_category?: string
+  tax_base_amount?: number
+  tax_amount?: number
+  tax_id_billing?: string
+  tax_ntpn?: string
+  tax_date?: string
+  tax_status?: TaxStatus
+  fee_description?: string
+  fee_amount?: number
+  fee_date?: string
+  has_file: boolean
+  file_name?: string
+  submitted_notes?: string
+  status: NotarySubmissionStatus
+  reviewer_name?: string
+  reviewed_at?: string
+  review_notes?: string
+  created_at: string
+}
+
+export interface PublicNotaryTaxRow {
+  id: string
+  tax_type: TaxType
+  category: string
+  amount?: number
+  id_billing?: string
+  ntpn?: string
+  tax_date?: string
+  status: TaxStatus
+}
+export interface PublicNotaryFeeRow {
+  id: string
+  description: string
+  amount: number
+  fee_date?: string
+  is_paid: boolean
+}
+export interface PublicNotaryClientRow {
+  client_id: string
+  client_name: string
+  unit_label?: string
+  project_name?: string
+  ppjb_number?: string
+  has_ppjb_file: boolean
+  ajb_number?: string
+  has_ajb_file: boolean
+  tax_records: PublicNotaryTaxRow[]
+  fees: PublicNotaryFeeRow[]
+}
+export interface PublicNotaryPage {
+  notary_name: string
+  rows: PublicNotaryClientRow[]
+}
+
 // ── Procurement ───────────────────────────────────────────────────
 export type VendorStatus = 'active' | 'inactive' | 'blacklisted'
 export type POStatus = 'draft' | 'ordered' | 'partial' | 'received' | 'cancelled'
