@@ -181,6 +181,12 @@ export default function Clients() {
     const u = unitsFor(form.project_id).find((x) => x.id === unitId)
     setForm((f) => ({ ...f, unit_id: unitId, contract_value: u?.price != null ? Number(u.price) : f.contract_value }))
   }
+  // Harga Jual dikunci begitu pembeli ditambahkan (tak ikut berubah otomatis kalau harga unit
+  // di modul Proyek diedit belakangan) — tombol ini untuk staf yang memang mau menarik ulang secara manual.
+  const selectedFormUnit = unitsFor(form.project_id).find((x) => x.id === form.unit_id)
+  function ambilHargaUnit() {
+    if (selectedFormUnit?.price != null) setForm((f) => ({ ...f, contract_value: Number(selectedFormUnit.price) }))
+  }
   const unitOptionLabel = (u: Unit) => `${unitLabel(u) ?? ''}${u.unit_type ? ` (${u.unit_type})` : ''}`
   function handleUnitFilterQueryChange(text: string) {
     setUnitFilterQuery(text)
@@ -446,7 +452,14 @@ export default function Clients() {
           </div>
           <div className="grid grid-cols-3 gap-3">
             <div>
-              <label className="label">Harga Jual (Rp)</label>
+              <div className="flex items-center justify-between gap-2">
+                <label className="label mb-0">Harga Jual (Rp)</label>
+                {selectedFormUnit?.price != null && (
+                  <button type="button" onClick={ambilHargaUnit} className="text-xs text-brand-600 hover:underline whitespace-nowrap" title={`Harga unit terkini: ${fmt(Number(selectedFormUnit.price))}`}>
+                    Ambil harga terbaru dari unit
+                  </button>
+                )}
+              </div>
               <MoneyInput value={form.contract_value} onChange={(v) => setForm({ ...form, contract_value: v })} />
             </div>
             <div>
