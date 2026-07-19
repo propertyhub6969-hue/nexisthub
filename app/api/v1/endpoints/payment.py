@@ -14,8 +14,9 @@ from app.core.database import get_db
 from app.api.deps import get_current_context, AuthContext, require_role
 from app.core.audit import record_audit
 from app.core.cashbook import sync_payment_cashbook
+from app.core.unit_status import set_unit_status, unit_status_for_client
 from app.models.user import User, UserRole
-from app.models.marketing import Client
+from app.models.marketing import Client, ClientStatus, ClientPaymentType
 from app.models.property import Unit
 from app.models.payment import PaymentSchedule, Payment, ScheduleStatus, PaymentSource, PaymentApprovalStatus
 from app.models.kpr import KprApplication, KprStage
@@ -55,6 +56,29 @@ async def _recompute_schedule(db, tenant_id, schedule_id):
             Payment.approval_status == PaymentApprovalStatus.APPROVED)
     )
     sch.status = ScheduleStatus.PAID if Decimal(paid) >= sch.amount else ScheduleStatus.PENDING
+
+
+async def _maybe_complete_cash_client(db, tenant_id, client_id):
+    """Pembeli CASH yang kas disetujuinya sudah mencapai nilai kontrak → otomatis 'Selesai' (unit ikut
+    'Terjual'), sama seperti pembeli KPR yang otomatis 'Selesai' saat akad/pencairan bank. Hanya maju
+    (aktif→selesai), tak pernah mundur otomatis — kalau keliru, ubah manual lewat form edit Pembeli."""
+    if not client_id:
+        return
+    client = (await db.execute(
+        select(Client).where(Client.id == client_id, Client.tenant_id == tenant_id, Client.is_deleted == False)  # noqa: E712
+    )).scalar_one_or_none()
+    if client is None or client.payment_type != ClientPaymentType.CASH or client.status != ClientStatus.ACTIVE:
+        return
+    if not client.contract_value or client.contract_value <= 0:
+        return
+    total_paid = Decimal(await db.scalar(
+        select(func.coalesce(func.sum(Payment.amount), 0)).where(
+            Payment.client_id == client_id, Payment.is_deleted == False,  # noqa: E712
+            Payment.approval_status == PaymentApprovalStatus.APPROVED)
+    ))
+    if total_paid >= Decimal(client.contract_value):
+        client.status = ClientStatus.COMPLETED
+        await set_unit_status(db, tenant_id, client.unit_id, unit_status_for_client(client))
 
 
 # ═══════════════════════ SUMMARY ═══════════════════════
@@ -323,6 +347,7 @@ async def approve_payment(
     await db.flush()
     await _recompute_schedule(db, ctx.tenant_id, pay.schedule_id)
     await sync_payment_cashbook(db, ctx.tenant_id, pay)
+    await _maybe_complete_cash_client(db, ctx.tenant_id, pay.client_id)
     await record_audit(db, ctx.tenant_id, ctx.user_id, "APPROVE", "payments", payment_id,
                        new_data={"amount": str(pay.amount)}, client_id=pay.client_id)
     await db.refresh(pay)
