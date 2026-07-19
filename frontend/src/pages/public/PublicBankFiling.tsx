@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom'
 import { Loader2, AlertTriangle, Send, Check, Landmark } from 'lucide-react'
 import { kprService } from '../../services/kpr'
 import NexistLogo from '../../components/ui/NexistLogo'
+import MoneyInput from '../../components/ui/MoneyInput'
 import type { PublicBankPage, KprStage } from '../../types'
 
 const STAGES: { key: KprStage; label: string }[] = [
@@ -13,11 +14,14 @@ const STAGES: { key: KprStage; label: string }[] = [
   { key: 'pencairan', label: 'Pencairan' },
 ]
 const stageLabel = (s: KprStage) => STAGES.find((x) => x.key === s)?.label ?? s
+const fmtRp = (n?: number) => n == null ? '—' : new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(Number(n))
 
 interface RowForm {
   stage: KprStage
   sp3k_number: string
   sp3k_date: string
+  plafond?: number
+  tenor_months: string
   notes: string
   file: File | null
 }
@@ -39,7 +43,11 @@ export default function PublicBankFiling() {
       .then((p) => {
         setPage(p)
         const init: Record<string, RowForm> = {}
-        for (const r of p.rows) init[r.kpr_application_id] = { stage: r.stage, sp3k_number: '', sp3k_date: '', notes: '', file: null }
+        for (const r of p.rows) init[r.kpr_application_id] = {
+          stage: r.stage, sp3k_number: '', sp3k_date: '',
+          plafond: r.plafond, tenor_months: r.tenor_months != null ? String(r.tenor_months) : '',
+          notes: '', file: null,
+        }
         setForms(init)
       })
       .catch((err) => setError(
@@ -62,6 +70,7 @@ export default function PublicBankFiling() {
       await kprService.publicBankSubmit(token, {
         kpr_application_id: id, stage: f.stage,
         sp3k_number: f.sp3k_number || undefined, sp3k_date: f.sp3k_date || undefined,
+        plafond: f.plafond, tenor_months: f.tenor_months ? Number(f.tenor_months) : undefined,
         notes: f.notes || undefined, file: f.file,
       })
       setSent((prev) => new Set(prev).add(id))
@@ -96,14 +105,14 @@ export default function PublicBankFiling() {
               <table className="w-full text-sm">
                 <thead className="bg-slate-50 border-b border-slate-200">
                   <tr>
-                    {['Pembeli', 'Unit / Proyek', 'Tahap Saat Ini', 'Dokumen', 'Pajak', 'Umur', 'Kirim Update', ''].map((h, i) => (
+                    {['Pembeli', 'Unit / Proyek', 'Tahap Saat Ini', 'Plafon', 'Tenor', 'Dokumen', 'Pajak', 'Umur', 'Kirim Update', ''].map((h, i) => (
                       <th key={i} className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {page.rows.length === 0 ? (
-                    <tr><td colSpan={8} className="px-4 py-8 text-center text-slate-400 text-sm">Belum ada pembeli.</td></tr>
+                    <tr><td colSpan={10} className="px-4 py-8 text-center text-slate-400 text-sm">Belum ada pembeli.</td></tr>
                   ) : page.rows.map((r) => {
                     const f = forms[r.kpr_application_id]
                     const isSent = sent.has(r.kpr_application_id)
@@ -112,6 +121,8 @@ export default function PublicBankFiling() {
                         <td className="px-4 py-3 font-medium text-slate-900 whitespace-nowrap">{r.client_name}</td>
                         <td className="px-4 py-3 text-slate-500 whitespace-nowrap">{[r.unit_label, r.project_name].filter(Boolean).join(' · ') || '—'}</td>
                         <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{stageLabel(r.stage)}</td>
+                        <td className="px-4 py-3 text-slate-500 whitespace-nowrap">{fmtRp(r.plafond)}</td>
+                        <td className="px-4 py-3 text-slate-500 whitespace-nowrap">{r.tenor_months != null ? `${r.tenor_months} bln` : '—'}</td>
                         <td className="px-4 py-3 text-slate-500 whitespace-nowrap">{r.doc_terbit}/{r.doc_total}</td>
                         <td className="px-4 py-3 text-slate-500 whitespace-nowrap">{r.tax_settled}/{r.tax_total}</td>
                         <td className="px-4 py-3 text-slate-500 whitespace-nowrap">{r.kpr_days != null ? `${r.kpr_days} hari` : '—'}</td>
@@ -123,6 +134,10 @@ export default function PublicBankFiling() {
                               <select className="input text-xs py-1" value={f.stage} onChange={(e) => setForm(r.kpr_application_id, { stage: e.target.value as KprStage })}>
                                 {STAGES.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
                               </select>
+                              <div className="flex gap-1.5">
+                                <MoneyInput className="input text-xs py-1" placeholder="Plafon" value={f.plafond} onChange={(v) => setForm(r.kpr_application_id, { plafond: v })} />
+                                <input className="input text-xs py-1 w-20" type="number" min={0} placeholder="Tenor (bln)" value={f.tenor_months} onChange={(e) => setForm(r.kpr_application_id, { tenor_months: e.target.value })} />
+                              </div>
                               <div className="flex gap-1.5">
                                 <input className="input text-xs py-1" placeholder="No. SP3K" value={f.sp3k_number} onChange={(e) => setForm(r.kpr_application_id, { sp3k_number: e.target.value })} />
                                 <input className="input text-xs py-1" type="date" value={f.sp3k_date} onChange={(e) => setForm(r.kpr_application_id, { sp3k_date: e.target.value })} />

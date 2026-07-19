@@ -151,6 +151,8 @@ class BankSubmissionResponse(BaseModel):
     submitted_sp3k_number: Optional[str] = None
     submitted_sp3k_date: Optional[date] = None
     submitted_notes: Optional[str] = None
+    submitted_plafond: Optional[Decimal] = None
+    submitted_tenor_months: Optional[int] = None
     has_file: bool = False
     file_name: Optional[str] = None
     status: BankSubmissionStatus
@@ -174,6 +176,8 @@ class PublicBankRow(BaseModel):
     unit_label: Optional[str] = None
     project_name: Optional[str] = None
     stage: KprStage
+    plafond: Optional[Decimal] = None
+    tenor_months: Optional[int] = None
     doc_total: int = 0
     doc_terbit: int = 0
     tax_total: int = 0

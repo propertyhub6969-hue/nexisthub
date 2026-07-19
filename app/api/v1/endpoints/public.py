@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime, date, timezone
+from decimal import Decimal, InvalidOperation
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status, UploadFile, File, Form
 from sqlalchemy import select, func
@@ -146,6 +147,7 @@ async def public_bank_page(token: str, db: AsyncSession = Depends(get_db)):
         rows.append(PublicBankRow(
             kpr_application_id=k.id, client_name=c.full_name, unit_label=unit_label,
             project_name=proj_names.get(c.project_id), stage=k.stage,
+            plafond=k.plafond, tenor_months=k.tenor_months,
             doc_total=doc_total.get(c.id, 0), doc_terbit=doc_terbit.get(c.id, 0),
             tax_total=tax_total.get(c.id, 0), tax_settled=tax_settled.get(c.id, 0), kpr_days=days,
         ))
@@ -160,11 +162,13 @@ async def public_bank_submit(
     stage: KprStage = Form(...),
     sp3k_number: str = Form(None),
     sp3k_date: str = Form(None),
+    plafond: str = Form(None),
+    tenor_months: str = Form(None),
     notes: str = Form(None),
     file: UploadFile = File(None),
     db: AsyncSession = Depends(get_db),
 ):
-    """Kiriman dari bank (progres/No. SP3K/Tgl SP3K/catatan/file) — TIDAK langsung mengubah data KPR.
+    """Kiriman dari bank (progres/No. SP3K/Tgl SP3K/plafon/tenor/catatan/file) — TIDAK langsung mengubah data KPR.
     Bank tak punya tombol "tolak" sendiri — kalau berkas kurang/ditolak, cukup tulis di catatan;
     developer yang putuskan terima/tolak lewat halaman Kiriman Bank (lihat kpr.py accept_bank_submission)."""
     link = (await db.execute(select(BankShareLink).where(BankShareLink.token == token))).scalar_one_or_none()
@@ -185,11 +189,23 @@ async def public_bank_submit(
             parsed_date = date.fromisoformat(sp3k_date)
         except ValueError:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Format tanggal SP3K salah")
+    parsed_plafond = None
+    if plafond:
+        try:
+            parsed_plafond = Decimal(plafond)
+        except InvalidOperation:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Format plafon salah")
+    parsed_tenor = None
+    if tenor_months:
+        try:
+            parsed_tenor = int(tenor_months)
+        except ValueError:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Format tenor salah")
 
     sub = KprBankSubmission(
         tenant_id=link.tenant_id, kpr_application_id=k.id, bank_share_link_id=link.id,
         submitted_stage=stage, submitted_sp3k_number=(sp3k_number or None), submitted_sp3k_date=parsed_date,
-        submitted_notes=(notes or None),
+        submitted_plafond=parsed_plafond, submitted_tenor_months=parsed_tenor, submitted_notes=(notes or None),
     )
     if file is not None and file.filename:
         data = await file.read()

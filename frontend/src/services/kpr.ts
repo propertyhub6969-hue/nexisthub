@@ -103,13 +103,16 @@ export const kprService = {
     return data
   },
   async publicBankSubmit(token: string, payload: {
-    kpr_application_id: string; stage: string; sp3k_number?: string; sp3k_date?: string; notes?: string; file?: File | null
+    kpr_application_id: string; stage: string; sp3k_number?: string; sp3k_date?: string
+    plafond?: number; tenor_months?: number; notes?: string; file?: File | null
   }): Promise<void> {
     const fd = new FormData()
     fd.append('kpr_application_id', payload.kpr_application_id)
     fd.append('stage', payload.stage)
     if (payload.sp3k_number) fd.append('sp3k_number', payload.sp3k_number)
     if (payload.sp3k_date) fd.append('sp3k_date', payload.sp3k_date)
+    if (payload.plafond != null) fd.append('plafond', String(payload.plafond))
+    if (payload.tenor_months != null) fd.append('tenor_months', String(payload.tenor_months))
     if (payload.notes) fd.append('notes', payload.notes)
     if (payload.file) fd.append('file', payload.file)
     await api.post(`/public/bank/${token}/submissions`, fd, { headers: { 'Content-Type': 'multipart/form-data' } })

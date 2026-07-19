@@ -142,6 +142,9 @@ class KprBankSubmission(BaseModel):
     submitted_stage: Mapped[KprStage] = mapped_column(SAEnum(KprStage), nullable=False)
     submitted_sp3k_number: Mapped[str] = mapped_column(String(100), nullable=True)
     submitted_sp3k_date: Mapped[Date] = mapped_column(Date, nullable=True)
+    # plafon & tenor bisa berubah dari sisi bank (mis. hasil appraisal/keputusan kredit) — dikirim spt field lain
+    submitted_plafond: Mapped[float] = mapped_column(Numeric(15, 2), nullable=True)
+    submitted_tenor_months: Mapped[int] = mapped_column(Integer, nullable=True)
     # catatan dari BANK saat kirim (mis. kurang berkas, ditolak, alasan lain) — bank tak punya tombol
     # "tolak" sendiri; developer yang putuskan terima/tolak lewat halaman Kiriman Bank, catatan ini konteksnya.
     submitted_notes: Mapped[str] = mapped_column(Text, nullable=True)
