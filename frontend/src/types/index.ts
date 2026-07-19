@@ -408,7 +408,7 @@ export interface SaleCreate {
 export type ScheduleStatus = 'pending' | 'paid'
 export type PaymentMethod = 'transfer' | 'tunai' | 'lainnya'
 export type PaymentSource = 'pembeli' | 'bank'
-export type PaymentPurpose = 'dp' | 'booking_fee' | 'cicilan_termin' | 'realisasi_kpr' | 'pelunasan_termin'
+export type PaymentPurpose = 'dp' | 'booking_fee' | 'cicilan_termin' | 'realisasi_kpr' | 'pelunasan_termin' | 'lunas_unit' | 'cicilan' | 'pelunasan'
 export type PaymentApprovalStatus = 'pending' | 'approved' | 'rejected'
 
 export interface PaymentSchedule {

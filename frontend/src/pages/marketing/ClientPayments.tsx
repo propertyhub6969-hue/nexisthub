@@ -58,6 +58,9 @@ const purposeLabel: Record<PaymentPurpose, string> = {
   cicilan_termin: 'Cicilan Termin',
   realisasi_kpr: 'Realisasi KPR',
   pelunasan_termin: 'Pelunasan Termin',
+  lunas_unit: 'Pembelian 1 Unit Rumah',
+  cicilan: 'Cicilan',
+  pelunasan: 'Pelunasan',
 }
 const approvalConfig: Record<Payment['approval_status'], { label: string; variant: 'yellow' | 'green' | 'red' }> = {
   pending: { label: 'Menunggu', variant: 'yellow' },

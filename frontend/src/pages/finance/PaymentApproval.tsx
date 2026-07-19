@@ -21,6 +21,9 @@ const purposeLabel: Record<PaymentPurpose, string> = {
   cicilan_termin: 'Cicilan Termin',
   realisasi_kpr: 'Realisasi KPR',
   pelunasan_termin: 'Pelunasan Termin',
+  lunas_unit: 'Pembelian 1 Unit Rumah',
+  cicilan: 'Cicilan',
+  pelunasan: 'Pelunasan',
 }
 
 export default function PaymentApproval() {

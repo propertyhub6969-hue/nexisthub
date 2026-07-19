@@ -29,6 +29,9 @@ class PaymentPurpose(str, enum.Enum):
     CICILAN_TERMIN = "cicilan_termin"     # Cicilan / Angsuran Termin
     REALISASI_KPR = "realisasi_kpr"       # Pencairan/Realisasi KPR dari bank
     PELUNASAN_TERMIN = "pelunasan_termin"  # Pelunasan (termin akhir)
+    LUNAS_UNIT = "lunas_unit"             # Pembelian 1 Unit Rumah (cash keras, tanpa termin)
+    CICILAN = "cicilan"                   # Cicilan (tanpa termin)
+    PELUNASAN = "pelunasan"               # Pelunasan (tanpa termin)
 
 
 class PaymentApprovalStatus(str, enum.Enum):
