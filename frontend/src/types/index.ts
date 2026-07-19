@@ -80,6 +80,7 @@ export interface TenantAdminUpdate {
   expires_at?: string | null
   feature_flags?: string[] | null
   owner_email?: string
+  owner_name?: string
 }
 
 export type InvoiceStatus = 'unpaid' | 'paid' | 'void'

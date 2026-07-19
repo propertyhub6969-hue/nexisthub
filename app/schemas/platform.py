@@ -59,6 +59,7 @@ class TenantAdminUpdate(BaseModel):
     expires_at: Optional[date] = None
     feature_flags: Optional[List[str]] = None
     owner_email: Optional[EmailStr] = None  # ubah email akun OWNER tenant — bukan kolom Tenant
+    owner_name: Optional[str] = Field(None, min_length=2, max_length=200)  # ubah nama akun OWNER tenant
 
 
 class ResetOwnerPassword(BaseModel):

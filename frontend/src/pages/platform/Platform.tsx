@@ -86,13 +86,14 @@ export default function Platform() {
   function openEdit(t: TenantAdmin) {
     setETenant(t)
     setEAllModules(t.feature_flags == null)
-    setEForm({ name: t.name, status: t.status, is_active: t.is_active, subscription_plan: t.subscription_plan, expires_at: t.expires_at ?? '', feature_flags: t.feature_flags, owner_email: t.owner_email ?? '' })
+    setEForm({ name: t.name, status: t.status, is_active: t.is_active, subscription_plan: t.subscription_plan, expires_at: t.expires_at ?? '', feature_flags: t.feature_flags, owner_email: t.owner_email ?? '', owner_name: t.owner_name ?? '' })
   }
   async function submitEdit(e: React.FormEvent) {
     e.preventDefault(); if (!eTenant) return; setSaving(true); setError('')
     try {
       const payload = { ...eForm, expires_at: eForm.expires_at || null, feature_flags: eAllModules ? null : (eForm.feature_flags ?? []) }
       if (!payload.owner_email) delete payload.owner_email  // kosong = tak diubah (EmailStr backend tolak string kosong)
+      if (!payload.owner_name) delete payload.owner_name    // kosong = tak diubah
       await platformService.updateTenant(eTenant.id, payload)
       setETenant(null); await load()
     } catch (e: any) { setError(e?.response?.data?.detail || 'Gagal menyimpan.') } finally { setSaving(false) }
@@ -285,7 +286,10 @@ export default function Platform() {
         {eTenant && (
           <form onSubmit={submitEdit} className="space-y-3">
             <div><label className="label">Nama</label><input className="input" value={eForm.name ?? ''} onChange={(e) => setEForm({ ...eForm, name: e.target.value })} /></div>
-            <div><label className="label">Email Owner</label><input className="input" type="email" value={eForm.owner_email ?? ''} onChange={(e) => setEForm({ ...eForm, owner_email: e.target.value })} /></div>
+            <div className="grid grid-cols-2 gap-3">
+              <div><label className="label">Nama Owner</label><input className="input" value={eForm.owner_name ?? ''} onChange={(e) => setEForm({ ...eForm, owner_name: e.target.value })} /></div>
+              <div><label className="label">Email Owner</label><input className="input" type="email" value={eForm.owner_email ?? ''} onChange={(e) => setEForm({ ...eForm, owner_email: e.target.value })} /></div>
+            </div>
             <div className="grid grid-cols-2 gap-3">
               <div><label className="label">Paket</label><input className="input" value={eForm.subscription_plan ?? ''} onChange={(e) => setEForm({ ...eForm, subscription_plan: e.target.value })} /></div>
               <div><label className="label">Status</label>

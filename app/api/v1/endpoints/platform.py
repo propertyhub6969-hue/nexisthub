@@ -121,22 +121,26 @@ async def update_tenant(tid: uuid.UUID, payload: TenantAdminUpdate, _: User = De
         bad = [f for f in data["feature_flags"] if f not in FEATURE_MODULES]
         if bad:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=f"Modul tak dikenal: {bad}")
-    new_owner_email = data.pop("owner_email", None)  # bukan kolom Tenant — diterapkan ke User OWNER di bawah
+    # bukan kolom Tenant — diterapkan ke User OWNER di bawah
+    new_owner_email = data.pop("owner_email", None)
+    new_owner_name = data.pop("owner_name", None)
     for f, v in data.items():
         setattr(t, f, v)
-    if new_owner_email:
+    if new_owner_email or new_owner_name:
         owner = (await db.execute(
             select(User).where(User.tenant_id == tid, User.role == UserRole.OWNER).limit(1)
         )).scalar_one_or_none()
         if owner is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Owner tenant tidak ditemukan")
-        if new_owner_email != owner.email:
+        if new_owner_email and new_owner_email != owner.email:
             dupe = (await db.execute(
                 select(User).where(User.email == new_owner_email, User.id != owner.id)
             )).scalar_one_or_none()
             if dupe is not None:
                 raise HTTPException(status.HTTP_409_CONFLICT, detail="Email sudah dipakai akun lain")
             owner.email = new_owner_email
+        if new_owner_name:
+            owner.full_name = new_owner_name
     await db.flush()
     return await _to_resp(db, t)
 
