@@ -4,9 +4,11 @@ import { Eraser } from 'lucide-react'
 interface SignaturePadProps {
   value?: string                       // data URL awal (untuk edit)
   onChange: (dataUrl: string) => void  // dipanggil saat selesai menggores / clear
+  width?: number
+  height?: number
 }
 
-export default function SignaturePad({ value, onChange }: SignaturePadProps) {
+export default function SignaturePad({ value, onChange, width = 440, height = 140 }: SignaturePadProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const drawing = useRef(false)
   const [hasInk, setHasInk] = useState(false)
@@ -67,12 +69,12 @@ export default function SignaturePad({ value, onChange }: SignaturePadProps) {
 
   return (
     <div>
-      <div className="relative rounded-lg border border-slate-200 bg-slate-50 overflow-hidden">
+      <div className="relative rounded-lg border border-slate-200 bg-slate-50 overflow-hidden" style={{ width, height }}>
         <canvas
           ref={canvasRef}
-          width={440}
-          height={140}
-          className="w-full touch-none cursor-crosshair"
+          width={width}
+          height={height}
+          className="touch-none cursor-crosshair"
           onPointerDown={start}
           onPointerMove={move}
           onPointerUp={end}

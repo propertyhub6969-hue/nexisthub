@@ -289,7 +289,7 @@ export default function ClientKpr() {
                 <div className="mt-3">
                   <label className="label">Tanda Tangan PIC Bank</label>
                   {kpr.stage === 'berkas_masuk_bank' ? (
-                    <SignaturePad value={kpr.pic_bank_signature} onChange={(d) => set('pic_bank_signature', d)} />
+                    <SignaturePad value={kpr.pic_bank_signature} onChange={(d) => set('pic_bank_signature', d)} width={260} height={90} />
                   ) : kpr.pic_bank_signature ? (
                     <img src={kpr.pic_bank_signature} alt="Tanda tangan PIC Bank" className="border border-slate-200 rounded-lg bg-white" style={{ maxWidth: 220 }} />
                   ) : (
