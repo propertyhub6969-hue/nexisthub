@@ -147,8 +147,20 @@ async def update_contract(cid: uuid.UUID, payload: ContractUpdate, ctx: AuthCont
 
 @router.delete("/contracts/{cid}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_contract(cid: uuid.UUID, ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db)):
+    """Hapus kontrak borongan — ikut hapus semua opname-nya (kalau tidak, opname jadi anak yatim:
+    tetap terhitung di resume upah/RAB meski kontraknya sendiri sudah hilang dari daftar)."""
     c = await _load(db, ctx.tenant_id, cid)
     c.is_deleted = True; c.deleted_at = datetime.utcnow()
+    opnames = (await db.execute(select(Expense).where(Expense.contract_id == cid, ENOTDEL))).scalars().all()
+    now = datetime.utcnow()
+    for e in opnames:
+        e.is_deleted = True; e.deleted_at = now
+    await db.flush()
+    for e in opnames:
+        await sync_expense_cashbook(db, ctx.tenant_id, e)
+    if opnames:
+        await record_audit(db, ctx.tenant_id, ctx.user_id, "DELETE", "contractor_opname", None,
+                           old_data={"contract_id": str(cid), "count": len(opnames)})
 
 
 # ── Opname mingguan (= Expense kategori kontraktor) ──
