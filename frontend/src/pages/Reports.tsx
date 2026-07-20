@@ -8,6 +8,8 @@ import {
 import { reportingService } from '../services/reporting'
 import { propertyService } from '../services/property'
 import { printMonthlyTax, downloadMonthlyTaxCsv } from '../utils/monthlyTax'
+import { printCashflow } from '../utils/cashflow'
+import { useAuth } from '../context/AuthContext'
 import Modal from '../components/ui/Modal'
 import Badge from '../components/ui/Badge'
 import DateInput from '../components/ui/DateInput'
@@ -36,6 +38,7 @@ function StatCard({ icon, label, value, hint, accent }: {
 
 // ═══════════════════════ ARUS KAS ═══════════════════════
 function CashflowTab() {
+  const { user } = useAuth()
   const [rep, setRep] = useState<CashflowReport | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -57,6 +60,15 @@ function CashflowTab() {
 
   return (
     <div className="space-y-5">
+      <div className="flex justify-end">
+        <button
+          className="btn-secondary text-sm flex items-center gap-1.5"
+          onClick={() => printCashflow(rep, { tenantName: user?.tenant_name ?? undefined, catFrom: catFrom || undefined, catTo: catTo || undefined })}
+        >
+          <Printer size={14} /> Cetak / PDF
+        </button>
+      </div>
+
       <div>
         <h3 className="text-sm font-semibold text-slate-600 mb-2">Kas Masuk</h3>
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
