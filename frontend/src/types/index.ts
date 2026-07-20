@@ -913,6 +913,11 @@ export interface CashflowCategoryTotal {
   direction: 'in' | 'out'
   total: number
 }
+export interface CashflowOutMonth {
+  month: string
+  by_category: number[]
+  total: number
+}
 export interface CashflowReport {
   total_contract: number
   from_buyer: number
@@ -926,6 +931,8 @@ export interface CashflowReport {
   ledger_out: number
   ledger_saldo: number
   by_category: CashflowCategoryTotal[]
+  out_category_names: string[]
+  out_months: CashflowOutMonth[]
 }
 
 export interface SalesProject {

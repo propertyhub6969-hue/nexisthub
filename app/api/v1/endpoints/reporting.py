@@ -200,6 +200,12 @@ class CashflowCategoryTotal(BaseModel):
     total: Decimal
 
 
+class CashflowOutMonth(BaseModel):
+    month: str                    # "YYYY-MM"
+    by_category: list[Decimal]    # sejajar dgn out_category_names
+    total: Decimal
+
+
 class CashflowReport(BaseModel):
     total_contract: Decimal       # total nilai kontrak (pembeli aktif)
     from_buyer: Decimal           # kas masuk dari pembeli (DP/cicilan)
@@ -215,6 +221,9 @@ class CashflowReport(BaseModel):
     ledger_out: Decimal = Decimal(0)
     ledger_saldo: Decimal = Decimal(0)
     by_category: list[CashflowCategoryTotal] = []
+    # Tren bulanan kas KELUAR dipecah per kategori (kolom = out_category_names)
+    out_category_names: list[str] = []
+    out_months: list[CashflowOutMonth] = []
 
 
 @router.get("/cashflow", response_model=CashflowReport)
@@ -335,12 +344,37 @@ async def cashflow(
     ledger_in = sum((c.total for c in by_category if c.direction == CashDirection.IN.value), Decimal(0))
     ledger_out = sum((c.total for c in by_category if c.direction == CashDirection.OUT.value), Decimal(0))
 
+    # Tren bulanan kas KELUAR per kategori (hormati filter periode yg sama)
+    ymc = func.to_char(CashBookEntry.date, "YYYY-MM")
+    out_rows = (await db.execute(
+        select(ymc.label("ym"), AccountCategory.name, func.coalesce(func.sum(CashBookEntry.amount), 0))
+        .select_from(CashBookEntry)
+        .outerjoin(AccountCategory, AccountCategory.id == CashBookEntry.category_id)
+        .where(*cat_conds, CashBookEntry.direction == CashDirection.OUT)
+        .group_by(ymc, AccountCategory.name).order_by(ymc)
+    )).all()
+    cat_totals: dict = {}
+    month_map: dict = {}
+    for ym, name, total in out_rows:
+        nm = name or "Belum dikategorikan"
+        cat_totals[nm] = cat_totals.get(nm, Decimal(0)) + Decimal(total)
+        month_map.setdefault(ym, {})[nm] = Decimal(total)
+    out_category_names = [nm for nm, _ in sorted(cat_totals.items(), key=lambda x: -x[1])]
+    out_months = [
+        CashflowOutMonth(
+            month=ym,
+            by_category=[month_map[ym].get(nm, Decimal(0)) for nm in out_category_names],
+            total=sum(month_map[ym].values(), Decimal(0)),
+        )
+        for ym in sorted(month_map.keys())[-12:]
+    ]
+
     return CashflowReport(
         total_contract=total_contract, from_buyer=from_buyer, from_bank=from_bank, total_in=total_in,
         kpr_plafond_total=kpr_plafond_total, buyer_remaining=buyer_remaining,
         retention_remaining=retention_remaining, months=months,
         ledger_in=ledger_in, ledger_out=ledger_out, ledger_saldo=ledger_in - ledger_out,
-        by_category=by_category,
+        by_category=by_category, out_category_names=out_category_names, out_months=out_months,
     )
 
 

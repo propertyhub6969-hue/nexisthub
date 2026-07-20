@@ -52,6 +52,8 @@ function CashflowTab() {
   if (!rep) return null
 
   const maxTotal = Math.max(1, ...rep.months.map((m) => m.total))
+  const maxOut = Math.max(1, ...rep.out_months.map((m) => m.total))
+  const OUT_PALETTE = ['bg-red-500', 'bg-amber-500', 'bg-indigo-500', 'bg-brand-500', 'bg-emerald-500', 'bg-purple-500', 'bg-pink-500', 'bg-slate-500']
 
   return (
     <div className="space-y-5">
@@ -128,6 +130,51 @@ function CashflowTab() {
           </div>
         )}
       </div>
+
+      {rep.out_months.length > 0 && (
+        <div>
+          <h3 className="text-sm font-semibold text-slate-600 mb-2">Tren Kas Keluar per Kategori (Bulanan)</h3>
+          <div className="card overflow-x-auto">
+            <table className="w-full text-sm min-w-[560px]">
+              <thead className="bg-slate-50 border-b border-slate-200">
+                <tr>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Bulan</th>
+                  {rep.out_category_names.map((n, i) => (
+                    <th key={i} className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">
+                      <span className="inline-flex items-center gap-1 justify-end"><span className={`w-2 h-2 rounded-sm ${OUT_PALETTE[i % OUT_PALETTE.length]}`} />{n}</span>
+                    </th>
+                  ))}
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Total</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider w-40">Komposisi</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {rep.out_months.map((m) => (
+                  <tr key={m.month} className="hover:bg-slate-50 transition-colors">
+                    <td className="px-4 py-3 font-medium text-slate-900 whitespace-nowrap">{fmtMonth(m.month)}</td>
+                    {m.by_category.map((v, i) => (
+                      <td key={i} className="px-4 py-3 text-right text-slate-600">{v ? fmtRp(v) : '—'}</td>
+                    ))}
+                    <td className="px-4 py-3 text-right font-semibold text-red-600">{fmtRp(m.total)}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex h-2 w-36 rounded-full bg-slate-100 overflow-hidden" title={rep.out_category_names.map((n, i) => `${n} ${fmtRp(m.by_category[i])}`).join(' · ')}>
+                        {m.by_category.map((v, i) => (
+                          <div key={i} className={`h-full ${OUT_PALETTE[i % OUT_PALETTE.length]}`} style={{ width: `${(v / maxOut) * 100}%` }} />
+                        ))}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="flex flex-wrap items-center gap-4 mt-2 text-xs text-slate-400">
+            {rep.out_category_names.map((n, i) => (
+              <span key={i} className="inline-flex items-center gap-1"><span className={`w-3 h-2 rounded-sm ${OUT_PALETTE[i % OUT_PALETTE.length]}`} />{n}</span>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div>
         <h3 className="text-sm font-semibold text-slate-600 mb-2">Arus Kas Bulanan</h3>
