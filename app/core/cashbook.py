@@ -17,6 +17,7 @@ DEFAULT_CATEGORIES: list[tuple[str, str, CashDirection]] = [
     ("ppn_keluaran", "PPN Keluaran", CashDirection.IN),
     ("retensi_bank", "Retensi Bank", CashDirection.IN),
     ("biaya_operasional", "Biaya Operasional", CashDirection.OUT),
+    ("biaya_notaris", "Biaya Notaris/Legal", CashDirection.OUT),
 ]
 
 
@@ -81,7 +82,7 @@ async def sync_notary_fee_cashbook(db: AsyncSession, tenant_id: uuid.UUID, fee) 
             await db.delete(entry)
         return
 
-    category = await _category_by_code(db, tenant_id, "biaya_operasional")
+    category = await _category_by_code(db, tenant_id, "biaya_notaris")
     if entry is None:
         entry = CashBookEntry(tenant_id=tenant_id, source_type="notary_fee", source_id=fee.id)
         db.add(entry)
