@@ -21,6 +21,14 @@ from app.models.construction import UnitConstruction, ConstructionStage, Constru
 from app.models.tax import TaxRecord, TaxType, TaxStatus, MonthlyTaxShareLink, NotaryFee
 from app.models.document import Document
 from app.models.cashbook import CashBookEntry, AccountCategory, CashDirection
+from app.models.expense import Expense, ExpenseCategory
+
+_EXPENSE_LABEL = {
+    ExpenseCategory.MATERIAL: "Material", ExpenseCategory.UPAH: "Upah",
+    ExpenseCategory.KONTRAKTOR: "Kontraktor", ExpenseCategory.KELISTRIKAN: "Kelistrikan",
+    ExpenseCategory.OPERASIONAL: "Operasional", ExpenseCategory.PERIZINAN: "Perizinan",
+    ExpenseCategory.LAIN: "Lain-lain",
+}
 
 router = APIRouter()
 
@@ -231,6 +239,8 @@ class CashflowReport(BaseModel):
     out_months: list[CashflowOutMonth] = []
     # Rincian kategori Biaya Notaris/Legal per jenis jasa (AJB, BBN, Balik Nama, dst)
     notary_breakdown: list[CashflowBreakdownItem] = []
+    # Rincian kategori Biaya Operasional per jenis biaya (Material, Upah, Kontraktor, dst)
+    expense_breakdown: list[CashflowBreakdownItem] = []
 
 
 @router.get("/cashflow", response_model=CashflowReport)
@@ -386,13 +396,26 @@ async def cashflow(
     )).all()
     notary_breakdown = [CashflowBreakdownItem(label=desc or "—", total=Decimal(total)) for desc, total in notary_rows]
 
+    # Rincian kategori Biaya Operasional per jenis biaya (join balik ke Expense via source_id)
+    expense_rows = (await db.execute(
+        select(Expense.category, func.coalesce(func.sum(CashBookEntry.amount), 0))
+        .select_from(CashBookEntry)
+        .join(Expense, Expense.id == CashBookEntry.source_id)
+        .where(*cat_conds, CashBookEntry.source_type == "expense")
+        .group_by(Expense.category).order_by(func.coalesce(func.sum(CashBookEntry.amount), 0).desc())
+    )).all()
+    expense_breakdown = [
+        CashflowBreakdownItem(label=_EXPENSE_LABEL.get(cat, str(cat)), total=Decimal(total))
+        for cat, total in expense_rows
+    ]
+
     return CashflowReport(
         total_contract=total_contract, from_buyer=from_buyer, from_bank=from_bank, total_in=total_in,
         kpr_plafond_total=kpr_plafond_total, buyer_remaining=buyer_remaining,
         retention_remaining=retention_remaining, months=months,
         ledger_in=ledger_in, ledger_out=ledger_out, ledger_saldo=ledger_in - ledger_out,
         by_category=by_category, out_category_names=out_category_names, out_months=out_months,
-        notary_breakdown=notary_breakdown,
+        notary_breakdown=notary_breakdown, expense_breakdown=expense_breakdown,
     )
 
 

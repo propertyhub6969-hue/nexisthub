@@ -938,6 +938,7 @@ export interface CashflowReport {
   out_category_names: string[]
   out_months: CashflowOutMonth[]
   notary_breakdown: CashflowBreakdownItem[]
+  expense_breakdown: CashflowBreakdownItem[]
 }
 
 export interface SalesProject {

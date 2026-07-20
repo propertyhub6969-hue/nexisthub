@@ -37,6 +37,42 @@ function StatCard({ icon, label, value, hint, accent }: {
 }
 
 // ═══════════════════════ ARUS KAS ═══════════════════════
+function BreakdownSection({ title, colLabel, totalLabel, items }: {
+  title: string; colLabel: string; totalLabel: string; items: { label: string; total: number }[]
+}) {
+  if (items.length === 0) return null
+  const total = items.reduce((s, b) => s + b.total, 0)
+  return (
+    <div>
+      <h3 className="text-sm font-semibold text-slate-600 mb-2">{title}</h3>
+      <div className="card overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="bg-slate-50 border-b border-slate-200">
+            <tr>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">{colLabel}</th>
+              <th className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Total</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {items.map((b, i) => (
+              <tr key={i} className="hover:bg-slate-50 transition-colors">
+                <td className="px-4 py-2.5 font-medium text-slate-900">{b.label}</td>
+                <td className="px-4 py-2.5 text-right font-semibold text-red-600">{fmtRp(b.total)}</td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr className="border-t-2 border-slate-200 bg-slate-50">
+              <td className="px-4 py-2.5 font-semibold text-slate-700">{totalLabel}</td>
+              <td className="px-4 py-2.5 text-right font-bold text-red-700">{fmtRp(total)}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+  )
+}
+
 function CashflowTab() {
   const { user } = useAuth()
   const [rep, setRep] = useState<CashflowReport | null>(null)
@@ -192,35 +228,8 @@ function CashflowTab() {
         )}
       </div>
 
-      {rep.notary_breakdown.length > 0 && (
-        <div>
-          <h3 className="text-sm font-semibold text-slate-600 mb-2">Rincian Biaya Notaris/Legal (per jenis jasa)</h3>
-          <div className="card overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-slate-50 border-b border-slate-200">
-                <tr>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Jenis Jasa</th>
-                  <th className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Total</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {rep.notary_breakdown.map((b, i) => (
-                  <tr key={i} className="hover:bg-slate-50 transition-colors">
-                    <td className="px-4 py-2.5 font-medium text-slate-900">{b.label}</td>
-                    <td className="px-4 py-2.5 text-right font-semibold text-red-600">{fmtRp(b.total)}</td>
-                  </tr>
-                ))}
-              </tbody>
-              <tfoot>
-                <tr className="border-t-2 border-slate-200 bg-slate-50">
-                  <td className="px-4 py-2.5 font-semibold text-slate-700">Total Biaya Notaris/Legal</td>
-                  <td className="px-4 py-2.5 text-right font-bold text-red-700">{fmtRp(rep.notary_breakdown.reduce((s, b) => s + b.total, 0))}</td>
-                </tr>
-              </tfoot>
-            </table>
-          </div>
-        </div>
-      )}
+      <BreakdownSection title="Rincian Biaya Notaris/Legal (per jenis jasa)" colLabel="Jenis Jasa" totalLabel="Total Biaya Notaris/Legal" items={rep.notary_breakdown} />
+      <BreakdownSection title="Rincian Biaya Operasional (per jenis biaya)" colLabel="Jenis Biaya" totalLabel="Total Biaya Operasional" items={rep.expense_breakdown} />
 
       <div>
         <h3 className="text-sm font-semibold text-slate-600 mb-2">Arus Kas Bulanan</h3>

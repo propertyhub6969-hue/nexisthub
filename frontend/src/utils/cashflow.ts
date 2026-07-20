@@ -33,14 +33,16 @@ export function printCashflow(rep: CashflowReport, opts: { tenantName?: string; 
            `<td class="r out">${fmtRp(m.total)}</td></tr>`).join('')}</tbody>
        </table>`
 
-  const notaryDetail = rep.notary_breakdown.length === 0
-    ? ''
-    : `<h2>Rincian Biaya Notaris/Legal (per jenis jasa)</h2>
-       <table>
-         <thead><tr><th>Jenis Jasa</th><th class="r">Total</th></tr></thead>
-         <tbody>${rep.notary_breakdown.map((b) => `<tr><td>${esc(b.label)}</td><td class="r out">${fmtRp(b.total)}</td></tr>`).join('')}</tbody>
-         <tfoot><tr><td>Total Biaya Notaris/Legal</td><td class="r out">${fmtRp(rep.notary_breakdown.reduce((s, b) => s + b.total, 0))}</td></tr></tfoot>
-       </table>`
+  const breakdown = (title: string, colLabel: string, totalLabel: string, items: { label: string; total: number }[]) =>
+    items.length === 0 ? '' :
+    `<h2>${esc(title)}</h2>
+     <table>
+       <thead><tr><th>${esc(colLabel)}</th><th class="r">Total</th></tr></thead>
+       <tbody>${items.map((b) => `<tr><td>${esc(b.label)}</td><td class="r out">${fmtRp(b.total)}</td></tr>`).join('')}</tbody>
+       <tfoot><tr><td>${esc(totalLabel)}</td><td class="r out">${fmtRp(items.reduce((s, b) => s + b.total, 0))}</td></tr></tfoot>
+     </table>`
+  const notaryDetail = breakdown('Rincian Biaya Notaris/Legal (per jenis jasa)', 'Jenis Jasa', 'Total Biaya Notaris/Legal', rep.notary_breakdown)
+  const expenseDetail = breakdown('Rincian Biaya Operasional (per jenis biaya)', 'Jenis Biaya', 'Total Biaya Operasional', rep.expense_breakdown)
 
   const monthsIn = rep.months.length === 0
     ? `<tr><td colspan="4" class="empty">Belum ada transaksi kas masuk.</td></tr>`
@@ -109,6 +111,8 @@ export function printCashflow(rep: CashflowReport, opts: { tenantName?: string; 
   ${outTrend}
 
   ${notaryDetail}
+
+  ${expenseDetail}
 
   <h2>Arus Kas Masuk Bulanan</h2>
   <table>
