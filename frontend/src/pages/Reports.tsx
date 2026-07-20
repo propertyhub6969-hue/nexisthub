@@ -10,6 +10,7 @@ import { propertyService } from '../services/property'
 import { printMonthlyTax, downloadMonthlyTaxCsv } from '../utils/monthlyTax'
 import Modal from '../components/ui/Modal'
 import Badge from '../components/ui/Badge'
+import DateInput from '../components/ui/DateInput'
 import type { KprRejectionReport, CashflowReport, SalesRecapReport, AgingReport, ConstructionProgressReport, MonthlyTaxReport, MonthlyTaxShareLink, Project, TaxChecklistReport, TaxChecklistItem, TaxChecklistStatus } from '../types'
 
 const fmtRp = (n?: number | null) =>
@@ -38,10 +39,13 @@ function CashflowTab() {
   const [rep, setRep] = useState<CashflowReport | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [catFrom, setCatFrom] = useState('')
+  const [catTo, setCatTo] = useState('')
 
   useEffect(() => {
-    reportingService.cashflow().then(setRep).catch(() => setError('Gagal memuat arus kas.')).finally(() => setLoading(false))
-  }, [])
+    reportingService.cashflow({ cat_from: catFrom || undefined, cat_to: catTo || undefined })
+      .then(setRep).catch(() => setError('Gagal memuat arus kas.')).finally(() => setLoading(false))
+  }, [catFrom, catTo])
 
   if (loading) return <div className="card p-12 text-center text-slate-400"><Loader2 size={20} className="inline animate-spin" /></div>
   if (error) return <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-2">{error}</div>
@@ -71,8 +75,25 @@ function CashflowTab() {
       </div>
 
       <div>
-        <h3 className="text-sm font-semibold text-slate-600 mb-2">Ringkasan Buku Kas per Kategori</h3>
-        <p className="text-xs text-slate-400 mb-2">Kas riil dari Buku Kas (pembayaran disetujui + biaya/notaris dibayar) — termasuk kas keluar.</p>
+        <div className="flex flex-wrap items-end justify-between gap-3 mb-2">
+          <div>
+            <h3 className="text-sm font-semibold text-slate-600">Ringkasan Buku Kas per Kategori</h3>
+            <p className="text-xs text-slate-400">Kas riil dari Buku Kas (pembayaran disetujui + biaya/notaris dibayar) — termasuk kas keluar.</p>
+          </div>
+          <div className="flex items-end gap-2">
+            <div>
+              <label className="block text-[11px] text-slate-400 mb-0.5">Dari tanggal</label>
+              <DateInput className="input text-sm py-1.5" value={catFrom} onChange={setCatFrom} />
+            </div>
+            <div>
+              <label className="block text-[11px] text-slate-400 mb-0.5">Sampai tanggal</label>
+              <DateInput className="input text-sm py-1.5" value={catTo} onChange={setCatTo} />
+            </div>
+            {(catFrom || catTo) && (
+              <button onClick={() => { setCatFrom(''); setCatTo('') }} className="text-xs text-slate-500 hover:text-slate-700 underline pb-2">Reset</button>
+            )}
+          </div>
+        </div>
         <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 mb-3">
           <StatCard icon={<Wallet size={15} />} label="Kas Masuk (ledger)" value={fmtRp(rep.ledger_in)} accent="text-emerald-600" />
           <StatCard icon={<Wallet size={15} />} label="Kas Keluar (ledger)" value={fmtRp(rep.ledger_out)} accent="text-red-600" />

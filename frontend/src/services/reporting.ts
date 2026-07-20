@@ -12,8 +12,8 @@ export const reportingService = {
     return data
   },
 
-  async cashflow(): Promise<CashflowReport> {
-    const { data } = await api.get<CashflowReport>('/reporting/cashflow')
+  async cashflow(params?: { cat_from?: string; cat_to?: string }): Promise<CashflowReport> {
+    const { data } = await api.get<CashflowReport>('/reporting/cashflow', { params })
     return data
   },
 

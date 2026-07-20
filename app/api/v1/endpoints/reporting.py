@@ -219,6 +219,8 @@ class CashflowReport(BaseModel):
 
 @router.get("/cashflow", response_model=CashflowReport)
 async def cashflow(
+    cat_from: Optional[date] = Query(None),   # filter periode KHUSUS ringkasan kategori (ledger)
+    cat_to: Optional[date] = Query(None),
     ctx: AuthContext = Depends(get_current_context),
     db: AsyncSession = Depends(get_db),
 ):
@@ -311,12 +313,18 @@ async def cashflow(
         for m, fb, bk in month_rows
     ][-12:]   # maks 12 bulan terakhir yang ada transaksi
 
-    # Ringkasan Buku Kas per kategori (ledger riil — termasuk kas keluar biaya/notaris)
+    # Ringkasan Buku Kas per kategori (ledger riil — termasuk kas keluar biaya/notaris).
+    # Filter periode opsional berlaku KHUSUS di sini (angka penjualan di atas tetap all-time).
+    cat_conds = [CashBookEntry.tenant_id == t]
+    if cat_from:
+        cat_conds.append(CashBookEntry.date >= cat_from)
+    if cat_to:
+        cat_conds.append(CashBookEntry.date <= cat_to)
     cat_rows = (await db.execute(
         select(AccountCategory.name, CashBookEntry.direction, func.coalesce(func.sum(CashBookEntry.amount), 0))
         .select_from(CashBookEntry)
         .outerjoin(AccountCategory, AccountCategory.id == CashBookEntry.category_id)
-        .where(CashBookEntry.tenant_id == t)
+        .where(*cat_conds)
         .group_by(AccountCategory.name, CashBookEntry.direction)
     )).all()
     by_category = [
