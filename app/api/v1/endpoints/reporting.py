@@ -20,6 +20,7 @@ from app.models.kpr import KprApplication, KprStage
 from app.models.construction import UnitConstruction, ConstructionStage, ConstructionProgressLog
 from app.models.tax import TaxRecord, TaxType, TaxStatus, MonthlyTaxShareLink
 from app.models.document import Document
+from app.models.cashbook import CashBookEntry, AccountCategory, CashDirection
 
 router = APIRouter()
 
@@ -193,6 +194,12 @@ class CashflowMonth(BaseModel):
     total: Decimal
 
 
+class CashflowCategoryTotal(BaseModel):
+    category_name: str
+    direction: str                # 'in' | 'out'
+    total: Decimal
+
+
 class CashflowReport(BaseModel):
     total_contract: Decimal       # total nilai kontrak (pembeli aktif)
     from_buyer: Decimal           # kas masuk dari pembeli (DP/cicilan)
@@ -202,6 +209,12 @@ class CashflowReport(BaseModel):
     buyer_remaining: Decimal      # sisa kewajiban pembeli (piutang pembeli)
     retention_remaining: Decimal  # retensi menunggu pencairan bank
     months: list[CashflowMonth]   # tren bulanan (kronologis, maks 12 bln terakhir yang ada transaksi)
+    # Ringkasan Buku Kas per kategori (ledger riil: pembayaran approved + biaya/notaris dibayar).
+    # Beda basis dgn angka penjualan di atas — ini termasuk kas KELUAR.
+    ledger_in: Decimal = Decimal(0)
+    ledger_out: Decimal = Decimal(0)
+    ledger_saldo: Decimal = Decimal(0)
+    by_category: list[CashflowCategoryTotal] = []
 
 
 @router.get("/cashflow", response_model=CashflowReport)
@@ -298,10 +311,28 @@ async def cashflow(
         for m, fb, bk in month_rows
     ][-12:]   # maks 12 bulan terakhir yang ada transaksi
 
+    # Ringkasan Buku Kas per kategori (ledger riil — termasuk kas keluar biaya/notaris)
+    cat_rows = (await db.execute(
+        select(AccountCategory.name, CashBookEntry.direction, func.coalesce(func.sum(CashBookEntry.amount), 0))
+        .select_from(CashBookEntry)
+        .outerjoin(AccountCategory, AccountCategory.id == CashBookEntry.category_id)
+        .where(CashBookEntry.tenant_id == t)
+        .group_by(AccountCategory.name, CashBookEntry.direction)
+    )).all()
+    by_category = [
+        CashflowCategoryTotal(category_name=name or "Belum dikategorikan", direction=direction.value, total=Decimal(total))
+        for name, direction, total in cat_rows
+    ]
+    by_category.sort(key=lambda r: (r.direction, -r.total))
+    ledger_in = sum((c.total for c in by_category if c.direction == CashDirection.IN.value), Decimal(0))
+    ledger_out = sum((c.total for c in by_category if c.direction == CashDirection.OUT.value), Decimal(0))
+
     return CashflowReport(
         total_contract=total_contract, from_buyer=from_buyer, from_bank=from_bank, total_in=total_in,
         kpr_plafond_total=kpr_plafond_total, buyer_remaining=buyer_remaining,
         retention_remaining=retention_remaining, months=months,
+        ledger_in=ledger_in, ledger_out=ledger_out, ledger_saldo=ledger_in - ledger_out,
+        by_category=by_category,
     )
 
 

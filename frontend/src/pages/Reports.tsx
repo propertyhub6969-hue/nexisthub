@@ -71,6 +71,44 @@ function CashflowTab() {
       </div>
 
       <div>
+        <h3 className="text-sm font-semibold text-slate-600 mb-2">Ringkasan Buku Kas per Kategori</h3>
+        <p className="text-xs text-slate-400 mb-2">Kas riil dari Buku Kas (pembayaran disetujui + biaya/notaris dibayar) — termasuk kas keluar.</p>
+        <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 mb-3">
+          <StatCard icon={<Wallet size={15} />} label="Kas Masuk (ledger)" value={fmtRp(rep.ledger_in)} accent="text-emerald-600" />
+          <StatCard icon={<Wallet size={15} />} label="Kas Keluar (ledger)" value={fmtRp(rep.ledger_out)} accent="text-red-600" />
+          <StatCard icon={<Wallet size={15} />} label="Saldo (ledger)" value={fmtRp(rep.ledger_saldo)} accent={rep.ledger_saldo >= 0 ? 'text-brand-600' : 'text-red-600'} />
+        </div>
+        {rep.by_category.length === 0 ? (
+          <div className="card p-6 text-center text-slate-400 text-sm">Belum ada transaksi di Buku Kas.</div>
+        ) : (
+          <div className="card overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 border-b border-slate-200">
+                <tr>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Kategori</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Arah</th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Total</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {rep.by_category.map((c, i) => (
+                  <tr key={i} className="hover:bg-slate-50 transition-colors">
+                    <td className="px-4 py-2.5 font-medium text-slate-900">{c.category_name}</td>
+                    <td className="px-4 py-2.5">
+                      <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${c.direction === 'in' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
+                        {c.direction === 'in' ? 'Masuk' : 'Keluar'}
+                      </span>
+                    </td>
+                    <td className={`px-4 py-2.5 text-right font-semibold ${c.direction === 'in' ? 'text-emerald-600' : 'text-red-600'}`}>{fmtRp(c.total)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      <div>
         <h3 className="text-sm font-semibold text-slate-600 mb-2">Arus Kas Bulanan</h3>
         <div className="card overflow-x-auto">
           <table className="w-full text-sm">
