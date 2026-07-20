@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.audit import record_audit
+from app.core.cashbook import sync_notary_fee_cashbook
 from app.api.deps import get_current_context, AuthContext
 from app.models.tax import (
     Notary, TaxRecord, NotaryFee, NotaryShareLink, NotarySubmission,
@@ -348,6 +349,7 @@ async def _load_fee(db, tenant_id, fee_id) -> NotaryFee:
 async def create_fee(payload: FeeCreate, ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db)):
     f = NotaryFee(tenant_id=ctx.tenant_id, **payload.model_dump())
     db.add(f); await db.flush()
+    await sync_notary_fee_cashbook(db, ctx.tenant_id, f)
     return await _load_fee(db, ctx.tenant_id, f.id)
 
 
@@ -360,6 +362,7 @@ async def bulk_create_fees(payload: FeeBulkCreate, ctx: AuthContext = Depends(ge
         f = NotaryFee(tenant_id=ctx.tenant_id, client_id=payload.client_id, **item.model_dump())
         db.add(f)
         await db.flush()
+        await sync_notary_fee_cashbook(db, ctx.tenant_id, f)
         await record_audit(db, ctx.tenant_id, ctx.user_id, "CREATE", "notary_fees", f.id,
                            new_data={"description": f.description, "amount": str(f.amount)})
         result.append(f)
@@ -379,6 +382,7 @@ async def update_fee(fee_id: uuid.UUID, payload: FeeUpdate, ctx: AuthContext = D
     for k, v in payload.model_dump(exclude_unset=True).items():
         setattr(f, k, v)
     await db.flush()
+    await sync_notary_fee_cashbook(db, ctx.tenant_id, f)   # is_paid berubah → posting/hapus baris kas
     return await _load_fee(db, ctx.tenant_id, fee_id)
 
 
@@ -386,6 +390,7 @@ async def update_fee(fee_id: uuid.UUID, payload: FeeUpdate, ctx: AuthContext = D
 async def delete_fee(fee_id: uuid.UUID, ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db)):
     f = await _load_fee(db, ctx.tenant_id, fee_id)
     await _soft_delete(db, f)
+    await sync_notary_fee_cashbook(db, ctx.tenant_id, f)   # terhapus → baris kas ikut dihapus
 
 
 def _lbl(u: Unit) -> str:

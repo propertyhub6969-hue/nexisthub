@@ -71,6 +71,28 @@ async def sync_payment_cashbook(db: AsyncSession, tenant_id: uuid.UUID, payment)
     entry.description = f"Pembayaran {payment.purpose.value if payment.purpose else payment.source.value}"
 
 
+async def sync_notary_fee_cashbook(db: AsyncSession, tenant_id: uuid.UUID, fee) -> None:
+    """Biaya jasa notaris dibayar (is_paid) & tak terhapus → satu baris Buku Kas (kas keluar); selain itu → dihapus.
+    Kategori: Biaya Operasional (rincian jenis jasa tetap ada di NotaryFee.description)."""
+    entry = await _get_entry(db, tenant_id, "notary_fee", fee.id)
+    should_exist = (not fee.is_deleted) and fee.is_paid
+    if not should_exist:
+        if entry is not None:
+            await db.delete(entry)
+        return
+
+    category = await _category_by_code(db, tenant_id, "biaya_operasional")
+    if entry is None:
+        entry = CashBookEntry(tenant_id=tenant_id, source_type="notary_fee", source_id=fee.id)
+        db.add(entry)
+    entry.date = fee.fee_date or date.today()
+    entry.direction = CashDirection.OUT
+    entry.amount = fee.amount
+    entry.category_id = category.id if category else None
+    entry.client_id = fee.client_id
+    entry.description = f"Biaya notaris: {fee.description}"
+
+
 async def sync_expense_cashbook(db: AsyncSession, tenant_id: uuid.UUID, expense) -> None:
     """Expense dibayar (is_paid) & tak terhapus → ada satu baris Buku Kas; selain itu → dihapus.
     Kategori: selalu Biaya Operasional (rincian per jenis biaya tetap ada di Expense.category)."""
