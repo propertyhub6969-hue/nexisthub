@@ -143,9 +143,12 @@ function CashflowTab() {
         )}
       </div>
 
-      {rep.out_months.length > 0 && (
-        <div>
-          <h3 className="text-sm font-semibold text-slate-600 mb-2">Tren Kas Keluar per Kategori (Bulanan)</h3>
+      <div>
+        <h3 className="text-sm font-semibold text-slate-600 mb-2">Tren Kas Keluar per Kategori (Bulanan)</h3>
+        {rep.out_months.length === 0 ? (
+          <div className="card p-6 text-center text-slate-400 text-sm">Belum ada kas keluar tercatat pada periode ini.</div>
+        ) : (
+          <>
           <div className="card overflow-x-auto">
             <table className="w-full text-sm min-w-[560px]">
               <thead className="bg-slate-50 border-b border-slate-200">
@@ -184,6 +187,37 @@ function CashflowTab() {
             {rep.out_category_names.map((n, i) => (
               <span key={i} className="inline-flex items-center gap-1"><span className={`w-3 h-2 rounded-sm ${OUT_PALETTE[i % OUT_PALETTE.length]}`} />{n}</span>
             ))}
+          </div>
+          </>
+        )}
+      </div>
+
+      {rep.notary_breakdown.length > 0 && (
+        <div>
+          <h3 className="text-sm font-semibold text-slate-600 mb-2">Rincian Biaya Notaris/Legal (per jenis jasa)</h3>
+          <div className="card overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 border-b border-slate-200">
+                <tr>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Jenis Jasa</th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Total</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {rep.notary_breakdown.map((b, i) => (
+                  <tr key={i} className="hover:bg-slate-50 transition-colors">
+                    <td className="px-4 py-2.5 font-medium text-slate-900">{b.label}</td>
+                    <td className="px-4 py-2.5 text-right font-semibold text-red-600">{fmtRp(b.total)}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="border-t-2 border-slate-200 bg-slate-50">
+                  <td className="px-4 py-2.5 font-semibold text-slate-700">Total Biaya Notaris/Legal</td>
+                  <td className="px-4 py-2.5 text-right font-bold text-red-700">{fmtRp(rep.notary_breakdown.reduce((s, b) => s + b.total, 0))}</td>
+                </tr>
+              </tfoot>
+            </table>
           </div>
         </div>
       )}

@@ -18,7 +18,7 @@ from app.models.property import Project, Unit, UnitStatus
 from app.models.payment import Payment, PaymentSchedule, ScheduleStatus, PaymentSource, PaymentApprovalStatus
 from app.models.kpr import KprApplication, KprStage
 from app.models.construction import UnitConstruction, ConstructionStage, ConstructionProgressLog
-from app.models.tax import TaxRecord, TaxType, TaxStatus, MonthlyTaxShareLink
+from app.models.tax import TaxRecord, TaxType, TaxStatus, MonthlyTaxShareLink, NotaryFee
 from app.models.document import Document
 from app.models.cashbook import CashBookEntry, AccountCategory, CashDirection
 
@@ -206,6 +206,11 @@ class CashflowOutMonth(BaseModel):
     total: Decimal
 
 
+class CashflowBreakdownItem(BaseModel):
+    label: str
+    total: Decimal
+
+
 class CashflowReport(BaseModel):
     total_contract: Decimal       # total nilai kontrak (pembeli aktif)
     from_buyer: Decimal           # kas masuk dari pembeli (DP/cicilan)
@@ -224,6 +229,8 @@ class CashflowReport(BaseModel):
     # Tren bulanan kas KELUAR dipecah per kategori (kolom = out_category_names)
     out_category_names: list[str] = []
     out_months: list[CashflowOutMonth] = []
+    # Rincian kategori Biaya Notaris/Legal per jenis jasa (AJB, BBN, Balik Nama, dst)
+    notary_breakdown: list[CashflowBreakdownItem] = []
 
 
 @router.get("/cashflow", response_model=CashflowReport)
@@ -369,12 +376,23 @@ async def cashflow(
         for ym in sorted(month_map.keys())[-12:]
     ]
 
+    # Rincian kategori Biaya Notaris/Legal per jenis jasa (join balik ke NotaryFee via source_id)
+    notary_rows = (await db.execute(
+        select(NotaryFee.description, func.coalesce(func.sum(CashBookEntry.amount), 0))
+        .select_from(CashBookEntry)
+        .join(NotaryFee, NotaryFee.id == CashBookEntry.source_id)
+        .where(*cat_conds, CashBookEntry.source_type == "notary_fee")
+        .group_by(NotaryFee.description).order_by(func.coalesce(func.sum(CashBookEntry.amount), 0).desc())
+    )).all()
+    notary_breakdown = [CashflowBreakdownItem(label=desc or "—", total=Decimal(total)) for desc, total in notary_rows]
+
     return CashflowReport(
         total_contract=total_contract, from_buyer=from_buyer, from_bank=from_bank, total_in=total_in,
         kpr_plafond_total=kpr_plafond_total, buyer_remaining=buyer_remaining,
         retention_remaining=retention_remaining, months=months,
         ledger_in=ledger_in, ledger_out=ledger_out, ledger_saldo=ledger_in - ledger_out,
         by_category=by_category, out_category_names=out_category_names, out_months=out_months,
+        notary_breakdown=notary_breakdown,
     )
 
 
