@@ -114,10 +114,13 @@ export default function Login() {
             </button>
           </form>
 
-          <p className="text-center text-sm text-slate-500 mt-6">
-            Belum punya akun?{' '}
-            <Link to="/register" className="text-brand-600 font-medium hover:text-brand-700 hover:underline">Daftar sekarang</Link>
-          </p>
+          {/* Daftar hanya di pintu umum (app.nexisthub.id); di subdomain Kantor Digital tenant, akun dibuat admin */}
+          {!slug && (
+            <p className="text-center text-sm text-slate-500 mt-6">
+              Belum punya akun?{' '}
+              <Link to="/register" className="text-brand-600 font-medium hover:text-brand-700 hover:underline">Daftar sekarang</Link>
+            </p>
+          )}
         </div>
       </div>
     </div>

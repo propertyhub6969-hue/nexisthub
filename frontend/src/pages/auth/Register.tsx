@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
 import { Loader2, CheckCircle2 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
-import { tenantUrl } from '../../utils/tenant'
+import { tenantUrl, currentTenantSlug } from '../../utils/tenant'
 import type { RegisterPayload } from '../../types'
 import { INDONESIA_CITIES } from '../../data/indonesiaCities'
 import BrandPanel from './BrandPanel'
@@ -17,6 +17,11 @@ export default function Register() {
   const [doneSlug, setDoneSlug] = useState<string | null | undefined>(undefined)
   const [doneEmail, setDoneEmail] = useState('')
   const [countdown, setCountdown] = useState(REDIRECT_SECONDS)
+
+  // Daftar hanya di pintu umum (app.nexisthub.id). Di subdomain Kantor Digital tenant,
+  // akun dibuat admin — akses langsung /register dialihkan ke login.
+  const slug = currentTenantSlug()
+  useEffect(() => { if (slug) navigate('/login', { replace: true }) }, [slug, navigate])
 
   // URL login di alamat khusus tenant (null saat dev/localhost → tak dialihkan)
   const homeUrl = doneSlug ? tenantUrl(doneSlug, `/login?baru=1&email=${encodeURIComponent(doneEmail)}`) : null
@@ -45,6 +50,8 @@ export default function Register() {
       setError(err.response?.data?.detail ?? 'Pendaftaran gagal. Coba lagi.')
     }
   }
+
+  if (slug) return null   // subdomain tenant → sedang dialihkan ke /login
 
   return (
     <div className="min-h-screen grid lg:grid-cols-[1.05fr_1fr]">
