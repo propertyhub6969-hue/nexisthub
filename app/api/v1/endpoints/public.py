@@ -12,6 +12,9 @@ from app.core import storage
 from app.core.audit import record_audit
 from app.core.files import file_etag, not_modified_response, cached_file_response
 from app.core.security import decode_token
+from app.core.notify import notify_roles
+from app.models.notification import NotificationKind
+from app.models.user import UserRole
 from app.models.tenant import Tenant
 from app.models.tax import (
     MonthlyTaxShareLink, TaxRecord, TaxStatus, TaxType, Notary, NotaryFee,
@@ -31,6 +34,16 @@ from app.api.v1.endpoints.reporting import _build_monthly_tax_report, MonthlyTax
 router = APIRouter()
 
 MAX_SUBMISSION_FILE_BYTES = 10 * 1024 * 1024  # 10 MB
+
+# Penerima notifikasi kiriman dari pihak LUAR (bank/notaris) — samakan dgn yang boleh
+# membuka antrean Kiriman Bank/Notaris (grup Marketing di api.py: FULL + MARKETING).
+SUBMISSION_WATCHERS = (UserRole.OWNER, UserRole.ADMIN, UserRole.MANAGER, UserRole.MARKETING)
+
+# Label ramah utk jenis kiriman notaris (dipakai di isi notifikasi).
+_NOTARY_KIND_LABEL = {
+    "ppjb_ajb": "PPJB/AJB", "tax": "Pajak", "fee": "Biaya notaris",
+    "custody": "Serah-terima dokumen asli",
+}
 
 
 # Registry jenis file → (Model, kolom key MinIO, kolom tipe, kolom nama). Satu pintu utk semua
@@ -288,6 +301,14 @@ async def public_bank_submit(
     link.access_count += 1
     await record_audit(db, link.tenant_id, None, "SUBMIT", "kpr_bank_submissions", sub.id,
                        new_data={"stage": stage.value}, client_id=k.client_id)
+    # Pihak bank kirim update lewat tautan → beri tahu tim (actor None: bukan user internal).
+    client_name = await db.scalar(select(Client.full_name).where(Client.id == k.client_id))
+    await notify_roles(
+        db, link.tenant_id, SUBMISSION_WATCHERS, NotificationKind.BANK_SUBMISSION,
+        title="Kiriman baru dari bank",
+        body=f"{link.bank_name_snapshot or 'Bank'} — {client_name or 'Pembeli'} · tahap {stage.value.replace('_', ' ')}",
+        link="/marketing/bank-submissions",
+    )
     return {"status": "submitted", "id": str(sub.id)}
 
 
@@ -482,4 +503,11 @@ async def public_notary_submit(
     link.access_count += 1
     await record_audit(db, link.tenant_id, None, "SUBMIT", "notary_submissions", sub.id,
                        new_data={"kind": kind.value}, client_id=client_id)
+    # Pihak notaris kirim update lewat tautan → beri tahu tim (actor None: bukan user internal).
+    await notify_roles(
+        db, link.tenant_id, SUBMISSION_WATCHERS, NotificationKind.NOTARY_SUBMISSION,
+        title="Kiriman baru dari notaris",
+        body=f"{link.notary_name_snapshot or 'Notaris'} — {c.full_name} · {_NOTARY_KIND_LABEL.get(kind.value, kind.value)}",
+        link="/marketing/notary-submissions",
+    )
     return {"status": "submitted", "id": str(sub.id)}
