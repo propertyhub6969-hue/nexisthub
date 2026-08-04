@@ -291,6 +291,16 @@ async def list_pending_payments(
     return out
 
 
+@router.get("/pending-count")
+async def pending_payments_count(ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db)):
+    """Jumlah pembayaran menunggu persetujuan — utk badge/lonceng (dihitung langsung dari data,
+    jadi tak mungkin meleset dgn halaman Persetujuan Pembayaran)."""
+    count = await db.scalar(select(func.count()).select_from(Payment).where(
+        Payment.tenant_id == ctx.tenant_id, Payment.is_deleted == False,  # noqa: E712
+        Payment.approval_status == PaymentApprovalStatus.PENDING))
+    return {"count": count or 0}
+
+
 async def _generate_receipt_number(db, tenant_id) -> str:
     """Nomor kwitansi otomatis KW-000001, dst. Hitung SEMUA payment (termasuk terhapus)
     agar nomor tak pernah dipakai ulang meski ada yang dihapus."""

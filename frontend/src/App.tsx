@@ -1,4 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import ToastHost from './components/ui/ToastHost'
 import { authService } from './services/auth'
 
 import DashboardLayout from './components/Layout/DashboardLayout'
@@ -93,6 +94,7 @@ export default function App() {
         {/* Fallback */}
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
+      <ToastHost />
     </BrowserRouter>
   )
 }

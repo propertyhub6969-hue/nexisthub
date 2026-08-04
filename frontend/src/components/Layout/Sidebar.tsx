@@ -31,6 +31,7 @@ import { useAuth } from '../../context/AuthContext'
 import { canAccessPath, canAccessFeature, effectiveRoles, hasAnyRole } from '../../utils/access'
 import { kprService } from '../../services/kpr'
 import { taxService } from '../../services/tax'
+import { paymentService } from '../../services/payment'
 import NexistLogo from '../ui/NexistLogo'
 
 interface NavChild {
@@ -162,11 +163,19 @@ export default function Sidebar({ open = false, onClose }: { open?: boolean; onC
   // badge jumlah kiriman bank/notaris menunggu persetujuan (silent — 403/gagal cukup diabaikan, badge tetap 0)
   const [bankPendingCount, setBankPendingCount] = useState(0)
   const [notaryPendingCount, setNotaryPendingCount] = useState(0)
+  const [payPendingCount, setPayPendingCount] = useState(0)
   useEffect(() => {
     if (!user) return
-    kprService.bankSubmissionsPendingCount().then(setBankPendingCount).catch(() => {})
-    taxService.notarySubmissionsPendingCount().then(setNotaryPendingCount).catch(() => {})
-  }, [user])
+    const refresh = () => {
+      kprService.bankSubmissionsPendingCount().then(setBankPendingCount).catch(() => {})
+      taxService.notarySubmissionsPendingCount().then(setNotaryPendingCount).catch(() => {})
+      paymentService.pendingCount().then(setPayPendingCount).catch(() => {})
+    }
+    refresh()
+    // segarkan berkala — finance tahu ada entry baru dari marketing tanpa perlu muat ulang
+    const t = setInterval(refresh, 60000)
+    return () => clearInterval(t)
+  }, [user, location.pathname])
   // saring menu sesuai akses role (produksi = Dashboard/Konstruksi/Procurement; role lain penuh)
   const items = allItems.filter((it) =>
     it.to ? allow(it.to) : (it.children ?? []).some((c) => allow(c.to))
@@ -242,6 +251,9 @@ export default function Sidebar({ open = false, onClose }: { open?: boolean; onC
                   {child.label}
                   {child.to === '/marketing/bank-submissions' && bankPendingCount > 0 && (
                     <span className="ml-auto text-[10px] font-semibold bg-brass-500 text-white rounded-full px-1.5 py-0.5 leading-none">{bankPendingCount}</span>
+                  )}
+                  {child.to === '/payments/approval' && payPendingCount > 0 && (
+                    <span className="ml-auto text-[10px] font-semibold bg-brass-500 text-white rounded-full px-1.5 py-0.5 leading-none">{payPendingCount}</span>
                   )}
                   {child.to === '/marketing/notary-submissions' && notaryPendingCount > 0 && (
                     <span className="ml-auto text-[10px] font-semibold bg-brass-500 text-white rounded-full px-1.5 py-0.5 leading-none">{notaryPendingCount}</span>

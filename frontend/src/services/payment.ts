@@ -57,6 +57,10 @@ export const paymentService = {
   },
 
   // ── Persetujuan (Fase A) ──
+  async pendingCount(): Promise<number> {
+    const { data } = await api.get<{ count: number }>('/payments/pending-count')
+    return data.count
+  },
   async listPending(): Promise<PendingPayment[]> {
     const { data } = await api.get<PendingPayment[]>('/payments/pending')
     return data
