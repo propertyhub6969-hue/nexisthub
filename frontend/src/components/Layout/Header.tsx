@@ -1,9 +1,9 @@
 import { useState, useRef, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { Bell, ChevronDown, LogOut, Menu, CreditCard, Building2 } from 'lucide-react'
+import { ChevronDown, LogOut, Menu, CreditCard, Building2 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { effectiveRoles, hasAnyRole } from '../../utils/access'
-import { paymentService } from '../../services/payment'
+import NotificationBell from './NotificationBell'
 
 interface HeaderProps {
   title: string
@@ -22,16 +22,6 @@ const roleLabel: Record<string, string> = {
 
 export default function Header({ title, onMenuClick }: HeaderProps) {
   const { user, logout } = useAuth()
-  // Lonceng: jumlah pembayaran menunggu persetujuan (finance/owner/admin). Segarkan tiap 60 dtk.
-  const canApprove = hasAnyRole(user, ['owner', 'admin', 'finance'])
-  const [pendingPay, setPendingPay] = useState(0)
-  useEffect(() => {
-    if (!canApprove) return
-    const refresh = () => { paymentService.pendingCount().then(setPendingPay).catch(() => {}) }
-    refresh()
-    const t = setInterval(refresh, 60000)
-    return () => clearInterval(t)
-  }, [canApprove])
   const [open, setOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
 
@@ -55,24 +45,7 @@ export default function Header({ title, onMenuClick }: HeaderProps) {
         <h1 className="text-base font-semibold text-slate-900 truncate">{title}</h1>
       </div>
       <div className="flex items-center gap-3">
-        {canApprove ? (
-          <Link
-            to="/payments/approval"
-            title={pendingPay > 0 ? `${pendingPay} pembayaran menunggu persetujuan` : 'Tidak ada yang menunggu persetujuan'}
-            className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-500 transition-colors relative"
-          >
-            <Bell size={16} />
-            {pendingPay > 0 && (
-              <span className="absolute -top-0.5 -right-0.5 min-w-[15px] h-[15px] px-1 flex items-center justify-center rounded-full bg-red-500 text-white text-[9px] font-bold leading-none">
-                {pendingPay > 9 ? '9+' : pendingPay}
-              </span>
-            )}
-          </Link>
-        ) : (
-          <button className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-500 transition-colors relative">
-            <Bell size={16} />
-          </button>
-        )}
+        <NotificationBell />
 
         <div className="relative" ref={menuRef}>
           <button

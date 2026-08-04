@@ -1,6 +1,13 @@
 import axios from 'axios'
 import { toastSuccess, toastError } from '../components/ui/toastStore'
 
+// Opsi tambahan kami pada konfigurasi request (dipakai interceptor toast di bawah).
+declare module 'axios' {
+  export interface AxiosRequestConfig {
+    skipToast?: boolean
+  }
+}
+
 const api = axios.create({
   baseURL: '/api/v1',
   headers: { 'Content-Type': 'application/json' },
@@ -56,7 +63,7 @@ api.interceptors.response.use(
   (res) => {
     const method = (res.config.method || '').toLowerCase()
     const url = res.config.url || ''
-    const skip = (res.config as { skipToast?: boolean }).skipToast
+    const skip = res.config.skipToast
     if (!skip && MUTATING.includes(method) && !NO_TOAST.some((p) => url.includes(p))) {
       toastSuccess(actionLabel(method, url))
     }
@@ -78,7 +85,7 @@ api.interceptors.response.use(
     ) {
       // Beri tahu bila AKSI SIMPAN gagal (401 tak dihitung — itu ditangani refresh/logout).
       const m = (original?.method || '').toLowerCase()
-      const skip = (original as { skipToast?: boolean } | undefined)?.skipToast
+      const skip = original?.skipToast
       if (status && status !== 401 && !skip && MUTATING.includes(m) && !NO_TOAST.some((p) => url.includes(p))) {
         const detail = error.response?.data?.detail
         toastError(typeof detail === 'string' ? detail : 'Gagal menyimpan. Coba lagi.')

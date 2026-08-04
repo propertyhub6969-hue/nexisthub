@@ -1786,3 +1786,19 @@ export interface CashBookSummary {
   by_category: CashBookCategoryTotal[]
   months: CashBookMonth[]
 }
+
+// ── Notifikasi (riwayat per-pengguna) ─────────────────────────────
+export type NotificationKind =
+  | 'payment_submitted' | 'payment_approved' | 'payment_rejected'
+  | 'bank_submission' | 'notary_submission' | 'info'
+
+export interface AppNotification {
+  id: string
+  kind: NotificationKind
+  title: string
+  body?: string
+  link?: string
+  is_read: boolean
+  actor_name?: string
+  created_at: string
+}

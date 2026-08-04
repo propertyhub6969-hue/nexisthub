@@ -15,6 +15,9 @@ from app.core.database import get_db
 from app.api.deps import get_current_context, AuthContext, require_role
 from app.core.audit import record_audit
 from app.core.cashbook import sync_payment_cashbook
+from app.core.notify import notify, notify_roles
+from app.models.notification import NotificationKind
+from app.models.audit import AuditLog
 from app.core.unit_status import set_unit_status, unit_status_for_client
 from app.models.user import User, UserRole
 from app.models.marketing import Client, ClientStatus, ClientPaymentType
@@ -32,6 +35,14 @@ APPROVERS = (UserRole.OWNER, UserRole.ADMIN, UserRole.FINANCE)
 router = APIRouter()
 
 MAX_FILE_BYTES = 10 * 1024 * 1024  # 10 MB
+
+
+def _rp(n) -> str:
+    """Format rupiah singkat utk isi notifikasi (mis. Rp 1.500.000)."""
+    try:
+        return "Rp " + f"{int(Decimal(n or 0)):,}".replace(",", ".")
+    except Exception:
+        return "Rp -"
 
 
 async def _get_client(db, tenant_id, client_id) -> Client:
@@ -308,6 +319,16 @@ async def _generate_receipt_number(db, tenant_id) -> str:
     return f"KW-{(count or 0) + 1:06d}"
 
 
+async def _payment_creator(db, tenant_id, payment_id):
+    """Siapa yang meng-entry pembayaran ini — diambil dari jejak audit (tak perlu kolom baru)."""
+    return await db.scalar(
+        select(AuditLog.user_id).where(
+            AuditLog.tenant_id == tenant_id, AuditLog.resource == "payments",
+            AuditLog.resource_id == str(payment_id), AuditLog.action == "CREATE")
+        .order_by(AuditLog.created_at).limit(1)
+    )
+
+
 @router.post("/records", response_model=PaymentResponse, status_code=status.HTTP_201_CREATED)
 async def create_payment(
     payload: PaymentCreate,
@@ -325,6 +346,14 @@ async def create_payment(
     await sync_payment_cashbook(db, ctx.tenant_id, pay)
     await record_audit(db, ctx.tenant_id, ctx.user_id, "CREATE", "payments", pay.id,
                        new_data=data, client_id=pay.client_id)
+    # Beri tahu penyetuju: ada entry pembayaran baru menunggu persetujuan.
+    client_name = await db.scalar(select(Client.full_name).where(Client.id == pay.client_id))
+    await notify_roles(
+        db, ctx.tenant_id, APPROVERS, NotificationKind.PAYMENT_SUBMITTED,
+        title="Pembayaran baru menunggu persetujuan",
+        body=f"{client_name or 'Pembeli'} — {_rp(pay.amount)}",
+        link="/payments/approval", actor_id=ctx.user_id,
+    )
     await db.refresh(pay)
     return pay
 
@@ -361,6 +390,13 @@ async def approve_payment(
     await _maybe_complete_cash_client(db, ctx.tenant_id, pay.client_id)
     await record_audit(db, ctx.tenant_id, ctx.user_id, "APPROVE", "payments", payment_id,
                        new_data={"amount": str(pay.amount)}, client_id=pay.client_id)
+    creator = await _payment_creator(db, ctx.tenant_id, payment_id)
+    if creator:
+        client_name = await db.scalar(select(Client.full_name).where(Client.id == pay.client_id))
+        await notify(db, ctx.tenant_id, [creator], NotificationKind.PAYMENT_APPROVED,
+                     title="Pembayaran Anda disetujui",
+                     body=f"{client_name or 'Pembeli'} — {_rp(pay.amount)}",
+                     link=f"/marketing/clients/{pay.client_id}/payments", actor_id=ctx.user_id)
     await db.refresh(pay)
     pay.approver = approver  # refresh() melepas relationship; set ulang tanpa query (lazy-load async tak aman di sini)
     return pay
@@ -390,6 +426,13 @@ async def reject_payment(
     await record_audit(db, ctx.tenant_id, ctx.user_id, "REJECT", "payments", payment_id,
                        new_data={"amount": str(pay.amount)}, client_id=pay.client_id,
                        reason=payload.reason.strip())
+    creator = await _payment_creator(db, ctx.tenant_id, payment_id)
+    if creator:
+        client_name = await db.scalar(select(Client.full_name).where(Client.id == pay.client_id))
+        await notify(db, ctx.tenant_id, [creator], NotificationKind.PAYMENT_REJECTED,
+                     title="Pembayaran Anda ditolak",
+                     body=f"{client_name or 'Pembeli'} — {_rp(pay.amount)} · Alasan: {payload.reason.strip()}",
+                     link=f"/marketing/clients/{pay.client_id}/payments", actor_id=ctx.user_id)
     await db.refresh(pay)
     pay.approver = approver  # refresh() melepas relationship; set ulang tanpa query
     return pay
