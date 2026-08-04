@@ -2,7 +2,8 @@ import uuid
 from datetime import datetime, date, timezone
 from decimal import Decimal, InvalidOperation
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, Request, status, UploadFile, File, Form, Query
+from fastapi.responses import Response, StreamingResponse
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -10,6 +11,7 @@ from app.core.database import get_db
 from app.core import storage
 from app.core.audit import record_audit
 from app.core.files import file_etag, not_modified_response, cached_file_response
+from app.core.security import decode_token
 from app.models.tenant import Tenant
 from app.models.tax import (
     MonthlyTaxShareLink, TaxRecord, TaxStatus, TaxType, Notary, NotaryFee,
@@ -28,6 +30,43 @@ from app.api.v1.endpoints.reporting import _build_monthly_tax_report, MonthlyTax
 router = APIRouter()
 
 MAX_SUBMISSION_FILE_BYTES = 10 * 1024 * 1024  # 10 MB
+
+
+@router.get("/documents/{doc_id}/view")
+async def view_document_native(
+    doc_id: uuid.UUID,
+    t: str = Query(...),
+    db: AsyncSession = Depends(get_db),
+):
+    """Stream file dokumen INLINE agar browser membukanya native/progresif (tab baru).
+    Auth lewat token pendek di query (bukan header) — divalidasi: tipe 'file' + cocok doc_id + belum kedaluwarsa.
+    Token diterbitkan endpoint ber-auth GET /legal/documents/{id}/view-url."""
+    payload = decode_token(t)
+    if not payload or payload.get("type") != "file" or str(payload.get("sub")) != str(doc_id):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="Tautan kedaluwarsa. Muat ulang halaman & coba lagi.")
+    tenant_id = payload.get("tenant_id")
+    meta = (await db.execute(
+        select(Document.file_size, Document.file_type, Document.file_name, Document.file_key).where(
+            Document.id == doc_id, Document.tenant_id == tenant_id, Document.is_deleted == False)  # noqa: E712
+    )).first()
+    if meta is None or meta[2] is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="File tidak ditemukan")
+    size, ctype, fname, fkey = meta
+    headers = {
+        "Content-Disposition": f'inline; filename="{fname or "file"}"',
+        "Cache-Control": "private, max-age=3600",
+    }
+    if size:
+        headers["Content-Length"] = str(size)
+    media = ctype or "application/octet-stream"
+    if fkey:
+        return StreamingResponse(storage.get_stream(fkey), media_type=media, headers=headers)
+    data = (await db.execute(  # fallback dokumen lama (blob di Postgres)
+        select(Document.file_data).where(Document.id == doc_id, Document.tenant_id == tenant_id)
+    )).scalar_one_or_none()
+    if data is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="File tidak ditemukan")
+    return Response(content=data, media_type=media, headers=headers)
 
 
 @router.get("/tenant/{slug}")

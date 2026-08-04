@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.audit import record_audit
 from app.core.files import file_etag, not_modified_response, cached_file_response
+from app.core.security import create_file_token
 from app.core import storage
 from app.api.deps import get_current_context, AuthContext, require_role
 from app.models.user import UserRole, User
@@ -278,6 +279,26 @@ async def download_file(
     if data is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="File tidak ditemukan")
     return cached_file_response(data, ctype, fname, etag)
+
+
+@router.get("/documents/{doc_id}/view-url")
+async def get_view_url(
+    doc_id: uuid.UUID,
+    ctx: AuthContext = Depends(get_current_context),
+    db: AsyncSession = Depends(get_db),
+):
+    """Beri URL sekali-pakai (token ±2 menit) supaya browser bisa BUKA file native/progresif
+    di tab baru (window.open) tanpa perlu header Authorization."""
+    exists = await db.scalar(
+        select(func.count()).select_from(Document).where(
+            Document.id == doc_id, Document.tenant_id == ctx.tenant_id,
+            Document.is_deleted == False, Document.file_name.isnot(None))  # noqa: E712
+    )
+    if not exists:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="File tidak ditemukan")
+    token = create_file_token(doc_id, ctx.tenant_id)
+    # Endpoint stream ada di router PUBLIC (tanpa header auth) — auth lewat token pendek di query.
+    return {"url": f"/api/v1/public/documents/{doc_id}/view?t={token}"}
 
 
 # ═══════════ RIWAYAT TAHAPAN PROSES (perizinan proyek/sertifikat) ═══════════

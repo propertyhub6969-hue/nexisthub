@@ -51,6 +51,17 @@ def _get_sync(key: str) -> bytes:
         resp.release_conn()
 
 
+def get_stream(key: str):
+    """Iterator potongan (chunk) langsung dari MinIO → di-stream ke klien (progresif, hemat RAM)."""
+    resp = _client().get_object(BUCKET, key)
+    try:
+        for chunk in resp.stream(64 * 1024):
+            yield chunk
+    finally:
+        resp.close()
+        resp.release_conn()
+
+
 def _delete_sync(key: str) -> None:
     try:
         _client().remove_object(BUCKET, key)
