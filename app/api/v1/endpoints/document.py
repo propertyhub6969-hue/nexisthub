@@ -296,9 +296,9 @@ async def get_view_url(
     )
     if not exists:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="File tidak ditemukan")
-    token = create_file_token(doc_id, ctx.tenant_id)
+    token = create_file_token("document", doc_id, ctx.tenant_id)
     # Endpoint stream ada di router PUBLIC (tanpa header auth) — auth lewat token pendek di query.
-    return {"url": f"/api/v1/public/documents/{doc_id}/view?t={token}"}
+    return {"url": f"/api/v1/public/files/document/{doc_id}/view?t={token}"}
 
 
 # ═══════════ RIWAYAT TAHAPAN PROSES (perizinan proyek/sertifikat) ═══════════
@@ -606,6 +606,20 @@ async def download_split_batch_sk_file(
         return nm
     data = await storage.get(b.sk_file_key)
     return cached_file_response(data, b.sk_file_type, b.sk_file_name, etag)
+
+
+@router.get("/split-batches/{batch_id}/sk-view-url")
+async def get_split_sk_view_url(
+    batch_id: uuid.UUID,
+    ctx: AuthContext = Depends(get_current_context),
+    db: AsyncSession = Depends(get_db),
+):
+    """URL sekali-pakai utk buka SK pemecahan native/progresif di tab baru."""
+    b = await _get_batch(db, ctx.tenant_id, batch_id)
+    if not b.sk_file_name:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="File SK tidak ditemukan")
+    token = create_file_token("split", batch_id, ctx.tenant_id)
+    return {"url": f"/api/v1/public/files/split/{batch_id}/view?t={token}"}
 
 
 @router.delete("/split-batches/{batch_id}", status_code=status.HTTP_204_NO_CONTENT,

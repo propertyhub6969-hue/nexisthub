@@ -5,6 +5,7 @@ from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException, Query, status, UploadFile, File, Request
 from fastapi.responses import Response
 from app.core.files import file_etag, not_modified_response, cached_file_response
+from app.core.security import create_file_token
 from app.core import storage
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -475,6 +476,22 @@ async def download_payment_file(
     if data is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="File tidak ditemukan")
     return cached_file_response(data, ctype, fname, etag)
+
+
+@router.get("/records/{payment_id}/view-url")
+async def get_payment_file_view_url(
+    payment_id: uuid.UUID,
+    ctx: AuthContext = Depends(get_current_context),
+    db: AsyncSession = Depends(get_db),
+):
+    """URL sekali-pakai utk buka bukti bayar native/progresif di tab baru."""
+    exists = await db.scalar(select(func.count()).select_from(Payment).where(
+        Payment.id == payment_id, Payment.tenant_id == ctx.tenant_id,
+        Payment.is_deleted == False, Payment.file_name.isnot(None)))  # noqa: E712
+    if not exists:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="File tidak ditemukan")
+    token = create_file_token("payment", payment_id, ctx.tenant_id)
+    return {"url": f"/api/v1/public/files/payment/{payment_id}/view?t={token}"}
 
 
 @router.delete("/records/{payment_id}", status_code=status.HTTP_204_NO_CONTENT)

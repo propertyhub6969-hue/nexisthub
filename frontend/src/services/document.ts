@@ -1,4 +1,5 @@
 import api from './api'
+import { openViaViewUrl } from '../utils/openFile'
 import type {
   DocumentItem, DocumentCreate, DocumentBulkCreate, DocumentHandover, HandoverCreate, UnitHandoverResult,
   SplitBatch, SplitBatchCreate, SplitBatchUpdate,
@@ -41,19 +42,9 @@ export const documentService = {
     })
     return data
   },
-  // Buka dokumen NATIVE/progresif: browser me-render langsung (viewer PDF bawaan) sambil
-  // mengunduh — jauh lebih cepat terasa daripada unduh-penuh-dulu-baru-buka (blob).
-  // Tab dibuka SINKRON saat klik (jaga user-gesture, hindari popup blocker), lalu diarahkan.
+  // Buka dokumen NATIVE/progresif (lihat utils/openFile).
   async openFile(id: string): Promise<void> {
-    const tab = window.open('', '_blank')
-    try {
-      const { data } = await api.get<{ url: string }>(`/legal/documents/${id}/view-url`)
-      if (tab) tab.location.href = data.url
-      else window.open(data.url, '_blank')   // popup diblokir → coba buka langsung
-    } catch (e) {
-      if (tab) tab.close()
-      throw e
-    }
+    return openViaViewUrl(`/legal/documents/${id}/view-url`)
   },
   // ── Serah-terima dokumen ASLI (fisik) ──
   async listHandovers(docId: string): Promise<DocumentHandover[]> {
@@ -148,10 +139,7 @@ export const documentService = {
     return data
   },
   async openSplitBatchSkFile(batchId: string): Promise<void> {
-    const res = await api.get(`/legal/split-batches/${batchId}/sk-file`, { responseType: 'blob' })
-    const url = URL.createObjectURL(res.data as Blob)
-    window.open(url, '_blank')
-    setTimeout(() => URL.revokeObjectURL(url), 60000)
+    return openViaViewUrl(`/legal/split-batches/${batchId}/sk-view-url`)
   },
   async deleteSplitBatch(batchId: string): Promise<void> {
     await api.delete(`/legal/split-batches/${batchId}`)

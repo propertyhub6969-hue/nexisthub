@@ -1,4 +1,5 @@
 import api from './api'
+import { openViaViewUrl } from '../utils/openFile'
 import type {
   Notary, NotaryCreate, TaxRecord, TaxCreate, TaxBulkCreate, NotaryFee, NotaryFeeCreate, FeeBulkCreate,
   NotaryShareLink, NotaryShareLinkCreate, NotarySubmission, PublicNotaryPage,
@@ -52,10 +53,7 @@ export const taxService = {
     return data
   },
   async openTaxFile(id: string): Promise<void> {
-    const res = await api.get(`/legal/tax-records/${id}/file`, { responseType: 'blob' })
-    const url = URL.createObjectURL(res.data as Blob)
-    window.open(url, '_blank')
-    setTimeout(() => URL.revokeObjectURL(url), 60000)
+    return openViaViewUrl(`/legal/tax-records/${id}/view-url`, { variant: 'file' })
   },
   async uploadIdBillingFile(id: string, file: File): Promise<TaxRecord> {
     const fd = new FormData()
@@ -66,10 +64,7 @@ export const taxService = {
     return data
   },
   async openIdBillingFile(id: string): Promise<void> {
-    const res = await api.get(`/legal/tax-records/${id}/id-billing-file`, { responseType: 'blob' })
-    const url = URL.createObjectURL(res.data as Blob)
-    window.open(url, '_blank')
-    setTimeout(() => URL.revokeObjectURL(url), 60000)
+    return openViaViewUrl(`/legal/tax-records/${id}/view-url`, { variant: 'billing' })
   },
   async uploadValidationFile(id: string, file: File): Promise<TaxRecord> {
     const fd = new FormData()
@@ -80,10 +75,7 @@ export const taxService = {
     return data
   },
   async openValidationFile(id: string): Promise<void> {
-    const res = await api.get(`/legal/tax-records/${id}/validation-file`, { responseType: 'blob' })
-    const url = URL.createObjectURL(res.data as Blob)
-    window.open(url, '_blank')
-    setTimeout(() => URL.revokeObjectURL(url), 60000)
+    return openViaViewUrl(`/legal/tax-records/${id}/view-url`, { variant: 'validation' })
   },
 
   // ── Biaya Notaris ──

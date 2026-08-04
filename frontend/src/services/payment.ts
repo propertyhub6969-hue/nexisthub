@@ -1,4 +1,5 @@
 import api from './api'
+import { openViaViewUrl } from '../utils/openFile'
 import type {
   PaymentSchedule, PaymentScheduleCreate,
   Payment, PaymentCreate, PaymentSummary, PendingPayment,
@@ -52,10 +53,7 @@ export const paymentService = {
     return data
   },
   async openPaymentFile(id: string): Promise<void> {
-    const res = await api.get(`/payments/records/${id}/file`, { responseType: 'blob' })
-    const url = URL.createObjectURL(res.data as Blob)
-    window.open(url, '_blank')
-    setTimeout(() => URL.revokeObjectURL(url), 60000)
+    return openViaViewUrl(`/payments/records/${id}/view-url`)
   },
 
   // ── Persetujuan (Fase A) ──

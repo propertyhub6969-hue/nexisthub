@@ -1,4 +1,5 @@
 import api from './api'
+import { openViaViewUrl } from '../utils/openFile'
 import type {
   Bank, BankCreate, KprApplication, KprCreate, Disbursement,
   BankShareLink, BankShareLinkCreate, BankSubmission, PublicBankPage,
@@ -91,10 +92,7 @@ export const kprService = {
     setTimeout(() => URL.revokeObjectURL(url), 60000)
   },
   async openSp3kFile(kprId: string): Promise<void> {
-    const res = await api.get(`/kpr/applications/${kprId}/sp3k-file`, { responseType: 'blob' })
-    const url = URL.createObjectURL(res.data as Blob)
-    window.open(url, '_blank')
-    setTimeout(() => URL.revokeObjectURL(url), 60000)
+    return openViaViewUrl(`/kpr/applications/${kprId}/sp3k-view-url`)
   },
 
   // ── Publik (tanpa login) — akses via tautan bank bertoken ──

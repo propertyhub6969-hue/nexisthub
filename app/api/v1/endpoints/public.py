@@ -20,7 +20,8 @@ from app.models.tax import (
 from app.models.kpr import Bank, KprApplication, KprStage, BankShareLink, KprBankSubmission
 from app.models.marketing import Client
 from app.models.property import Unit, Project
-from app.models.document import Document, DocStatus, DocumentHandover, HandoverEvent
+from app.models.document import Document, DocStatus, DocumentHandover, HandoverEvent, CertificateSplitBatch
+from app.models.payment import Payment
 from app.schemas.kpr import PublicBankPageResponse, PublicBankRow
 from app.schemas.tax import (
     PublicNotaryPageResponse, PublicNotaryClientRow, PublicNotaryTaxRow, PublicNotaryFeeRow, PublicNotaryDocumentRow,
@@ -32,41 +33,61 @@ router = APIRouter()
 MAX_SUBMISSION_FILE_BYTES = 10 * 1024 * 1024  # 10 MB
 
 
-@router.get("/documents/{doc_id}/view")
-async def view_document_native(
-    doc_id: uuid.UUID,
+# Registry jenis file → (Model, kolom key MinIO, kolom tipe, kolom nama). Satu pintu utk semua
+# "buka native": dokumen legalitas, bukti bayar, SK pemecahan, file pajak (3 varian), lampiran KPR.
+FILE_KINDS = {
+    "document":       (Document, "file_key", "file_type", "file_name"),
+    "payment":        (Payment, "file_key", "file_type", "file_name"),
+    "split":          (CertificateSplitBatch, "sk_file_key", "sk_file_type", "sk_file_name"),
+    "tax":            (TaxRecord, "file_key", "file_type", "file_name"),
+    "tax_billing":    (TaxRecord, "id_billing_file_key", "id_billing_file_type", "id_billing_file_name"),
+    "tax_validation": (TaxRecord, "validation_file_key", "validation_file_type", "validation_file_name"),
+    "kpr_sp3k":       (KprApplication, "sp3k_file_key", "sp3k_file_type", "sp3k_file_name"),
+}
+
+
+@router.get("/files/{kind}/{record_id}/view")
+async def view_file_native(
+    kind: str,
+    record_id: uuid.UUID,
     t: str = Query(...),
     db: AsyncSession = Depends(get_db),
 ):
-    """Stream file dokumen INLINE agar browser membukanya native/progresif (tab baru).
-    Auth lewat token pendek di query (bukan header) — divalidasi: tipe 'file' + cocok doc_id + belum kedaluwarsa.
-    Token diterbitkan endpoint ber-auth GET /legal/documents/{id}/view-url."""
+    """Stream file INLINE agar browser membukanya native/progresif (tab baru). Auth lewat token
+    pendek di query (bukan header) — divalidasi: type='file' + kind cocok + record cocok + belum kedaluwarsa.
+    Token diterbitkan endpoint ber-auth ...-view-url (per jenis, di router masing-masing dgn gate benar)."""
     payload = decode_token(t)
-    if not payload or payload.get("type") != "file" or str(payload.get("sub")) != str(doc_id):
+    if (not payload or payload.get("type") != "file" or payload.get("kind") != kind
+            or str(payload.get("sub")) != str(record_id)):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="Tautan kedaluwarsa. Muat ulang halaman & coba lagi.")
+    spec = FILE_KINDS.get(kind)
+    if not spec:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Jenis file tak dikenal")
+    Model, key_col, type_col, name_col = spec
     tenant_id = payload.get("tenant_id")
-    meta = (await db.execute(
-        select(Document.file_size, Document.file_type, Document.file_name, Document.file_key).where(
-            Document.id == doc_id, Document.tenant_id == tenant_id, Document.is_deleted == False)  # noqa: E712
+    conds = [Model.id == record_id, Model.tenant_id == tenant_id]
+    if hasattr(Model, "is_deleted"):
+        conds.append(Model.is_deleted == False)  # noqa: E712
+    row = (await db.execute(
+        select(getattr(Model, key_col), getattr(Model, type_col), getattr(Model, name_col)).where(*conds)
     )).first()
-    if meta is None or meta[2] is None:
+    if row is None or row[2] is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="File tidak ditemukan")
-    size, ctype, fname, fkey = meta
+    fkey, ctype, fname = row
+    media = ctype or "application/octet-stream"
     headers = {
         "Content-Disposition": f'inline; filename="{fname or "file"}"',
         "Cache-Control": "private, max-age=3600",
     }
-    if size:
-        headers["Content-Length"] = str(size)
-    media = ctype or "application/octet-stream"
     if fkey:
         return StreamingResponse(storage.get_stream(fkey), media_type=media, headers=headers)
-    data = (await db.execute(  # fallback dokumen lama (blob di Postgres)
-        select(Document.file_data).where(Document.id == doc_id, Document.tenant_id == tenant_id)
-    )).scalar_one_or_none()
-    if data is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="File tidak ditemukan")
-    return Response(content=data, media_type=media, headers=headers)
+    # fallback file lama (blob di Postgres) — kolom *_data sepadan kolom *_key
+    data_col = key_col.replace("_key", "_data")
+    if hasattr(Model, data_col):
+        data = (await db.execute(select(getattr(Model, data_col)).where(*conds))).scalar_one_or_none()
+        if data is not None:
+            return Response(content=data, media_type=media, headers=headers)
+    raise HTTPException(status.HTTP_404_NOT_FOUND, detail="File tidak ditemukan")
 
 
 @router.get("/tenant/{slug}")

@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.audit import record_audit
+from app.core.security import create_file_token
 from app.core.cashbook import sync_notary_fee_cashbook
 from app.api.deps import get_current_context, AuthContext
 from app.models.tax import (
@@ -322,6 +323,32 @@ async def download_tax_validation_file(
     if data is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="File tidak ditemukan")
     return cached_file_response(data, ctype, fname, etag)
+
+
+_TAX_FILE_VARIANT = {
+    "file": ("tax", TaxRecord.file_name),
+    "billing": ("tax_billing", TaxRecord.id_billing_file_name),
+    "validation": ("tax_validation", TaxRecord.validation_file_name),
+}
+
+
+@router.get("/tax-records/{tax_id}/view-url")
+async def get_tax_file_view_url(
+    tax_id: uuid.UUID,
+    variant: str = Query("file"),
+    ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db),
+):
+    """URL sekali-pakai utk buka file pajak native/progresif. variant: file | billing | validation."""
+    spec = _TAX_FILE_VARIANT.get(variant)
+    if not spec:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Varian file tak dikenal")
+    kind, name_col = spec
+    exists = await db.scalar(select(func.count()).select_from(TaxRecord).where(
+        TaxRecord.id == tax_id, TaxRecord.tenant_id == ctx.tenant_id, NOTDEL(TaxRecord), name_col.isnot(None)))
+    if not exists:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="File tidak ditemukan")
+    token = create_file_token(kind, tax_id, ctx.tenant_id)
+    return {"url": f"/api/v1/public/files/{kind}/{tax_id}/view?t={token}"}
 
 
 # ═══════════════════════ NOTARY FEES ═══════════════════════

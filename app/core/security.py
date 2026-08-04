@@ -43,11 +43,11 @@ def create_refresh_token(data: dict) -> str:
     return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
 
-def create_file_token(doc_id, tenant_id, seconds: int = 120) -> str:
+def create_file_token(kind: str, record_id, tenant_id, seconds: int = 120) -> str:
     """Token sekali-pakai berumur pendek utk buka file inline via URL (tanpa header Authorization).
-    Dipakai agar browser bisa membuka file langsung (native, progresif) di tab baru."""
+    Terikat jenis (kind) + id record + tenant. Agar browser buka file native/progresif di tab baru."""
     expire = datetime.utcnow() + timedelta(seconds=seconds)
-    to_encode = {"sub": str(doc_id), "tenant_id": str(tenant_id), "type": "file", "exp": expire}
+    to_encode = {"sub": str(record_id), "kind": kind, "tenant_id": str(tenant_id), "type": "file", "exp": expire}
     return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
 

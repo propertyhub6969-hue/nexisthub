@@ -14,6 +14,7 @@ from app.core.unit_status import unit_status_for_client, set_unit_status
 from app.core.cashbook import sync_payment_cashbook
 from app.core import storage
 from app.core.files import file_etag, not_modified_response, cached_file_response
+from app.core.security import create_file_token
 from app.api.deps import get_current_context, AuthContext
 from app.models.kpr import Bank, KprApplication, KprStage, BankShareLink, KprBankSubmission, BankSubmissionStatus
 from app.models.marketing import Client, ClientStatus
@@ -215,6 +216,19 @@ async def download_sp3k_file(kpr_id: uuid.UUID, request: Request, ctx: AuthConte
     if data is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="File tidak ditemukan")
     return cached_file_response(data, ctype, fname, etag)
+
+
+@router.get("/applications/{kpr_id}/sp3k-view-url")
+async def get_sp3k_view_url(kpr_id: uuid.UUID, ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db)):
+    """URL sekali-pakai utk buka lampiran SP3K KPR native/progresif di tab baru."""
+    name = (await db.execute(
+        select(KprApplication.sp3k_file_name).where(
+            KprApplication.id == kpr_id, KprApplication.tenant_id == ctx.tenant_id, NOTDEL(KprApplication))
+    )).scalar_one_or_none()
+    if name is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="File tidak ditemukan")
+    token = create_file_token("kpr_sp3k", kpr_id, ctx.tenant_id)
+    return {"url": f"/api/v1/public/files/kpr_sp3k/{kpr_id}/view?t={token}"}
 
 
 @router.delete("/applications/{kpr_id}", status_code=status.HTTP_204_NO_CONTENT)
