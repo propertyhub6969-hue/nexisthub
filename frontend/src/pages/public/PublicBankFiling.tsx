@@ -10,6 +10,7 @@ const STAGES: { key: KprStage; label: string }[] = [
   { key: 'collect_berkas', label: 'Collect Berkas' },
   { key: 'berkas_masuk_bank', label: 'Berkas Masuk Bank' },
   { key: 'sp3k', label: 'SP3K' },
+  { key: 'persiapan_akad', label: 'Persiapan Akad' },
   { key: 'akad_kredit', label: 'Akad Kredit' },
   { key: 'pencairan', label: 'Pencairan' },
 ]

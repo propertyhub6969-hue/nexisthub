@@ -33,7 +33,7 @@ _EXPENSE_LABEL = {
 router = APIRouter()
 
 # Tahap yang menandakan pengajuan sudah DISETUJUI bank (SP3K = surat persetujuan kredit ke atas).
-APPROVED_STAGES = (KprStage.SP3K, KprStage.AKAD_KREDIT, KprStage.PENCAIRAN)
+APPROVED_STAGES = (KprStage.SP3K, KprStage.PERSIAPAN_AKAD, KprStage.AKAD_KREDIT, KprStage.PENCAIRAN)
 
 
 class DashboardStats(BaseModel):

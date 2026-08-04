@@ -16,6 +16,7 @@ const STAGES: { key: KprStage; label: string }[] = [
   { key: 'collect_berkas', label: 'Collect Berkas' },
   { key: 'berkas_masuk_bank', label: 'Berkas Masuk Bank' },
   { key: 'sp3k', label: 'SP3K' },
+  { key: 'persiapan_akad', label: 'Persiapan Akad' },
   { key: 'akad_kredit', label: 'Akad Kredit' },
   { key: 'pencairan', label: 'Pencairan' },
 ]
@@ -168,10 +169,10 @@ export default function ClientKpr() {
       )}
 
       {/* Pengingat saat tahap SP3K — tindak lanjut sebelum akad */}
-      {kpr && !kpr.is_rejected && kpr.stage === 'sp3k' && (
+      {kpr && !kpr.is_rejected && (kpr.stage === 'sp3k' || kpr.stage === 'persiapan_akad') && (
         <div className="card p-4 bg-amber-50/50 border-amber-200">
           <p className="text-sm font-semibold text-amber-700 flex items-center gap-2">
-            <BellRing size={15} /> SP3K sudah terbit — segera tindak lanjut sebelum akad
+            <BellRing size={15} /> {kpr.stage === 'sp3k' ? 'SP3K sudah terbit' : 'Persiapan akad'} — segera tindak lanjut (pajak & dokumen) sebelum akad
           </p>
           <div className="mt-2 flex flex-wrap gap-2">
             <Link to={`/marketing/clients/${clientId}/tax`} className="inline-flex items-center gap-1.5 text-xs font-medium text-amber-700 bg-white border border-amber-200 rounded-lg px-3 py-1.5 hover:bg-amber-100 transition">

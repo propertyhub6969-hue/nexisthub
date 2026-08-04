@@ -11,8 +11,9 @@ class KprStage(str, enum.Enum):
     COLLECT_BERKAS = "collect_berkas"        # 1. Collect Berkas
     BERKAS_MASUK_BANK = "berkas_masuk_bank"  # 2. Berkas Masuk Bank
     SP3K = "sp3k"                            # 3. SP3K
-    AKAD_KREDIT = "akad_kredit"              # 4. Akad Kredit
-    PENCAIRAN = "pencairan"                  # 5. Pencairan
+    PERSIAPAN_AKAD = "persiapan_akad"        # 4. Persiapan Akad (perlakuan spt SP3K: disetujui + notif pajak)
+    AKAD_KREDIT = "akad_kredit"              # 5. Akad Kredit
+    PENCAIRAN = "pencairan"                  # 6. Pencairan
 
 
 class Bank(BaseModel, SoftDeleteMixin):

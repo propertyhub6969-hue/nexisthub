@@ -798,7 +798,7 @@ export interface DocumentBulkCreate {
 }
 
 // ── KPR ───────────────────────────────────────────────────────────
-export type KprStage = 'collect_berkas' | 'berkas_masuk_bank' | 'sp3k' | 'akad_kredit' | 'pencairan'
+export type KprStage = 'collect_berkas' | 'berkas_masuk_bank' | 'sp3k' | 'persiapan_akad' | 'akad_kredit' | 'pencairan'
 
 // ── Laporan: rejection-rate KPR per bank ──────────────────────────
 export interface KprRejectionBank {

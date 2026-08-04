@@ -9,6 +9,7 @@ const stageLabel: Record<KprStage, string> = {
   collect_berkas: 'Collect Berkas',
   berkas_masuk_bank: 'Berkas Masuk Bank',
   sp3k: 'SP3K',
+  persiapan_akad: 'Persiapan Akad',
   akad_kredit: 'Akad Kredit',
   pencairan: 'Pencairan',
 }

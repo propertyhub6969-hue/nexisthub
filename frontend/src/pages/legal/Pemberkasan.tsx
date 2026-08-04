@@ -10,6 +10,7 @@ const KPR_STAGES: { key: KprStage; label: string; variant: 'gray' | 'yellow' | '
   { key: 'collect_berkas', label: 'Collect Berkas', variant: 'gray' },
   { key: 'berkas_masuk_bank', label: 'Berkas di Bank', variant: 'yellow' },
   { key: 'sp3k', label: 'SP3K', variant: 'blue' },
+  { key: 'persiapan_akad', label: 'Persiapan Akad', variant: 'blue' },
   { key: 'akad_kredit', label: 'Akad Kredit', variant: 'orange' },
   { key: 'pencairan', label: 'Pencairan', variant: 'green' },
 ]

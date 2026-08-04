@@ -36,6 +36,7 @@ const KPR_STAGE_CFG: Record<string, { label: string; variant: 'gray' | 'yellow' 
   collect_berkas: { label: 'Collect Berkas', variant: 'gray' },
   berkas_masuk_bank: { label: 'Berkas di Bank', variant: 'yellow' },
   sp3k: { label: 'SP3K', variant: 'blue' },
+  persiapan_akad: { label: 'Persiapan Akad', variant: 'blue' },
   akad_kredit: { label: 'Akad Kredit', variant: 'orange' },
   pencairan: { label: 'Pencairan', variant: 'green' },
 }
