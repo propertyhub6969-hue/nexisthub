@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { Loader2, Check, X, Inbox, Phone, Home } from 'lucide-react'
+import { Link, useNavigate } from 'react-router-dom'
+import { Loader2, Check, X, Inbox, Phone, Home, UserPlus, Users } from 'lucide-react'
 import Modal from '../../components/ui/Modal'
 import { propertyService } from '../../services/property'
 import type { BookingRequest, BookingRequestStatus } from '../../types'
@@ -18,6 +19,18 @@ const STATUS_CLS: Record<BookingRequestStatus, string> = {
 const fmtDate = (d?: string) => d ? new Date(d).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'
 
 export default function BookingRequests() {
+  const navigate = useNavigate()
+  // Lanjutkan jadi Pembeli — form dibuka dgn data calon & unit SUDAH terisi (tanpa ketik ulang)
+  function toClient(b: BookingRequest) {
+    const p = new URLSearchParams({ new: '1' })
+    if (b.prospect_name) p.set('name', b.prospect_name)
+    if (b.prospect_phone) p.set('phone', b.prospect_phone)
+    if (b.project_id) p.set('project', b.project_id)
+    if (b.unit_id) p.set('unit', b.unit_id)
+    if (b.unit_price != null) p.set('price', String(b.unit_price))
+    navigate(`/marketing/clients?${p.toString()}`)
+  }
+
   const [tab, setTab] = useState<BookingRequestStatus | 'all'>('pending')
   const [items, setItems] = useState<BookingRequest[]>([])
   const [loading, setLoading] = useState(true)
@@ -126,6 +139,20 @@ export default function BookingRequests() {
                     {b.reviewer_name && <p className="text-[11px] text-slate-400 mt-0.5">{b.reviewer_name}</p>}
                   </td>
                   <td className="px-4 py-3 text-right whitespace-nowrap">
+                    {b.status === 'accepted' && (
+                      <div className="flex items-center justify-end gap-2">
+                        {b.prospect_id && (
+                          <Link to="/marketing/prospects" title="Prospek otomatis dibuat dari booking ini"
+                            className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-brand-600">
+                            <Users size={12} /> Prospek
+                          </Link>
+                        )}
+                        <button onClick={() => toClient(b)}
+                          className="inline-flex items-center gap-1 text-xs font-medium rounded-lg bg-brand-600 text-white px-2.5 py-1.5 hover:bg-brand-700">
+                          <UserPlus size={12} /> Jadikan Pembeli
+                        </button>
+                      </div>
+                    )}
                     {b.status === 'pending' && (
                       <div className="flex items-center justify-end gap-2">
                         <button onClick={() => accept(b)} disabled={busyId === b.id}

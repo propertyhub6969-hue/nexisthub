@@ -1829,7 +1829,10 @@ export interface BookingRequest {
   id: string
   unit_id: string
   unit_label?: string
+  project_id?: string
   project_name?: string
+  unit_price?: number
+  prospect_id?: string
   unit_status?: string
   agent_name: string
   agent_phone?: string

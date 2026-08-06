@@ -164,6 +164,10 @@ class UnitBookingRequest(BaseModel):
     status: Mapped[BookingRequestStatus] = mapped_column(
         SAEnum(BookingRequestStatus), default=BookingRequestStatus.PENDING, nullable=False, index=True
     )
+    # Prospek yang dibuat otomatis saat permintaan DITERIMA (biar calon tak tercecer & bisa di-follow-up)
+    prospect_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("prospects.id", ondelete="SET NULL"), nullable=True
+    )
     reviewed_by: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )

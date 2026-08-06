@@ -18,7 +18,7 @@ from app.api.deps import get_current_context, AuthContext, require_role
 from app.models.property import (
     Project, Unit, UnitStatus, SiteplanShareLink, UnitBookingRequest, BookingRequestStatus,
 )
-from app.models.marketing import Client, ClientStatus
+from app.models.marketing import Client, ClientStatus, Prospect, ProspectStatus
 from app.models.user import User, UserRole
 from app.schemas.marketing import Paginated
 from app.schemas.property import (
@@ -533,6 +533,7 @@ async def _booking_rows(db, tenant_id, conds) -> list[BookingRequestResponse]:
     return [
         BookingRequestResponse(
             id=b.id, unit_id=b.unit_id, unit_label=_unit_label(u), project_name=pname,
+            project_id=u.project_id, prospect_id=b.prospect_id, unit_price=u.price,
             unit_status=u.status.value, agent_name=b.agent_name, agent_phone=b.agent_phone,
             prospect_name=b.prospect_name, prospect_phone=b.prospect_phone, notes=b.notes,
             status=b.status.value, link_label=llabel, reviewer_name=rname,
@@ -594,9 +595,32 @@ async def accept_booking_request(
     b.status = BookingRequestStatus.ACCEPTED
     b.reviewed_by = ctx.user_id
     b.reviewed_at = datetime.now(timezone.utc)
+
+    # Calon pembeli otomatis masuk corong CRM sbg PROSPEK — supaya tak tercecer & bisa di-follow-up.
+    # (Belum jadi Pembeli: harga/tanggal kontrak/cara beli belum ada — staf lanjutkan lewat "Jadikan Pembeli".)
+    if b.prospect_id is None and (b.prospect_name or b.prospect_phone):
+        catatan = [f"Dari booking agen {b.agent_name}" + (f" ({b.agent_phone})" if b.agent_phone else "")]
+        catatan.append(f"Unit diminati: {_unit_label(unit)}")
+        if b.notes:
+            catatan.append(f"Catatan agen: {b.notes}")
+        pros = Prospect(
+            tenant_id=ctx.tenant_id,
+            full_name=(b.prospect_name or f"(via agen {b.agent_name})"),
+            phone=b.prospect_phone,
+            interested_project_id=unit.project_id,
+            unit_type=unit.unit_type,
+            budget=unit.price,
+            status=ProspectStatus.ACTIVE,
+            notes=" · ".join(catatan),
+        )
+        db.add(pros)
+        await db.flush()
+        b.prospect_id = pros.id
+
     await db.flush()
     await record_audit(db, ctx.tenant_id, ctx.user_id, "ACCEPT", "unit_booking_requests", bid,
-                       new_data={"unit": _unit_label(unit), "agent": b.agent_name})
+                       new_data={"unit": _unit_label(unit), "agent": b.agent_name,
+                                 "prospect_id": str(b.prospect_id) if b.prospect_id else None})
     rows = await _booking_rows(db, ctx.tenant_id, [UnitBookingRequest.id == bid])
     return rows[0]
 

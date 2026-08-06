@@ -161,7 +161,10 @@ class BookingRequestResponse(BaseModel):
     id: uuid.UUID
     unit_id: uuid.UUID
     unit_label: Optional[str] = None
+    project_id: Optional[uuid.UUID] = None    # utk prefill form Pembeli
     project_name: Optional[str] = None
+    unit_price: Optional[Decimal] = None      # harga unit → prefill nilai kontrak
+    prospect_id: Optional[uuid.UUID] = None   # prospek yg dibuat otomatis saat diterima
     unit_status: Optional[str] = None      # status unit SAAT INI (bisa sudah berubah sejak diajukan)
     agent_name: str
     agent_phone: Optional[str] = None

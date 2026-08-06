@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { today } from '../../utils/date'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { Plus, Search, Trash2, Pencil, Loader2, Wallet, Scale, Landmark, Columns3, MoreVertical } from 'lucide-react'
 import Badge from '../../components/ui/Badge'
 import DateInput from '../../components/ui/DateInput'
@@ -162,6 +162,28 @@ export default function Clients() {
   }, [search, projectFilter, unitFilter, page, load])
 
   function openCreate() { setEditingId(null); setForm(emptyForm); setFormMarketingName(me?.full_name ?? '—'); setUnitFormQuery(''); setModalOpen(true) }
+
+  // ── Prefill dari "Jadikan Pembeli" (Permintaan Booking) ──
+  // Buka form Pembeli dgn data calon & unit sudah terisi, supaya staf tak mengetik ulang.
+  const [sp, setSp] = useSearchParams()
+  useEffect(() => {
+    if (sp.get('new') !== '1') return
+    const pid = sp.get('project') ?? ''
+    const priceRaw = sp.get('price')
+    setEditingId(null)
+    setForm({
+      ...emptyForm,
+      full_name: sp.get('name') ?? '',
+      phone: sp.get('phone') ?? '',
+      project_id: pid,
+      unit_id: sp.get('unit') ?? '',
+      contract_value: priceRaw ? Number(priceRaw) : undefined,
+    })
+    setFormMarketingName(me?.full_name ?? '—')
+    setUnitFormQuery('')
+    setModalOpen(true)
+    setSp({}, { replace: true })   // bersihkan URL supaya refresh tak membuka form lagi
+  }, [sp, me, setSp])
   function openEdit(c: Client) {
     setEditingId(c.id)
     setForm({
