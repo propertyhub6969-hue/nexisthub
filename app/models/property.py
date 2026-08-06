@@ -1,6 +1,7 @@
 import uuid
 import enum
-from sqlalchemy import String, Text, ForeignKey, Enum as SAEnum, Numeric, Integer, LargeBinary, Date, JSON
+from datetime import datetime, timezone
+from sqlalchemy import String, Text, ForeignKey, Enum as SAEnum, Numeric, Integer, LargeBinary, Date, JSON, Boolean, DateTime
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID
 from app.models.base import BaseModel
@@ -99,3 +100,75 @@ class Unit(BaseModel):
 
     def __repr__(self) -> str:
         return f"<Unit {self.unit_number} [{self.status}]>"
+
+
+class SiteplanShareLink(BaseModel):
+    """Tautan bertoken (tanpa login) utk 1 PROYEK — agen/mitra lihat siteplan & status unit
+    terkini, lalu bisa MENGAJUKAN booking (menunggu persetujuan developer).
+    Pola sama BankShareLink/NotaryShareLink. Sengaja TAK menampilkan data pembeli."""
+    __tablename__ = "siteplan_share_links"
+
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    token: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    project_name_snapshot: Mapped[str] = mapped_column(String(200), nullable=True)
+    label: Mapped[str] = mapped_column(String(120), nullable=True)   # utk siapa (mis. "Agen Budi") — memudahkan cabut
+    show_price: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_by: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revoked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_accessed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
+    access_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+    @property
+    def is_active(self) -> bool:
+        return self.revoked_at is None and self.expires_at > datetime.now(timezone.utc)
+
+    def __repr__(self) -> str:
+        return f"<SiteplanShareLink {self.project_name_snapshot} [{self.token[:8]}...]>"
+
+
+class BookingRequestStatus(str, enum.Enum):
+    PENDING = "pending"      # menunggu ditinjau developer
+    ACCEPTED = "accepted"    # diterima → unit ditandai Booking/DP
+    REJECTED = "rejected"
+
+
+class UnitBookingRequest(BaseModel):
+    """Permintaan booking unit dari agen lewat tautan siteplan — TIDAK langsung mengubah
+    status unit. Developer terima/tolak dulu (pola 'kiriman menunggu persetujuan')."""
+    __tablename__ = "unit_booking_requests"
+
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    share_link_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("siteplan_share_links.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    unit_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("units.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    # Data dari agen (pihak luar, tanpa akun)
+    agent_name: Mapped[str] = mapped_column(String(150), nullable=False)
+    agent_phone: Mapped[str] = mapped_column(String(30), nullable=True)
+    prospect_name: Mapped[str] = mapped_column(String(150), nullable=True)   # calon pembeli
+    prospect_phone: Mapped[str] = mapped_column(String(30), nullable=True)
+    notes: Mapped[str] = mapped_column(Text, nullable=True)
+
+    status: Mapped[BookingRequestStatus] = mapped_column(
+        SAEnum(BookingRequestStatus), default=BookingRequestStatus.PENDING, nullable=False, index=True
+    )
+    reviewed_by: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    reviewed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
+    review_notes: Mapped[str] = mapped_column(Text, nullable=True)
+
+    def __repr__(self) -> str:
+        return f"<UnitBookingRequest {self.agent_name} unit={self.unit_id} [{self.status}]>"

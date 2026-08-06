@@ -22,6 +22,7 @@ import ProjectUnits from './pages/property/ProjectUnits'
 import Siteplan from './pages/property/Siteplan'
 import LegalDocuments from './pages/property/LegalDocuments'
 import LegalSplitting from './pages/property/LegalSplitting'
+import BookingRequests from './pages/property/BookingRequests'
 import Procurement from './pages/procurement/Procurement'
 import Construction from './pages/construction/Construction'
 import Team from './pages/settings/Team'
@@ -34,6 +35,7 @@ import Platform from './pages/platform/Platform'
 import PublicMonthlyTax from './pages/public/PublicMonthlyTax'
 import PublicBankFiling from './pages/public/PublicBankFiling'
 import PublicNotaryFiling from './pages/public/PublicNotaryFiling'
+import PublicSiteplan from './pages/public/PublicSiteplan'
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   return authService.isAuthenticated() ? <>{children}</> : <Navigate to="/login" replace />
@@ -53,6 +55,7 @@ export default function App() {
         <Route path="/public/pajak/:token" element={<PublicMonthlyTax />} />
         <Route path="/public/bank/:token" element={<PublicBankFiling />} />
         <Route path="/public/notary/:token" element={<PublicNotaryFiling />} />
+        <Route path="/public/siteplan/:token" element={<PublicSiteplan />} />
 
         {/* Protected */}
         <Route
@@ -74,6 +77,7 @@ export default function App() {
           <Route path="/marketing/notary-monitor" element={<NotaryMonitor />} />
           <Route path="/property/projects"                 element={<Projects />} />
           <Route path="/property/legal-docs"               element={<LegalDocuments />} />
+          <Route path="/property/booking-requests"         element={<BookingRequests />} />
           <Route path="/property/projects/:projectId/units" element={<ProjectUnits />} />
           <Route path="/property/projects/:projectId/siteplan" element={<Siteplan />} />
           <Route path="/property/projects/:projectId/legal-splitting" element={<LegalSplitting />} />

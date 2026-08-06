@@ -22,13 +22,14 @@ from app.models.tax import (
 )
 from app.models.kpr import Bank, KprApplication, KprStage, BankShareLink, KprBankSubmission
 from app.models.marketing import Client
-from app.models.property import Unit, Project
+from app.models.property import Unit, Project, UnitStatus, SiteplanShareLink, UnitBookingRequest, BookingRequestStatus
 from app.models.document import Document, DocStatus, DocumentHandover, HandoverEvent, CertificateSplitBatch
 from app.models.payment import Payment
 from app.schemas.kpr import PublicBankPageResponse, PublicBankRow
 from app.schemas.tax import (
     PublicNotaryPageResponse, PublicNotaryClientRow, PublicNotaryTaxRow, PublicNotaryFeeRow, PublicNotaryDocumentRow,
 )
+from app.schemas.property import PublicSiteplanResponse, PublicSiteplanUnit
 from app.api.v1.endpoints.reporting import _build_monthly_tax_report, MonthlyTaxReport
 
 router = APIRouter()
@@ -511,3 +512,115 @@ async def public_notary_submit(
         link="/marketing/notary-submissions",
     )
     return {"status": "submitted", "id": str(sub.id)}
+
+
+# ═══════════════════════ SITEPLAN via TAUTAN AGEN (tanpa login) ═══════════════════════
+async def _siteplan_link(db, token: str) -> SiteplanShareLink:
+    link = (await db.execute(select(SiteplanShareLink).where(SiteplanShareLink.token == token))).scalar_one_or_none()
+    if link is None or not link.is_active:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Tautan tidak ditemukan, sudah dicabut, atau kedaluwarsa")
+    return link
+
+
+@router.get("/siteplan/{token}", response_model=PublicSiteplanResponse)
+async def public_siteplan(token: str, db: AsyncSession = Depends(get_db)):
+    """Siteplan + status unit TERKINI utk agen/mitra. Cakupan sempit: hanya proyek tautan ini,
+    dan TIDAK memuat data pembeli (nama/kontrak) — hanya info unit yang memang dipromosikan."""
+    link = await _siteplan_link(db, token)
+    project = (await db.execute(select(Project).where(Project.id == link.project_id))).scalar_one_or_none()
+    if project is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Proyek tidak ditemukan")
+    units = (await db.execute(
+        select(Unit).where(Unit.project_id == link.project_id, Unit.tenant_id == link.tenant_id)
+        .order_by(Unit.block, Unit.unit_number)
+    )).scalars().all()
+    link.last_accessed_at = datetime.now(timezone.utc)
+    link.access_count += 1
+    await db.flush()
+    loc = ", ".join(x for x in [project.city, project.province] if x) or None
+    return PublicSiteplanResponse(
+        project_name=project.name, location=loc, has_siteplan=project.has_siteplan,
+        show_price=link.show_price,
+        units=[
+            PublicSiteplanUnit(
+                id=u.id, label="-".join(x for x in [u.block, u.unit_number] if x) or "?",
+                unit_type=u.unit_type, land_area=u.land_area, building_area=u.building_area,
+                price=(u.price if link.show_price else None),
+                status=u.status.value, position_x=u.position_x, position_y=u.position_y,
+            ) for u in units
+        ],
+    )
+
+
+@router.get("/siteplan/{token}/image")
+async def public_siteplan_image(token: str, request: Request, db: AsyncSession = Depends(get_db)):
+    """Gambar siteplan proyek utk tautan agen (ETag → kunjungan berikutnya 304/cepat)."""
+    link = await _siteplan_link(db, token)
+    meta = (await db.execute(
+        select(Project.siteplan_size, Project.siteplan_type, Project.updated_at, Project.siteplan_key)
+        .where(Project.id == link.project_id)
+    )).first()
+    if meta is None or meta[0] is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Siteplan belum diunggah")
+    size, ctype, updated, fkey = meta
+    etag = file_etag(size, updated)
+    nm = not_modified_response(request, etag)
+    if nm is not None:
+        return nm
+    if fkey:
+        data = await storage.get(fkey)
+    else:
+        data = (await db.execute(
+            select(Project.siteplan_data).where(Project.id == link.project_id))).scalar_one_or_none()
+    if data is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Siteplan belum diunggah")
+    return cached_file_response(data, ctype, "siteplan", etag)
+
+
+@router.post("/siteplan/{token}/booking", status_code=status.HTTP_201_CREATED)
+async def public_siteplan_booking(
+    token: str,
+    unit_id: uuid.UUID = Form(...),
+    agent_name: str = Form(...),
+    agent_phone: str = Form(None),
+    prospect_name: str = Form(None),
+    prospect_phone: str = Form(None),
+    notes: str = Form(None),
+    db: AsyncSession = Depends(get_db),
+):
+    """Agen ajukan booking unit — TIDAK langsung mengubah status unit.
+    Developer terima/tolak lewat menu Permintaan Booking."""
+    link = await _siteplan_link(db, token)
+    unit = (await db.execute(select(Unit).where(
+        Unit.id == unit_id, Unit.project_id == link.project_id, Unit.tenant_id == link.tenant_id))).scalar_one_or_none()
+    if unit is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Unit tidak ditemukan di proyek ini")
+    if unit.status != UnitStatus.AVAILABLE:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Unit ini sudah tidak tersedia")
+    if not agent_name.strip():
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Nama agen wajib diisi")
+    # Cegah antrean ganda utk unit yang sama
+    dup = await db.scalar(select(func.count()).select_from(UnitBookingRequest).where(
+        UnitBookingRequest.unit_id == unit_id, UnitBookingRequest.status == BookingRequestStatus.PENDING))
+    if dup:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Unit ini sedang menunggu persetujuan booking lain")
+
+    b = UnitBookingRequest(
+        tenant_id=link.tenant_id, share_link_id=link.id, unit_id=unit_id,
+        agent_name=agent_name.strip(), agent_phone=(agent_phone or None),
+        prospect_name=(prospect_name or None), prospect_phone=(prospect_phone or None),
+        notes=(notes or None),
+    )
+    db.add(b)
+    await db.flush()
+    link.last_accessed_at = datetime.now(timezone.utc)
+    await record_audit(db, link.tenant_id, None, "SUBMIT", "unit_booking_requests", b.id,
+                       new_data={"unit_id": str(unit_id), "agent": b.agent_name})
+    label = "-".join(x for x in [unit.block, unit.unit_number] if x) or "?"
+    await notify_roles(
+        db, link.tenant_id, SUBMISSION_WATCHERS, NotificationKind.INFO,
+        title="Permintaan booking unit dari agen",
+        body=f"{b.agent_name} — unit {label}" + (f" · calon: {b.prospect_name}" if b.prospect_name else ""),
+        link="/property/booking-requests",
+    )
+    return {"status": "submitted", "id": str(b.id)}

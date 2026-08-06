@@ -3,6 +3,7 @@ import type {
   Project, ProjectCreate,
   Unit, UnitCreate, UnitBulkGenerate, UnitBulkResult,
   PaginatedResponse,
+  SiteplanShareLink, SiteplanShareLinkCreate, BookingRequest, PublicSiteplanPage,
 } from '../types'
 
 interface ListParams {
@@ -95,5 +96,50 @@ export const propertyService = {
   ): Promise<Unit[]> {
     const { data } = await api.put<Unit[]>(`/property/projects/${projectId}/unit-positions`, positions)
     return data
+  },
+
+  // ── Tautan Siteplan (agen) ──
+  async listSiteplanShareLinks(projectId?: string): Promise<SiteplanShareLink[]> {
+    const { data } = await api.get<SiteplanShareLink[]>('/property/siteplan-share', { params: { project_id: projectId } })
+    return data
+  },
+  async createSiteplanShareLink(payload: SiteplanShareLinkCreate): Promise<SiteplanShareLink> {
+    const { data } = await api.post<SiteplanShareLink>('/property/siteplan-share', payload)
+    return data
+  },
+  async revokeSiteplanShareLink(id: string): Promise<void> {
+    await api.delete(`/property/siteplan-share/${id}`)
+  },
+
+  // ── Permintaan booking dari agen ──
+  async listBookingRequests(status = 'pending'): Promise<BookingRequest[]> {
+    const { data } = await api.get<BookingRequest[]>('/property/booking-requests', { params: { status } })
+    return data
+  },
+  async bookingRequestsPendingCount(): Promise<number> {
+    const { data } = await api.get<{ count: number }>('/property/booking-requests/pending-count')
+    return data.count
+  },
+  async acceptBookingRequest(id: string): Promise<BookingRequest> {
+    const { data } = await api.post<BookingRequest>(`/property/booking-requests/${id}/accept`)
+    return data
+  },
+  async rejectBookingRequest(id: string, reason: string): Promise<BookingRequest> {
+    const { data } = await api.post<BookingRequest>(`/property/booking-requests/${id}/reject`, { reason })
+    return data
+  },
+
+  // ── Publik (tanpa login) — tautan siteplan agen ──
+  async publicSiteplan(token: string): Promise<PublicSiteplanPage> {
+    const { data } = await api.get<PublicSiteplanPage>(`/public/siteplan/${token}`)
+    return data
+  },
+  async publicSiteplanBooking(token: string, payload: {
+    unit_id: string; agent_name: string; agent_phone?: string
+    prospect_name?: string; prospect_phone?: string; notes?: string
+  }): Promise<void> {
+    const fd = new FormData()
+    Object.entries(payload).forEach(([k, v]) => { if (v) fd.append(k, v) })
+    await api.post(`/public/siteplan/${token}/booking`, fd, { headers: { 'Content-Type': 'multipart/form-data' } })
   },
 }

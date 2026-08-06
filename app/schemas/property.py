@@ -129,3 +129,73 @@ class UnitBulkResult(BaseModel):
 class BastRequest(BaseModel):
     bast_date: Optional[date] = None
     notes: Optional[str] = None
+
+
+# ── Tautan Siteplan (agen) & permintaan booking ──────────────────────
+class SiteplanShareLinkCreate(BaseModel):
+    project_id: uuid.UUID
+    label: Optional[str] = Field(None, max_length=120)   # utk siapa (mis. "Agen Budi")
+    show_price: bool = True
+    expires_days: int = 30
+
+
+class SiteplanShareLinkResponse(BaseModel):
+    id: uuid.UUID
+    token: str
+    project_id: uuid.UUID
+    project_name_snapshot: Optional[str] = None
+    label: Optional[str] = None
+    show_price: bool
+    expires_at: datetime
+    revoked_at: Optional[datetime] = None
+    last_accessed_at: Optional[datetime] = None
+    access_count: int
+    is_active: bool
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class BookingRequestResponse(BaseModel):
+    id: uuid.UUID
+    unit_id: uuid.UUID
+    unit_label: Optional[str] = None
+    project_name: Optional[str] = None
+    unit_status: Optional[str] = None      # status unit SAAT INI (bisa sudah berubah sejak diajukan)
+    agent_name: str
+    agent_phone: Optional[str] = None
+    prospect_name: Optional[str] = None
+    prospect_phone: Optional[str] = None
+    notes: Optional[str] = None
+    status: str
+    link_label: Optional[str] = None
+    reviewer_name: Optional[str] = None
+    reviewed_at: Optional[datetime] = None
+    review_notes: Optional[str] = None
+    created_at: datetime
+
+
+class BookingRejectRequest(BaseModel):
+    reason: str = Field(..., min_length=1)
+
+
+# ── Halaman publik siteplan (tautan bertoken) ────────────────────────
+class PublicSiteplanUnit(BaseModel):
+    id: uuid.UUID
+    label: str                       # "blok-nomor"
+    unit_type: Optional[str] = None
+    land_area: Optional[Decimal] = None
+    building_area: Optional[Decimal] = None
+    price: Optional[Decimal] = None  # None bila tautan disetel tanpa harga
+    status: str
+    position_x: Optional[Decimal] = None
+    position_y: Optional[Decimal] = None
+
+
+class PublicSiteplanResponse(BaseModel):
+    project_name: str
+    location: Optional[str] = None
+    has_siteplan: bool
+    show_price: bool
+    units: list[PublicSiteplanUnit]

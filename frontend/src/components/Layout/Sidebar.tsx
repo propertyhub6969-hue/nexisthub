@@ -32,6 +32,7 @@ import { canAccessPath, canAccessFeature, effectiveRoles, hasAnyRole } from '../
 import { kprService } from '../../services/kpr'
 import { taxService } from '../../services/tax'
 import { paymentService } from '../../services/payment'
+import { propertyService } from '../../services/property'
 import NexistLogo from '../ui/NexistLogo'
 
 interface NavChild {
@@ -73,6 +74,7 @@ const propertiItem: NavItem = {
   children: [
     { label: 'Proyek & Unit', to: '/property/projects', icon: Building2 },
     { label: 'Dokumen Legalitas', to: '/property/legal-docs', icon: FileCheck },
+    { label: 'Permintaan Booking', to: '/property/booking-requests', icon: Inbox },
   ],
 }
 
@@ -164,12 +166,14 @@ export default function Sidebar({ open = false, onClose }: { open?: boolean; onC
   const [bankPendingCount, setBankPendingCount] = useState(0)
   const [notaryPendingCount, setNotaryPendingCount] = useState(0)
   const [payPendingCount, setPayPendingCount] = useState(0)
+  const [bookingPendingCount, setBookingPendingCount] = useState(0)
   useEffect(() => {
     if (!user) return
     const refresh = () => {
       kprService.bankSubmissionsPendingCount().then(setBankPendingCount).catch(() => {})
       taxService.notarySubmissionsPendingCount().then(setNotaryPendingCount).catch(() => {})
       paymentService.pendingCount().then(setPayPendingCount).catch(() => {})
+      propertyService.bookingRequestsPendingCount().then(setBookingPendingCount).catch(() => {})
     }
     refresh()
     // segarkan berkala — finance tahu ada entry baru dari marketing tanpa perlu muat ulang
@@ -251,6 +255,9 @@ export default function Sidebar({ open = false, onClose }: { open?: boolean; onC
                   {child.label}
                   {child.to === '/marketing/bank-submissions' && bankPendingCount > 0 && (
                     <span className="ml-auto text-[10px] font-semibold bg-brass-500 text-white rounded-full px-1.5 py-0.5 leading-none">{bankPendingCount}</span>
+                  )}
+                  {child.to === '/property/booking-requests' && bookingPendingCount > 0 && (
+                    <span className="ml-auto text-[10px] font-semibold bg-brass-500 text-white rounded-full px-1.5 py-0.5 leading-none">{bookingPendingCount}</span>
                   )}
                   {child.to === '/payments/approval' && payPendingCount > 0 && (
                     <span className="ml-auto text-[10px] font-semibold bg-brass-500 text-white rounded-full px-1.5 py-0.5 leading-none">{payPendingCount}</span>

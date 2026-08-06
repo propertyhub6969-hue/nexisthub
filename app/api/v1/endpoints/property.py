@@ -1,5 +1,6 @@
 import uuid
 import math
+import secrets
 from decimal import Decimal
 from typing import Optional
 
@@ -8,13 +9,15 @@ from fastapi.responses import Response
 from sqlalchemy import select, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 
 from app.core.database import get_db
 from app.core.audit import record_audit
 from app.core import storage
 from app.api.deps import get_current_context, AuthContext, require_role
-from app.models.property import Project, Unit, UnitStatus
+from app.models.property import (
+    Project, Unit, UnitStatus, SiteplanShareLink, UnitBookingRequest, BookingRequestStatus,
+)
 from app.models.marketing import Client, ClientStatus
 from app.models.user import User, UserRole
 from app.schemas.marketing import Paginated
@@ -22,7 +25,11 @@ from app.schemas.property import (
     ProjectCreate, ProjectUpdate, ProjectResponse,
     UnitCreate, UnitUpdate, UnitResponse, UnitPosition, BastRequest,
     UnitBulkGenerate, UnitBulkResult,
+    SiteplanShareLinkCreate, SiteplanShareLinkResponse,
+    BookingRequestResponse, BookingRejectRequest,
 )
+from app.core.notify import notify_roles
+from app.models.notification import NotificationKind
 
 router = APIRouter()
 
@@ -455,3 +462,158 @@ async def delete_unit(
 ):
     unit = await _get_unit(db, ctx.tenant_id, unit_id)
     await db.delete(unit)
+
+
+# ═══════════════════════ TAUTAN SITEPLAN (agen, tanpa login) ═══════════════════════
+# Agen/mitra lihat siteplan & status unit terkini, lalu bisa MENGAJUKAN booking.
+# Sengaja TAK menampilkan data pembeli. Booking tak langsung mengubah status unit.
+
+def _unit_label(u: Unit) -> str:
+    return "-".join(x for x in [u.block, u.unit_number] if x) or "?"
+
+
+@router.get("/siteplan-share", response_model=list[SiteplanShareLinkResponse])
+async def list_siteplan_share_links(
+    project_id: uuid.UUID = Query(None),
+    ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db),
+):
+    """Daftar tautan siteplan tenant ini (termasuk kedaluwarsa/dicabut, utk histori)."""
+    conds = [SiteplanShareLink.tenant_id == ctx.tenant_id]
+    if project_id:
+        conds.append(SiteplanShareLink.project_id == project_id)
+    r = await db.execute(select(SiteplanShareLink).where(*conds).order_by(SiteplanShareLink.created_at.desc()))
+    return r.scalars().all()
+
+
+@router.post("/siteplan-share", response_model=SiteplanShareLinkResponse, status_code=status.HTTP_201_CREATED)
+async def create_siteplan_share_link(
+    payload: SiteplanShareLinkCreate,
+    ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db),
+):
+    """Buat tautan bertoken utk bagikan siteplan 1 proyek ke agen/mitra."""
+    project = (await db.execute(select(Project).where(
+        Project.id == payload.project_id, Project.tenant_id == ctx.tenant_id))).scalar_one_or_none()
+    if project is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Proyek tidak ditemukan")
+    days = max(1, min(365, payload.expires_days))
+    link = SiteplanShareLink(
+        tenant_id=ctx.tenant_id, token=secrets.token_urlsafe(32), project_id=project.id,
+        project_name_snapshot=project.name, label=(payload.label or None),
+        show_price=payload.show_price, created_by=ctx.user_id,
+        expires_at=datetime.now(timezone.utc) + timedelta(days=days),
+    )
+    db.add(link)
+    await db.flush(); await db.refresh(link)
+    return link
+
+
+@router.delete("/siteplan-share/{link_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def revoke_siteplan_share_link(
+    link_id: uuid.UUID, ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db),
+):
+    link = (await db.execute(select(SiteplanShareLink).where(
+        SiteplanShareLink.id == link_id, SiteplanShareLink.tenant_id == ctx.tenant_id))).scalar_one_or_none()
+    if link is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Tautan tidak ditemukan")
+    link.revoked_at = datetime.now(timezone.utc)
+    await db.flush()
+
+
+# ── Antrean permintaan booking dari agen ──
+async def _booking_rows(db, tenant_id, conds) -> list[BookingRequestResponse]:
+    rows = (await db.execute(
+        select(UnitBookingRequest, Unit, Project.name, SiteplanShareLink.label, User.full_name)
+        .join(Unit, Unit.id == UnitBookingRequest.unit_id)
+        .outerjoin(Project, Project.id == Unit.project_id)
+        .outerjoin(SiteplanShareLink, SiteplanShareLink.id == UnitBookingRequest.share_link_id)
+        .outerjoin(User, User.id == UnitBookingRequest.reviewed_by)
+        .where(*conds)
+        .order_by(UnitBookingRequest.created_at.desc())
+    )).all()
+    return [
+        BookingRequestResponse(
+            id=b.id, unit_id=b.unit_id, unit_label=_unit_label(u), project_name=pname,
+            unit_status=u.status.value, agent_name=b.agent_name, agent_phone=b.agent_phone,
+            prospect_name=b.prospect_name, prospect_phone=b.prospect_phone, notes=b.notes,
+            status=b.status.value, link_label=llabel, reviewer_name=rname,
+            reviewed_at=b.reviewed_at, review_notes=b.review_notes, created_at=b.created_at,
+        )
+        for b, u, pname, llabel, rname in rows
+    ]
+
+
+@router.get("/booking-requests", response_model=list[BookingRequestResponse])
+async def list_booking_requests(
+    status_filter: str = Query("pending", alias="status"),
+    ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db),
+):
+    """Permintaan booking dari agen — default hanya yang menunggu ditinjau."""
+    conds = [UnitBookingRequest.tenant_id == ctx.tenant_id]
+    if status_filter and status_filter != "all":
+        try:
+            conds.append(UnitBookingRequest.status == BookingRequestStatus(status_filter))
+        except ValueError:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Status tak dikenal")
+    return await _booking_rows(db, ctx.tenant_id, conds)
+
+
+@router.get("/booking-requests/pending-count")
+async def booking_requests_pending_count(
+    ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db),
+):
+    count = await db.scalar(select(func.count()).select_from(UnitBookingRequest).where(
+        UnitBookingRequest.tenant_id == ctx.tenant_id,
+        UnitBookingRequest.status == BookingRequestStatus.PENDING))
+    return {"count": count or 0}
+
+
+async def _get_booking(db, tenant_id, bid) -> UnitBookingRequest:
+    b = (await db.execute(select(UnitBookingRequest).where(
+        UnitBookingRequest.id == bid, UnitBookingRequest.tenant_id == tenant_id))).scalar_one_or_none()
+    if b is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Permintaan booking tidak ditemukan")
+    if b.status != BookingRequestStatus.PENDING:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Permintaan ini sudah diproses")
+    return b
+
+
+@router.post("/booking-requests/{bid}/accept", response_model=BookingRequestResponse)
+async def accept_booking_request(
+    bid: uuid.UUID, ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db),
+):
+    """Terima permintaan → unit ditandai Booking/DP. Pembeli tetap dibuat manual lewat menu Pembeli
+    (booking hanya menahan unit, belum ada kontrak)."""
+    b = await _get_booking(db, ctx.tenant_id, bid)
+    unit = (await db.execute(select(Unit).where(Unit.id == b.unit_id, Unit.tenant_id == ctx.tenant_id))).scalar_one_or_none()
+    if unit is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Unit tidak ditemukan")
+    if unit.status != UnitStatus.AVAILABLE:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                            detail=f"Unit {_unit_label(unit)} sudah tidak tersedia (status: {unit.status.value})")
+    unit.status = UnitStatus.BOOKED
+    b.status = BookingRequestStatus.ACCEPTED
+    b.reviewed_by = ctx.user_id
+    b.reviewed_at = datetime.now(timezone.utc)
+    await db.flush()
+    await record_audit(db, ctx.tenant_id, ctx.user_id, "ACCEPT", "unit_booking_requests", bid,
+                       new_data={"unit": _unit_label(unit), "agent": b.agent_name})
+    rows = await _booking_rows(db, ctx.tenant_id, [UnitBookingRequest.id == bid])
+    return rows[0]
+
+
+@router.post("/booking-requests/{bid}/reject", response_model=BookingRequestResponse)
+async def reject_booking_request(
+    bid: uuid.UUID, payload: BookingRejectRequest,
+    ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db),
+):
+    """Tolak permintaan — wajib alasan. Status unit tak berubah."""
+    b = await _get_booking(db, ctx.tenant_id, bid)
+    b.status = BookingRequestStatus.REJECTED
+    b.reviewed_by = ctx.user_id
+    b.reviewed_at = datetime.now(timezone.utc)
+    b.review_notes = payload.reason.strip()
+    await db.flush()
+    await record_audit(db, ctx.tenant_id, ctx.user_id, "REJECT", "unit_booking_requests", bid,
+                       reason=payload.reason.strip())
+    rows = await _booking_rows(db, ctx.tenant_id, [UnitBookingRequest.id == bid])
+    return rows[0]

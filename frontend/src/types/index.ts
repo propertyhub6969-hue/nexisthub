@@ -1802,3 +1802,62 @@ export interface AppNotification {
   actor_name?: string
   created_at: string
 }
+
+// ── Tautan Siteplan (agen) & permintaan booking ───────────────────
+export interface SiteplanShareLink {
+  id: string
+  token: string
+  project_id: string
+  project_name_snapshot?: string
+  label?: string
+  show_price: boolean
+  expires_at: string
+  revoked_at?: string
+  last_accessed_at?: string
+  access_count: number
+  is_active: boolean
+  created_at: string
+}
+export interface SiteplanShareLinkCreate {
+  project_id: string
+  label?: string
+  show_price: boolean
+  expires_days: number
+}
+export type BookingRequestStatus = 'pending' | 'accepted' | 'rejected'
+export interface BookingRequest {
+  id: string
+  unit_id: string
+  unit_label?: string
+  project_name?: string
+  unit_status?: string
+  agent_name: string
+  agent_phone?: string
+  prospect_name?: string
+  prospect_phone?: string
+  notes?: string
+  status: BookingRequestStatus
+  link_label?: string
+  reviewer_name?: string
+  reviewed_at?: string
+  review_notes?: string
+  created_at: string
+}
+export interface PublicSiteplanUnit {
+  id: string
+  label: string
+  unit_type?: string
+  land_area?: number
+  building_area?: number
+  price?: number
+  status: UnitStatus
+  position_x?: number
+  position_y?: number
+}
+export interface PublicSiteplanPage {
+  project_name: string
+  location?: string
+  has_siteplan: boolean
+  show_price: boolean
+  units: PublicSiteplanUnit[]
+}
