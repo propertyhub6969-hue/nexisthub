@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
-import { Loader2, AlertTriangle, MapPin, Send, Check, Home } from 'lucide-react'
+import { Loader2, AlertTriangle, MapPin, Send, Check, Home, Search, ZoomIn, ZoomOut, RotateCcw, X } from 'lucide-react'
 import { propertyService } from '../../services/property'
 import NexistLogo from '../../components/ui/NexistLogo'
 import Modal from '../../components/ui/Modal'
@@ -24,6 +24,43 @@ export default function PublicSiteplan() {
   const [error, setError] = useState('')
   const [picked, setPicked] = useState<PublicSiteplanUnit | null>(null)
   const [imgOk, setImgOk] = useState(true)
+
+  // ── Zoom & geser peta (pola sama halaman Siteplan internal) ──
+  const [zoom, setZoom] = useState(100)          // % lebar peta; 100 = pas lebar kartu
+  const zoomIn = () => setZoom((z) => Math.min(300, z + 25))
+  const zoomOut = () => setZoom((z) => Math.max(50, z - 25))
+  const scrollWrapRef = useRef<HTMLDivElement>(null)
+  const panRef = useRef<{ x: number; y: number; scrollLeft: number; scrollTop: number } | null>(null)
+  const [isPanning, setIsPanning] = useState(false)
+
+  function onPanMove(e: MouseEvent) {
+    const wrap = scrollWrapRef.current
+    const start = panRef.current
+    if (!wrap || !start) return
+    wrap.scrollLeft = start.scrollLeft - (e.clientX - start.x)
+    wrap.scrollTop = start.scrollTop - (e.clientY - start.y)
+  }
+  function onPanEnd() {
+    panRef.current = null
+    setIsPanning(false)
+    window.removeEventListener('mousemove', onPanMove)
+    window.removeEventListener('mouseup', onPanEnd)
+  }
+  function onMapMouseDown(e: React.MouseEvent) {
+    if (zoom <= 100) return                                   // pas kartu, tak perlu geser
+    if ((e.target as HTMLElement).closest('button')) return   // jangan ganggu klik marker
+    const wrap = scrollWrapRef.current
+    if (!wrap) return
+    panRef.current = { x: e.clientX, y: e.clientY, scrollLeft: wrap.scrollLeft, scrollTop: wrap.scrollTop }
+    setIsPanning(true)
+    window.addEventListener('mousemove', onPanMove)
+    window.addEventListener('mouseup', onPanEnd)
+  }
+
+  // ── Filter nomor unit (menyorot di peta & menyaring tabel) ──
+  const [q, setQ] = useState('')
+  const query = q.trim().toLowerCase()
+  const matches = (u: PublicSiteplanUnit) => !query || u.label.toLowerCase().includes(query)
 
   const load = () => {
     propertyService.publicSiteplan(token)
@@ -86,14 +123,59 @@ export default function PublicSiteplan() {
               </div>
             )}
 
+            {/* Cari unit + zoom */}
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="relative flex-1 min-w-[200px] max-w-sm">
+                <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  className="input pl-9 pr-8"
+                  placeholder="Cari no. unit… (mis. 045)"
+                  value={q}
+                  onChange={(e) => setQ(e.target.value)}
+                />
+                {q && (
+                  <button onClick={() => setQ('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600" title="Bersihkan">
+                    <X size={14} />
+                  </button>
+                )}
+              </div>
+              {page.has_siteplan && imgOk && (
+                <div className="flex items-center gap-1 card px-1.5 py-1">
+                  <button onClick={zoomOut} disabled={zoom <= 50} className="p-1.5 rounded-md hover:bg-slate-100 disabled:opacity-30 text-slate-600" title="Perkecil">
+                    <ZoomOut size={15} />
+                  </button>
+                  <span className="text-xs font-medium text-slate-500 w-11 text-center select-none">{zoom}%</span>
+                  <button onClick={zoomIn} disabled={zoom >= 300} className="p-1.5 rounded-md hover:bg-slate-100 disabled:opacity-30 text-slate-600" title="Perbesar">
+                    <ZoomIn size={15} />
+                  </button>
+                  {zoom !== 100 && (
+                    <button onClick={() => setZoom(100)} className="p-1.5 rounded-md hover:bg-slate-100 text-slate-600" title="Reset zoom">
+                      <RotateCcw size={14} />
+                    </button>
+                  )}
+                </div>
+              )}
+              {query && (
+                <span className="text-xs text-slate-500">
+                  {page.units.filter(matches).length} unit cocok
+                </span>
+              )}
+            </div>
+
             {/* Denah + penanda unit (kalau siteplan diunggah & unit punya posisi) */}
             {page.has_siteplan && imgOk && (
-              <div className="card p-3 overflow-x-auto">
-                <div className="relative inline-block min-w-full">
+              <div
+                ref={scrollWrapRef}
+                className="card p-3 overflow-auto"
+                style={{ maxHeight: '75vh', cursor: zoom > 100 ? (isPanning ? 'grabbing' : 'grab') : undefined }}
+                onMouseDown={onMapMouseDown}
+              >
+                <div className="relative inline-block" style={{ width: `${zoom}%`, minWidth: zoom <= 100 ? '100%' : undefined }}>
                   <img
                     src={`/api/v1/public/siteplan/${token}/image`}
                     alt={`Siteplan ${page.project_name}`}
-                    className="max-w-full h-auto rounded"
+                    className="w-full h-auto rounded select-none"
+                    draggable={false}
                     onError={() => setImgOk(false)}
                   />
                   {page.units.filter((u) => u.position_x != null && u.position_y != null).map((u) => (
@@ -102,7 +184,7 @@ export default function PublicSiteplan() {
                       onClick={() => u.status === 'available' && setPicked(u)}
                       title={`${u.label} — ${STATUS[u.status].label}`}
                       style={{ left: `${u.position_x}%`, top: `${u.position_y}%` }}
-                      className={`absolute -translate-x-1/2 -translate-y-1/2 text-[9px] font-semibold text-white px-1.5 py-0.5 rounded ${STATUS[u.status].pill} ${u.status === 'available' ? 'cursor-pointer hover:ring-2 ring-white' : 'cursor-default opacity-90'}`}
+                      className={`absolute -translate-x-1/2 -translate-y-1/2 text-[9px] font-semibold text-white px-1.5 py-0.5 rounded shadow ring-1 ring-black/10 transition-all ${STATUS[u.status].pill} ${u.status === 'available' ? 'cursor-pointer hover:scale-110' : 'cursor-default'} ${matches(u) ? (query ? 'ring-2 ring-slate-900 scale-110 z-10' : 'opacity-90') : 'opacity-20'}`}
                     >
                       {u.label}
                     </button>
@@ -122,7 +204,9 @@ export default function PublicSiteplan() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {page.units.map((u) => (
+                  {page.units.filter(matches).length === 0 ? (
+                    <tr><td colSpan={page.show_price ? 7 : 6} className="px-4 py-8 text-center text-slate-400 text-sm">Tak ada unit cocok “{q}”.</td></tr>
+                  ) : page.units.filter(matches).map((u) => (
                     <tr key={u.id} className="hover:bg-slate-50">
                       <td className="px-4 py-2.5 font-medium text-slate-900 whitespace-nowrap">{u.label}</td>
                       <td className="px-4 py-2.5 text-slate-500 whitespace-nowrap">{u.unit_type ?? '—'}</td>
