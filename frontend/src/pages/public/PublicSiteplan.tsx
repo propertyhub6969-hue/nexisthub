@@ -12,6 +12,8 @@ const STATUS: Record<UnitStatus, { label: string; dot: string; pill: string }> =
   sold: { label: 'Akad/Terjual', dot: 'bg-blue-500', pill: 'bg-blue-500' },
   handover: { label: 'Serah Terima', dot: 'bg-orange-500', pill: 'bg-orange-500' },
 }
+type StatusKey = 'available' | 'booked' | 'sold'
+
 const fmtRp = (n?: number) => n == null ? '—' : new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(Number(n))
 const fmtArea = (n?: number) => n == null ? '—' : `${Number(n)} m²`
 
@@ -57,10 +59,16 @@ export default function PublicSiteplan() {
     window.addEventListener('mouseup', onPanEnd)
   }
 
-  // ── Filter nomor unit (menyorot di peta & menyaring tabel) ──
+  // ── Filter: nomor unit + status (menyorot di peta & menyaring tabel) ──
   const [q, setQ] = useState('')
+  const [statusFilter, setStatusFilter] = useState<StatusKey | null>(null)
   const query = q.trim().toLowerCase()
-  const matches = (u: PublicSiteplanUnit) => !query || u.label.toLowerCase().includes(query)
+  // "sold" mewakili Akad/Terjual + Serah Terima (sama seperti kartu hitungan di atas)
+  const inStatus = (u: PublicSiteplanUnit) =>
+    !statusFilter || (statusFilter === 'sold' ? (u.status === 'sold' || u.status === 'handover') : u.status === statusFilter)
+  const matches = (u: PublicSiteplanUnit) =>
+    (!query || u.label.toLowerCase().includes(query)) && inStatus(u)
+  const isFiltering = !!query || !!statusFilter
 
   const load = () => {
     propertyService.publicSiteplan(token)
@@ -113,13 +121,26 @@ export default function PublicSiteplan() {
 
             {counts && (
               <div className="flex flex-wrap gap-3">
-                {(['available', 'booked', 'sold'] as const).map((k) => (
-                  <div key={k} className="card px-4 py-2.5 flex items-center gap-2">
-                    <span className={`w-2.5 h-2.5 rounded-full ${STATUS[k].dot}`} />
-                    <span className="text-sm text-slate-600">{k === 'sold' ? 'Terjual' : STATUS[k].label}</span>
-                    <span className="text-sm font-bold text-slate-900">{counts[k]}</span>
-                  </div>
-                ))}
+                {(['available', 'booked', 'sold'] as const).map((k) => {
+                  const on = statusFilter === k
+                  return (
+                    <button
+                      key={k}
+                      onClick={() => setStatusFilter(on ? null : k)}
+                      title={on ? 'Klik untuk tampilkan semua' : `Tampilkan hanya ${k === 'sold' ? 'Terjual' : STATUS[k].label}`}
+                      className={`card px-4 py-2.5 flex items-center gap-2 transition-all ${on ? 'ring-2 ring-brand-500 bg-brand-50/50' : 'hover:bg-slate-50'}`}
+                    >
+                      <span className={`w-2.5 h-2.5 rounded-full ${STATUS[k].dot}`} />
+                      <span className="text-sm text-slate-600">{k === 'sold' ? 'Terjual' : STATUS[k].label}</span>
+                      <span className="text-sm font-bold text-slate-900">{counts[k]}</span>
+                    </button>
+                  )
+                })}
+                {statusFilter && (
+                  <button onClick={() => setStatusFilter(null)} className="text-xs text-slate-500 hover:text-slate-700 underline px-1">
+                    Tampilkan semua
+                  </button>
+                )}
               </div>
             )}
 
@@ -155,9 +176,9 @@ export default function PublicSiteplan() {
                   )}
                 </div>
               )}
-              {query && (
+              {isFiltering && (
                 <span className="text-xs text-slate-500">
-                  {page.units.filter(matches).length} unit cocok
+                  {page.units.filter(matches).length} dari {page.units.length} unit
                 </span>
               )}
             </div>
@@ -184,7 +205,7 @@ export default function PublicSiteplan() {
                       onClick={() => u.status === 'available' && setPicked(u)}
                       title={`${u.label} — ${STATUS[u.status].label}`}
                       style={{ left: `${u.position_x}%`, top: `${u.position_y}%` }}
-                      className={`absolute -translate-x-1/2 -translate-y-1/2 text-[9px] font-semibold text-white px-1.5 py-0.5 rounded shadow ring-1 ring-black/10 transition-all ${STATUS[u.status].pill} ${u.status === 'available' ? 'cursor-pointer hover:scale-110' : 'cursor-default'} ${matches(u) ? (query ? 'ring-2 ring-slate-900 scale-110 z-10' : 'opacity-90') : 'opacity-20'}`}
+                      className={`absolute -translate-x-1/2 -translate-y-1/2 text-[9px] font-semibold text-white px-1.5 py-0.5 rounded shadow ring-1 ring-black/10 transition-all ${STATUS[u.status].pill} ${u.status === 'available' ? 'cursor-pointer hover:scale-110' : 'cursor-default'} ${matches(u) ? (isFiltering ? 'ring-2 ring-slate-900 scale-110 z-10' : 'opacity-90') : 'opacity-20'}`}
                     >
                       {u.label}
                     </button>
@@ -205,7 +226,7 @@ export default function PublicSiteplan() {
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {page.units.filter(matches).length === 0 ? (
-                    <tr><td colSpan={page.show_price ? 7 : 6} className="px-4 py-8 text-center text-slate-400 text-sm">Tak ada unit cocok “{q}”.</td></tr>
+                    <tr><td colSpan={page.show_price ? 7 : 6} className="px-4 py-8 text-center text-slate-400 text-sm">Tak ada unit yang cocok dengan filter.</td></tr>
                   ) : page.units.filter(matches).map((u) => (
                     <tr key={u.id} className="hover:bg-slate-50">
                       <td className="px-4 py-2.5 font-medium text-slate-900 whitespace-nowrap">{u.label}</td>
