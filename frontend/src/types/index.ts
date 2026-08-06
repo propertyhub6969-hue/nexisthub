@@ -523,6 +523,7 @@ export interface DashboardStats {
   units_available: number
   units_booked: number
   units_sold: number
+  units_held_no_client?: number
   payments_this_month: number
   total_contract: number
   total_paid: number

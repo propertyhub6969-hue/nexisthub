@@ -44,6 +44,7 @@ class DashboardStats(BaseModel):
     units_available: int
     units_booked: int
     units_sold: int
+    units_held_no_client: int = 0   # unit ditahan booking tapi belum ada data Pembeli
     payments_this_month: Decimal
     total_contract: Decimal
     total_paid: Decimal
@@ -70,6 +71,16 @@ async def get_dashboard(
     units_total = await _count(db, Unit, Unit.tenant_id == t)
     units_available = await _count(db, Unit, Unit.tenant_id == t, Unit.status == UnitStatus.AVAILABLE)
     units_booked = await _count(db, Unit, Unit.tenant_id == t, Unit.status == UnitStatus.BOOKED)
+    # Unit ditahan (Booking/DP atau Terjual) TAPI belum punya data Pembeli — biasanya berasal dari
+    # permintaan booking agen yang sudah diterima namun belum dilanjutkan jadi Pembeli.
+    # Sengaja ditampilkan supaya unit tak diam-diam tertahan tanpa pemilik data.
+    units_held_no_client = await db.scalar(
+        select(func.count()).select_from(Unit).where(
+            Unit.tenant_id == t,
+            Unit.status.in_([UnitStatus.BOOKED, UnitStatus.SOLD, UnitStatus.HANDOVER]),
+            ~select(Client.id).where(Client.unit_id == Unit.id, Client.is_deleted == False).exists(),  # noqa: E712
+        )
+    ) or 0
     units_sold = await _count(db, Unit, Unit.tenant_id == t,
                               Unit.status.in_([UnitStatus.SOLD, UnitStatus.HANDOVER]))
 
@@ -96,6 +107,7 @@ async def get_dashboard(
     return DashboardStats(
         leads_total=leads_total, prospects_active=prospects_active, clients_total=clients_total,
         units_total=units_total, units_available=units_available, units_booked=units_booked, units_sold=units_sold,
+        units_held_no_client=units_held_no_client,
         payments_this_month=payments_this_month, total_contract=total_contract, total_paid=total_paid,
         outstanding=total_contract - total_paid, overdue_count=overdue_count,
     )
