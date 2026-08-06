@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { ArrowLeft, Loader2, Upload, ImageOff, Trash2, Save, MapPin, Eye, Pencil, LayoutGrid, ZoomIn, ZoomOut, RotateCcw } from 'lucide-react'
+import { ArrowLeft, Loader2, Upload, ImageOff, Trash2, Save, MapPin, Eye, Pencil, LayoutGrid, ZoomIn, ZoomOut, RotateCcw, Search, X } from 'lucide-react'
 import Badge from '../../components/ui/Badge'
 import { propertyService } from '../../services/property'
 import type { Project, Unit, UnitStatus } from '../../types'
@@ -129,6 +129,16 @@ export default function Siteplan() {
   const placed = units.filter((u) => pos[u.id])
   const unplaced = units.filter((u) => !pos[u.id])
   const dense = placed.length > 80  // marker lebih ringkas untuk proyek padat
+
+  // ── Filter: nomor unit + status (menyorot di peta, menyaring daftar belum-dipetakan) ──
+  const [q, setQ] = useState('')
+  const [statusFilter, setStatusFilter] = useState<UnitStatus | null>(null)
+  const query = q.trim().toLowerCase()
+  const unitLabel = (u: Unit) => `${u.block ? `${u.block}-` : ''}${u.unit_number}`.toLowerCase()
+  const matches = (u: Unit) =>
+    (!query || unitLabel(u).includes(query)) && (!statusFilter || u.status === statusFilter)
+  const isFiltering = !!query || !!statusFilter
+  const matchedCount = units.filter(matches).length
 
   function pctFromEvent(clientX: number, clientY: number): Pos {
     const rect = mapRef.current!.getBoundingClientRect()
@@ -320,12 +330,45 @@ export default function Siteplan() {
 
       {/* Legend + upload actions */}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-4 text-xs text-slate-600">
-          {(Object.keys(statusConfig) as UnitStatus[]).map((s) => (
-            <span key={s} className="inline-flex items-center gap-1.5">
-              <span className={`w-3 h-3 rounded-full ${statusConfig[s].dot}`} /> {statusConfig[s].label}
+        <div className="flex flex-wrap items-center gap-2">
+          {(Object.keys(statusConfig) as UnitStatus[]).map((st) => {
+            const on = statusFilter === st
+            const n = units.filter((u) => u.status === st).length
+            return (
+              <button
+                key={st}
+                onClick={() => setStatusFilter(on ? null : st)}
+                title={on ? 'Klik untuk tampilkan semua' : `Sorot hanya ${statusConfig[st].label}`}
+                className={`inline-flex items-center gap-1.5 text-xs rounded-full border px-2.5 py-1 transition-all ${
+                  on ? 'border-brand-500 bg-brand-50 text-brand-700 font-medium' : 'border-slate-200 text-slate-600 hover:bg-slate-50'
+                }`}
+              >
+                <span className={`w-2.5 h-2.5 rounded-full ${statusConfig[st].dot}`} />
+                {statusConfig[st].label}
+                <span className="text-slate-400">{n}</span>
+              </button>
+            )
+          })}
+          <div className="relative">
+            <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              className="input py-1 pl-8 pr-7 text-xs w-44"
+              placeholder="Cari no. unit…"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+            />
+            {q && (
+              <button onClick={() => setQ('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600" title="Bersihkan">
+                <X size={12} />
+              </button>
+            )}
+          </div>
+          {isFiltering && (
+            <span className="text-xs text-slate-500">
+              {matchedCount} dari {units.length} unit
+              <button onClick={() => { setQ(''); setStatusFilter(null) }} className="ml-2 underline hover:text-slate-700">reset</button>
             </span>
-          ))}
+          )}
         </div>
         <div className="flex items-center gap-2">
           <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleUpload} />
@@ -390,7 +433,7 @@ export default function Siteplan() {
                       onMouseDown={(e) => startDrag(e, u.id)}
                       onClick={(e) => onMarkerClick(e, u)}
                       style={{ left: `${p.x}%`, top: `${p.y}%` }}
-                      className={`absolute -translate-x-1/2 -translate-y-1/2 ${sc.dot} text-white font-semibold rounded-md border border-white shadow ring-1 ring-black/10 ${dense ? 'text-[8px] px-1 py-0 leading-tight' : 'text-[10px] px-1.5 py-0.5'} ${mode === 'edit' ? 'cursor-move' : 'cursor-pointer hover:scale-110'} transition-transform`}
+                      className={`absolute -translate-x-1/2 -translate-y-1/2 ${sc.dot} text-white font-semibold rounded-md border border-white shadow ring-1 ring-black/10 ${dense ? 'text-[8px] px-1 py-0 leading-tight' : 'text-[10px] px-1.5 py-0.5'} ${mode === 'edit' ? 'cursor-move' : 'cursor-pointer hover:scale-110'} transition-all ${matches(u) ? (isFiltering ? 'ring-2 ring-slate-900 scale-110 z-10' : '') : 'opacity-20'}`}
                       title={`${u.block ? u.block + '-' : ''}${u.unit_number} · ${sc.label}`}
                     >
                       {dense ? u.unit_number : `${u.block ? `${u.block}-` : ''}${u.unit_number}`}
@@ -406,7 +449,7 @@ export default function Siteplan() {
         {mode === 'edit' && imgUrl && (
           <div className="w-64 card p-3 shrink-0">
             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
-              Belum Dipetakan ({unplaced.length})
+              Belum Dipetakan ({isFiltering ? `${unplaced.filter(matches).length}/${unplaced.length}` : unplaced.length})
             </p>
             {unplaced.length === 0 ? (
               <p className="text-xs text-slate-400">Semua unit sudah dipetakan. 🎉</p>
@@ -414,7 +457,7 @@ export default function Siteplan() {
               <>
                 <p className="text-xs text-slate-400 mb-2">Klik unit lalu klik lokasinya di peta.</p>
                 <div className="space-y-1 max-h-[60vh] overflow-auto">
-                  {unplaced.map((u) => {
+                  {unplaced.filter(matches).map((u) => {
                     const sc = statusConfig[u.status]
                     const sel = selectedUnplaced === u.id
                     return (
