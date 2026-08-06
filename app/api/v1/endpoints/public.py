@@ -621,6 +621,6 @@ async def public_siteplan_booking(
         db, link.tenant_id, SUBMISSION_WATCHERS, NotificationKind.INFO,
         title="Permintaan booking unit dari agen",
         body=f"{b.agent_name} — unit {label}" + (f" · calon: {b.prospect_name}" if b.prospect_name else ""),
-        link="/property/booking-requests",
+        link="/marketing/booking-requests",
     )
     return {"status": "submitted", "id": str(b.id)}

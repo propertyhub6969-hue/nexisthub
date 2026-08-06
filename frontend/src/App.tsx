@@ -77,7 +77,9 @@ export default function App() {
           <Route path="/marketing/notary-monitor" element={<NotaryMonitor />} />
           <Route path="/property/projects"                 element={<Projects />} />
           <Route path="/property/legal-docs"               element={<LegalDocuments />} />
-          <Route path="/property/booking-requests"         element={<BookingRequests />} />
+          <Route path="/marketing/booking-requests" element={<BookingRequests />} />
+          {/* Pindah ke grup Marketing — alihkan tautan lama (mis. dari notifikasi lampau) */}
+          <Route path="/property/booking-requests" element={<Navigate to="/marketing/booking-requests" replace />} />
           <Route path="/property/projects/:projectId/units" element={<ProjectUnits />} />
           <Route path="/property/projects/:projectId/siteplan" element={<Siteplan />} />
           <Route path="/property/projects/:projectId/legal-splitting" element={<LegalSplitting />} />

@@ -65,6 +65,7 @@ const marketingItem: NavItem = {
     { label: 'Kiriman Bank', to: '/marketing/bank-submissions', icon: Inbox },
     { label: 'Kiriman Notaris', to: '/marketing/notary-submissions', icon: Inbox },
     { label: 'Pemantauan Notaris', to: '/marketing/notary-monitor', icon: Scale },
+    { label: 'Permintaan Booking', to: '/marketing/booking-requests', icon: Inbox },
   ],
 }
 
@@ -74,7 +75,6 @@ const propertiItem: NavItem = {
   children: [
     { label: 'Proyek & Unit', to: '/property/projects', icon: Building2 },
     { label: 'Dokumen Legalitas', to: '/property/legal-docs', icon: FileCheck },
-    { label: 'Permintaan Booking', to: '/property/booking-requests', icon: Inbox },
   ],
 }
 
@@ -256,7 +256,7 @@ export default function Sidebar({ open = false, onClose }: { open?: boolean; onC
                   {child.to === '/marketing/bank-submissions' && bankPendingCount > 0 && (
                     <span className="ml-auto text-[10px] font-semibold bg-brass-500 text-white rounded-full px-1.5 py-0.5 leading-none">{bankPendingCount}</span>
                   )}
-                  {child.to === '/property/booking-requests' && bookingPendingCount > 0 && (
+                  {child.to === '/marketing/booking-requests' && bookingPendingCount > 0 && (
                     <span className="ml-auto text-[10px] font-semibold bg-brass-500 text-white rounded-full px-1.5 py-0.5 leading-none">{bookingPendingCount}</span>
                   )}
                   {child.to === '/payments/approval' && payPendingCount > 0 && (
