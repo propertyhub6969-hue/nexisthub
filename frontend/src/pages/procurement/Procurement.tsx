@@ -41,7 +41,7 @@ const locId = (loc: string) => loc.slice(2)
 /** Param API untuk lokasi terpilih (project_id ATAU warehouse_id). */
 const locParams = (loc: string) => (isWarehouseLoc(loc) ? { warehouse_id: locId(loc) } : { project_id: locId(loc) }) as
   { project_id: string; warehouse_id?: never } | { warehouse_id: string; project_id?: never }
-const emptyExpense = (pid: string): ExpenseCreate => ({ project_id: pid, unit_id: '', category: 'upah', description: '', amount: 0, expense_date: '', is_paid: true })
+const emptyExpense = (pid: string): ExpenseCreate => ({ project_id: pid, unit_id: '', category: 'upah', description: '', amount: 0, expense_date: '', is_paid: false, paid_at: '' })
 // Biaya utilitas (PLN/PDAM) dicatat lewat panel Utilitas unit dan jatuh ke kategori ini.
 // Tanpa baris anggarannya di template, realisasinya selalu tampil sebagai kebocoran —
 // jadi kedua baris ini selalu disediakan (nominal boleh 0 kalau memang tak dianggarkan).
@@ -341,7 +341,7 @@ export default function Procurement() {
   function openExpCreate() { setExpEditId(null); setExpForm(emptyExpense(stockProject)); setExpUnitQuery(''); setExpModal(true) }
   function openExpEdit(x: Expense) {
     setExpEditId(x.id)
-    setExpForm({ project_id: stockProject, unit_id: x.unit_id ?? '', category: x.category, description: x.description, amount: x.amount, expense_date: x.expense_date ?? '', is_paid: x.is_paid })
+    setExpForm({ project_id: stockProject, unit_id: x.unit_id ?? '', category: x.category, description: x.description, amount: x.amount, expense_date: x.expense_date ?? '', is_paid: x.is_paid, paid_at: x.paid_at ?? '' })
     setExpUnitQuery(x.unit_id ? (unitLabel(x.unit_id) ?? '') : '')
     setExpModal(true)
   }
@@ -1249,6 +1249,31 @@ export default function Procurement() {
               <datalist id="exp-unit-suggest">{expUnits.map((u) => <option key={u.id} value={unitBlockLabel(u)} />)}</datalist>
             </div>
             <div><label className="label">Tanggal</label><DateInput className="input" max={today()} value={expForm.expense_date} onChange={(v) => setExpForm({ ...expForm, expense_date: v })} /></div>
+          </div>
+          {/* Status bayar — default menunggu validasi keuangan; centang hanya bila
+              memang sudah dibayar di tempat (kas kecil), agar tak perlu divalidasi ulang. */}
+          <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 space-y-2">
+            <label className="flex items-start gap-2 cursor-pointer">
+              <input type="checkbox" className="mt-0.5 rounded border-slate-300"
+                checked={!!expForm.is_paid}
+                onChange={(e) => setExpForm({ ...expForm, is_paid: e.target.checked, paid_at: e.target.checked ? expForm.paid_at : '' })} />
+              <span className="text-sm text-slate-700">
+                Sudah dibayar (kas kecil / bayar di tempat)
+                <span className="block text-xs text-slate-500">
+                  {expForm.is_paid
+                    ? 'Langsung tercatat sebagai kas keluar di Buku Kas.'
+                    : 'Biaya masuk daftar Biaya Menunggu Bayar — keuangan yang mencatatkannya ke Buku Kas.'}
+                </span>
+              </span>
+            </label>
+            {expForm.is_paid && (
+              <div className="pl-6">
+                <label className="label">Tanggal Bayar</label>
+                <DateInput className="input" max={today()} value={expForm.paid_at || ''}
+                  onChange={(v) => setExpForm({ ...expForm, paid_at: v })} />
+                <p className="text-xs text-slate-400 mt-1">Kosongkan = ikut tanggal biaya.</p>
+              </div>
+            )}
           </div>
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" className="btn-secondary text-sm" onClick={() => setExpModal(false)}>Batal</button>

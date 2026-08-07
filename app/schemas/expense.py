@@ -16,7 +16,11 @@ class ExpenseBase(BaseModel):
     description: str = Field(..., min_length=1, max_length=200)
     amount: Decimal = Field(..., ge=0)
     expense_date: Optional[date] = None
-    is_paid: bool = True
+    # Default MENUNGGU VALIDASI keuangan — biaya baru tidak langsung jadi kas keluar.
+    # Boleh dikirim True untuk pengeluaran yang memang dibayar di tempat (kas kecil);
+    # saat itu paid_at wajib ikut supaya tanggal kas keluar benar.
+    is_paid: bool = False
+    paid_at: Optional[date] = None
     notes: Optional[str] = None
 
 
@@ -33,6 +37,7 @@ class ExpenseUpdate(BaseModel):
     amount: Optional[Decimal] = Field(None, ge=0)
     expense_date: Optional[date] = None
     is_paid: Optional[bool] = None
+    paid_at: Optional[date] = None
     notes: Optional[str] = None
 
 

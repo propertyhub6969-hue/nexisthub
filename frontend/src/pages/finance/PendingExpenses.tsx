@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react'
-import { Loader2, Wallet, Zap, Droplets, HardHat, Receipt, AlertTriangle, CheckCircle2 } from 'lucide-react'
+import { Loader2, Wallet, Zap, Droplets, HardHat, Receipt, AlertTriangle, CheckCircle2, Scale } from 'lucide-react'
 import Badge from '../../components/ui/Badge'
 import Modal from '../../components/ui/Modal'
 import DateInput from '../../components/ui/DateInput'
@@ -10,16 +10,18 @@ const fmt = (n?: number) =>
   n == null ? '—' : new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(Number(n))
 const fmtDate = (d?: string | null) => d ? new Date(d).toLocaleDateString('id-ID') : '—'
 
-const sourceCfg: Record<PendingExpenseRow['source'], { label: string; variant: 'blue' | 'yellow' | 'gray' }> = {
+const sourceCfg: Record<PendingExpenseRow['source'], { label: string; variant: 'blue' | 'yellow' | 'gray' | 'green' }> = {
   utilitas: { label: 'Utilitas', variant: 'blue' },
   opname:   { label: 'Opname', variant: 'yellow' },
   biaya:    { label: 'Biaya', variant: 'gray' },
+  notaris:  { label: 'Notaris', variant: 'green' },
 }
 
 function SourceIcon({ row }: { row: PendingExpenseRow }) {
   if (row.utility_kind === 'pln') return <Zap size={15} className="text-amber-500" />
   if (row.utility_kind === 'pdam') return <Droplets size={15} className="text-blue-500" />
   if (row.source === 'opname') return <HardHat size={15} className="text-slate-400" />
+  if (row.source === 'notaris') return <Scale size={15} className="text-emerald-600" />
   return <Receipt size={15} className="text-slate-400" />
 }
 
@@ -48,8 +50,8 @@ export default function PendingExpenses() {
   const toggle = (id: string) => setSel((s) => {
     const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n
   })
-  const toggleAll = () => setSel((s) => s.size === rows.length ? new Set() : new Set(rows.map((r) => r.id)))
-  const selTotal = rows.filter((r) => sel.has(r.id)).reduce((a, r) => a + Number(r.amount || 0), 0)
+  const toggleAll = () => setSel((s) => s.size === rows.length ? new Set() : new Set(rows.map((r) => r.ref)))
+  const selTotal = rows.filter((r) => sel.has(r.ref)).reduce((a, r) => a + Number(r.amount || 0), 0)
 
   async function submitPaid() {
     setSaving(true)
@@ -113,17 +115,17 @@ export default function PendingExpenses() {
                     <input type="checkbox" className="rounded border-slate-300"
                       checked={sel.size === rows.length && rows.length > 0} onChange={toggleAll} />
                   </th>
-                  {['Uraian', 'Proyek / Unit', 'Kategori', 'Sumber', 'Menunggu', 'Nominal'].map((h, i) => (
+                  {['Uraian', 'Proyek / Unit atau Pembeli', 'Kategori', 'Sumber', 'Menunggu', 'Nominal'].map((h, i) => (
                     <th key={i} className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {rows.map((r) => (
-                  <tr key={r.id} className={`hover:bg-slate-50 ${sel.has(r.id) ? 'bg-brand-50/40' : ''}`}>
+                  <tr key={r.ref} className={`hover:bg-slate-50 ${sel.has(r.ref) ? 'bg-brand-50/40' : ''}`}>
                     <td className="px-4 py-2.5">
                       <input type="checkbox" className="rounded border-slate-300"
-                        checked={sel.has(r.id)} onChange={() => toggle(r.id)} />
+                        checked={sel.has(r.ref)} onChange={() => toggle(r.ref)} />
                     </td>
                     <td className="px-4 py-2.5">
                       <div className="flex items-center gap-2">
@@ -140,7 +142,9 @@ export default function PendingExpenses() {
                       </div>
                     </td>
                     <td className="px-4 py-2.5 text-slate-500 whitespace-nowrap">
-                      {r.project_name ?? '—'}{r.unit_label ? ` · ${r.unit_label}` : ''}
+                      {r.source === 'notaris'
+                        ? <>{r.client_name ?? '—'}{r.notary_name ? ` · ${r.notary_name}` : ''}</>
+                        : <>{r.project_name ?? '—'}{r.unit_label ? ` · ${r.unit_label}` : ''}</>}
                     </td>
                     <td className="px-4 py-2.5 text-slate-500 whitespace-nowrap">{r.category_label}</td>
                     <td className="px-4 py-2.5"><Badge variant={sourceCfg[r.source].variant} label={sourceCfg[r.source].label} /></td>

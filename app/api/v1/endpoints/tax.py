@@ -408,6 +408,10 @@ async def update_fee(fee_id: uuid.UUID, payload: FeeUpdate, ctx: AuthContext = D
     f = await _load_fee(db, ctx.tenant_id, fee_id)
     for k, v in payload.model_dump(exclude_unset=True).items():
         setattr(f, k, v)
+    if f.is_paid and f.paid_at is None:   # ditandai lunas tanpa tanggal → pakai hari ini
+        f.paid_at = date.today()
+    if not f.is_paid:                     # dikembalikan ke menunggu → tanggal bayar dibersihkan
+        f.paid_at = None
     await db.flush()
     await sync_notary_fee_cashbook(db, ctx.tenant_id, f)   # is_paid berubah → posting/hapus baris kas
     return await _load_fee(db, ctx.tenant_id, fee_id)

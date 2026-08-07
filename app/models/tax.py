@@ -129,6 +129,7 @@ class NotaryFee(BaseModel, SoftDeleteMixin):
     amount: Mapped[float] = mapped_column(Numeric(15, 2), nullable=False)
     fee_date: Mapped[Date] = mapped_column(Date, nullable=True)
     is_paid: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    paid_at: Mapped[Date] = mapped_column(Date, nullable=True)   # tgl dibayar keuangan (null = masih menunggu)
     notes: Mapped[str] = mapped_column(Text, nullable=True)
 
     notary: Mapped["Notary"] = relationship("Notary")

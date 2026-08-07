@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import datetime, date
 from decimal import Decimal
 from collections import defaultdict
 from typing import Optional
@@ -12,6 +12,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.audit import record_audit
 from app.core.cashbook import sync_expense_cashbook
+from app.core.notify import notify_roles, EXPENSE_APPROVERS, rp as _rp
+from app.models.notification import NotificationKind
 from app.api.deps import get_current_context, AuthContext
 from app.models.expense import Expense
 from app.models.stock import StockMovement, MovementType
@@ -50,10 +52,22 @@ async def list_expenses(
 @router.post("/expenses", response_model=ExpenseResponse, status_code=status.HTTP_201_CREATED)
 async def create_expense(payload: ExpenseCreate, ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db)):
     e = Expense(tenant_id=ctx.tenant_id, **payload.model_dump())
+    # dibayar di tempat (kas kecil) tanpa tanggal → pakai tanggal biaya / hari ini,
+    # supaya baris Buku Kas tak pernah lahir tanpa tanggal.
+    if e.is_paid and e.paid_at is None:
+        e.paid_at = e.expense_date or date.today()
     db.add(e); await db.flush()
     await sync_expense_cashbook(db, ctx.tenant_id, e)
     await record_audit(db, ctx.tenant_id, ctx.user_id, "CREATE", "expenses", e.id,
-                       new_data={"category": e.category.value, "amount": str(e.amount)})
+                       new_data={"category": e.category.value, "amount": str(e.amount),
+                                 "is_paid": e.is_paid})
+    if not e.is_paid:   # menunggu validasi keuangan → beri tahu mereka
+        await notify_roles(
+            db, ctx.tenant_id, EXPENSE_APPROVERS, NotificationKind.EXPENSE_SUBMITTED,
+            title="Biaya diajukan",
+            body=f"{e.description} — {_rp(e.amount)}",
+            link="/finance/biaya-menunggu-bayar", actor_id=ctx.user_id,
+        )
     return await _get_expense(db, ctx.tenant_id, e.id)
 
 
@@ -62,6 +76,10 @@ async def update_expense(eid: uuid.UUID, payload: ExpenseUpdate, ctx: AuthContex
     e = await _get_expense(db, ctx.tenant_id, eid)
     for f, v in payload.model_dump(exclude_unset=True).items():
         setattr(e, f, v)
+    if e.is_paid and e.paid_at is None:      # ditandai lunas tanpa tanggal → jangan biarkan kosong
+        e.paid_at = e.expense_date or date.today()
+    if not e.is_paid:                        # dikembalikan ke menunggu → tanggal bayar ikut dibersihkan
+        e.paid_at = None
     await db.flush()
     await sync_expense_cashbook(db, ctx.tenant_id, e)
     return await _get_expense(db, ctx.tenant_id, eid)

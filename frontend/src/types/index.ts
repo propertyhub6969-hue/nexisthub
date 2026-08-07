@@ -1536,6 +1536,7 @@ export interface Expense {
   amount: number
   expense_date?: string
   is_paid: boolean
+  paid_at?: string
   notes?: string
   created_at: string
   updated_at: string
@@ -1550,6 +1551,7 @@ export interface ExpenseCreate {
   amount: number
   expense_date?: string
   is_paid?: boolean
+  paid_at?: string
   notes?: string
 }
 export interface CostRow {
@@ -1912,15 +1914,18 @@ export interface UtilitySummary {
 
 // ── Biaya menunggu bayar (pengeluaran diajukan, belum masuk Buku Kas) ──
 export interface PendingExpenseRow {
+  ref: string
   id: string
   description: string
-  category: ExpenseCategory
+  category: string
   category_label: string
   amount: number
   expense_date?: string | null
   project_name?: string | null
   unit_label?: string | null
-  source: 'utilitas' | 'opname' | 'biaya'
+  source: 'utilitas' | 'opname' | 'biaya' | 'notaris'
+  client_name?: string | null
+  notary_name?: string | null
   utility_kind?: 'pln' | 'pdam' | null
   utility_status?: UtilityStatus | null
   applied_date?: string | null

@@ -76,6 +76,7 @@ class CashBookSummary(BaseModel):
 
 # ── Biaya menunggu bayar (pengeluaran diajukan, belum masuk Buku Kas) ──
 class PendingExpenseRow(BaseModel):
+    ref: str                 # "<sumber>:<id>" — kunci unik lintas tabel (expenses & notary_fees)
     id: uuid.UUID
     description: str
     category: str
@@ -84,7 +85,9 @@ class PendingExpenseRow(BaseModel):
     expense_date: Optional[date] = None
     project_name: Optional[str] = None
     unit_label: Optional[str] = None
-    source: str              # "utilitas" | "opname" | "biaya"
+    source: str              # "utilitas" | "opname" | "biaya" | "notaris"
+    client_name: Optional[str] = None      # untuk biaya notaris
+    notary_name: Optional[str] = None
     utility_kind: Optional[str] = None    # PLN/PDAM bila sumbernya utilitas
     utility_status: Optional[str] = None  # belum/diajukan/terpasang
     applied_date: Optional[date] = None
@@ -98,5 +101,5 @@ class PendingExpenseList(BaseModel):
 
 
 class MarkExpensePaidRequest(BaseModel):
-    ids: list[uuid.UUID]
+    refs: list[str]                    # dari PendingExpenseRow.ref
     paid_date: Optional[date] = None   # kosong = hari ini

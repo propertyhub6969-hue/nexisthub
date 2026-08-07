@@ -32,7 +32,7 @@ from app.schemas.property import (
     BookingRequestResponse, BookingRejectRequest,
     UtilityUpsert, UtilityResponse, UtilityUnitRow, UtilitySummary,
 )
-from app.core.notify import notify_roles
+from app.core.notify import notify_roles, EXPENSE_APPROVERS, rp as _rp
 from app.models.notification import NotificationKind
 
 router = APIRouter()
@@ -41,17 +41,6 @@ MAX_SITEPLAN_BYTES = 8 * 1024 * 1024  # 8 MB
 
 _UTIL_LABEL = {UtilityKind.PLN: "Listrik PLN", UtilityKind.PDAM: "Air PDAM"}
 _UTIL_EXPENSE_CAT = {UtilityKind.PLN: ExpenseCategory.KELISTRIKAN, UtilityKind.PDAM: ExpenseCategory.AIR_PDAM}
-
-# Yang berhak menindak tagihan biaya — sama dengan persetujuan pembayaran (payment.py::APPROVERS).
-EXPENSE_APPROVERS = (UserRole.OWNER, UserRole.ADMIN, UserRole.FINANCE)
-
-
-def _rp(n) -> str:
-    """Format rupiah singkat utk isi notifikasi (mis. Rp 1.500.000)."""
-    try:
-        return "Rp " + f"{int(Decimal(n or 0)):,}".replace(",", ".")
-    except Exception:
-        return "Rp 0"
 
 
 

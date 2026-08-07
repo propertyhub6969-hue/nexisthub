@@ -24,8 +24,8 @@ export const cashbookService = {
     const { data } = await api.get<{ count: number }>('/cashbook/pending-expenses/count', { skipToast: true })
     return data.count
   },
-  async markExpensesPaid(ids: string[], paid_date?: string): Promise<{ marked: number; paid_date: string }> {
-    const { data } = await api.post('/cashbook/pending-expenses/mark-paid', { ids, paid_date: paid_date || null })
+  async markExpensesPaid(refs: string[], paid_date?: string): Promise<{ marked: number; paid_date: string }> {
+    const { data } = await api.post('/cashbook/pending-expenses/mark-paid', { refs, paid_date: paid_date || null })
     return data
   },
 }

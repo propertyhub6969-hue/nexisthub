@@ -241,10 +241,11 @@ async def pending_opname(project_id: uuid.UUID = Query(...), ctx: AuthContext = 
 @router.post("/opname/mark-paid")
 async def mark_opname_paid(
     payload: MarkPaidRequest,
-    _user=Depends(require_role(UserRole.OWNER, UserRole.ADMIN, UserRole.MANAGER)),
+    _user=Depends(require_role(UserRole.OWNER, UserRole.ADMIN, UserRole.MANAGER, UserRole.FINANCE)),
     ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db),
 ):
-    """Tandai sekelompok opname sebagai DIBAYAR (setelah keuangan realisasikan). Owner/admin/manager saja."""
+    """Tandai sekelompok opname sebagai DIBAYAR (setelah keuangan realisasikan).
+    FINANCE ikut boleh — merekalah yang memvalidasi pengeluaran, lihat cashbook.py::mark_expenses_paid."""
     pd = payload.paid_date or date.today()
     rows = (await db.execute(
         select(Expense).where(

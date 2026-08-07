@@ -105,6 +105,7 @@ class FeeBase(BaseModel):
     amount: Decimal = Field(..., ge=0)
     fee_date: Optional[date] = None
     is_paid: bool = False
+    paid_at: Optional[date] = None   # tgl dibayar keuangan (null = masih menunggu)
     notary_id: Optional[uuid.UUID] = None
     notes: Optional[str] = None
 
@@ -128,6 +129,7 @@ class FeeUpdate(BaseModel):
     amount: Optional[Decimal] = Field(None, ge=0)
     fee_date: Optional[date] = None
     is_paid: Optional[bool] = None
+    paid_at: Optional[date] = None
     notary_id: Optional[uuid.UUID] = None
     notes: Optional[str] = None
 

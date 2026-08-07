@@ -86,7 +86,7 @@ async def sync_notary_fee_cashbook(db: AsyncSession, tenant_id: uuid.UUID, fee) 
     if entry is None:
         entry = CashBookEntry(tenant_id=tenant_id, source_type="notary_fee", source_id=fee.id)
         db.add(entry)
-    entry.date = fee.fee_date or date.today()
+    entry.date = fee.paid_at or fee.fee_date or date.today()   # tanggal bayar sebenarnya diutamakan
     entry.direction = CashDirection.OUT
     entry.amount = fee.amount
     entry.category_id = category.id if category else None

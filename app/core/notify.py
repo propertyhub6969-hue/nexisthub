@@ -6,6 +6,7 @@ Prinsip:
 - Notifikasi TAK PERNAH menggagalkan aksi utama — kegagalan di sini hanya dicatat, tak dilempar.
 """
 import uuid
+from decimal import Decimal
 from typing import Iterable, Optional
 
 from sqlalchemy import select
@@ -13,6 +14,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.notification import Notification, NotificationKind
 from app.models.user import User, UserRole
+
+# Yang berhak memvalidasi uang: menyetujui pembayaran masuk & menandai pengeluaran lunas.
+EXPENSE_APPROVERS = (UserRole.OWNER, UserRole.ADMIN, UserRole.FINANCE)
+
+
+def rp(n) -> str:
+    """Format rupiah singkat utk isi notifikasi (mis. Rp 1.500.000)."""
+    try:
+        return "Rp " + f"{int(Decimal(n or 0)):,}".replace(",", ".")
+    except Exception:
+        return "Rp 0"
 
 
 async def users_with_roles(db: AsyncSession, tenant_id, roles: Iterable[UserRole]) -> list[uuid.UUID]:

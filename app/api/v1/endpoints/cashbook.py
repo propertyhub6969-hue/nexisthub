@@ -11,11 +11,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.api.deps import get_current_context, AuthContext
 from app.core.audit import record_audit
-from app.core.cashbook import sync_expense_cashbook
+from app.core.cashbook import sync_expense_cashbook, sync_notary_fee_cashbook
 from app.core.notify import notify_roles
 from app.models.cashbook import AccountCategory, CashBookEntry, CashDirection
 from app.models.expense import Expense
 from app.models.marketing import Client
+from app.models.tax import NotaryFee, Notary
 from app.models.notification import NotificationKind
 from app.models.property import Project, Unit, UnitUtility
 from app.models.user import UserRole
@@ -145,8 +146,10 @@ async def cashbook_summary(
 # Pengeluaran lahir berstatus DIAJUKAN (is_paid=False) dan BELUM masuk Buku Kas —
 # lihat sync_expense_cashbook. Keuangan yang menandainya lunas beserta tanggal bayar
 # sebenarnya (di lapangan tanggal bayar sering beda dari tanggal pasang/opname).
-# Cakupan saat ini: biaya utilitas & opname borongan. Sengaja dinamai umum supaya
-# bisa diperluas ke seluruh jenis biaya tanpa mengganti nama menu.
+# Cakupan: SEMUA jalur pengeluaran — utilitas, opname borongan, biaya manual, dan
+# biaya notaris. Ini VALIDASI, bukan persetujuan: tak ada jalur penolakan; setiap
+# pengeluaran dianggap sah, langkah ini hanya mencatatkan kapan uangnya benar keluar.
+# Kunci baris memakai "<sumber>:<id>" karena datanya lintas dua tabel.
 
 _EXP_LABEL = {
     "material": "Material", "upah": "Upah", "kontraktor": "Kontraktor",
@@ -165,7 +168,13 @@ def _unit_label(u) -> Optional[str]:
 async def list_pending_expenses(
     ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db),
 ):
-    """Pengeluaran yang sudah diajukan tapi belum ditandai lunas oleh keuangan."""
+    """Semua pengeluaran yang sudah diajukan tapi belum ditandai lunas keuangan.
+    Mencakup empat jalur: utilitas, opname borongan, biaya manual, dan biaya notaris."""
+    today = date.today()
+    out: list[PendingExpenseRow] = []
+    total = Decimal(0)
+
+    # ── 1-3. dari tabel expenses (utilitas / opname / biaya manual) ──
     rows = (await db.execute(
         select(Expense, UnitUtility, Unit, Project)
         .outerjoin(UnitUtility, UnitUtility.id == Expense.utility_id)
@@ -173,27 +182,45 @@ async def list_pending_expenses(
         .outerjoin(Project, Project.id == Expense.project_id)
         .where(Expense.tenant_id == ctx.tenant_id, Expense.is_paid == False,  # noqa: E712
                Expense.is_deleted == False)                                    # noqa: E712
-        .order_by(Expense.expense_date.desc())
     )).all()
-
-    today = date.today()
-    out, total = [], Decimal(0)
     for exp, util, unit, proj in rows:
         total += Decimal(exp.amount or 0)
         cat = exp.category.value if exp.category else "lain"
-        ref = (util.applied_date if util else None) or exp.expense_date
+        ref_date = (util.applied_date if util else None) or exp.expense_date
         out.append(PendingExpenseRow(
-            id=exp.id, description=exp.description or "-", category=cat,
-            category_label=_EXP_LABEL.get(cat, cat), amount=Decimal(exp.amount or 0),
-            expense_date=exp.expense_date,
+            ref=f"expense:{exp.id}", id=exp.id, description=exp.description or "-",
+            category=cat, category_label=_EXP_LABEL.get(cat, cat),
+            amount=Decimal(exp.amount or 0), expense_date=exp.expense_date,
             project_name=proj.name if proj else None, unit_label=_unit_label(unit),
             source="utilitas" if util else ("opname" if exp.contract_id else "biaya"),
             utility_kind=util.kind.value if util else None,
             utility_status=util.status.value if util else None,
             applied_date=util.applied_date if util else None,
             installed_date=util.installed_date if util else None,
-            days_waiting=(today - ref).days if ref else None,
+            days_waiting=(today - ref_date).days if ref_date else None,
         ))
+
+    # ── 4. dari tabel notary_fees ──
+    fees = (await db.execute(
+        select(NotaryFee, Client, Notary)
+        .outerjoin(Client, Client.id == NotaryFee.client_id)
+        .outerjoin(Notary, Notary.id == NotaryFee.notary_id)
+        .where(NotaryFee.tenant_id == ctx.tenant_id, NotaryFee.is_paid == False,  # noqa: E712
+               NotaryFee.is_deleted == False)                                      # noqa: E712
+    )).all()
+    for fee, client, notary in fees:
+        total += Decimal(fee.amount or 0)
+        out.append(PendingExpenseRow(
+            ref=f"notary:{fee.id}", id=fee.id, description=fee.description or "-",
+            category="biaya_notaris", category_label="Biaya Notaris/Legal",
+            amount=Decimal(fee.amount or 0), expense_date=fee.fee_date,
+            source="notaris",
+            client_name=client.full_name if client else None,
+            notary_name=notary.name if notary else None,
+            days_waiting=(today - fee.fee_date).days if fee.fee_date else None,
+        ))
+
+    out.sort(key=lambda r: (r.expense_date or date.min), reverse=True)
     return PendingExpenseList(rows=out, total_amount=total)
 
 
@@ -201,13 +228,18 @@ async def list_pending_expenses(
 async def pending_expenses_count(
     ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db),
 ):
-    """Jumlah tagihan menunggu bayar — untuk badge sidebar."""
-    n = (await db.execute(
+    """Jumlah tagihan menunggu bayar (semua jalur) — untuk badge sidebar."""
+    n_exp = (await db.execute(
         select(func.count()).select_from(Expense).where(
             Expense.tenant_id == ctx.tenant_id, Expense.is_paid == False,  # noqa: E712
             Expense.is_deleted == False)                                    # noqa: E712
     )).scalar() or 0
-    return {"count": int(n)}
+    n_fee = (await db.execute(
+        select(func.count()).select_from(NotaryFee).where(
+            NotaryFee.tenant_id == ctx.tenant_id, NotaryFee.is_paid == False,  # noqa: E712
+            NotaryFee.is_deleted == False)                                      # noqa: E712
+    )).scalar() or 0
+    return {"count": int(n_exp) + int(n_fee)}
 
 
 @router.post("/pending-expenses/mark-paid")
@@ -215,29 +247,57 @@ async def mark_expenses_paid(
     payload: MarkExpensePaidRequest,
     ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db),
 ):
-    """Tandai sekelompok pengeluaran LUNAS dengan tanggal bayar sebenarnya → masuk Buku Kas."""
-    if not payload.ids:
+    """Tandai sekelompok pengeluaran LUNAS dengan tanggal bayar sebenarnya → masuk Buku Kas.
+    Ini VALIDASI keuangan, bukan persetujuan: tak ada jalur penolakan — semua pengeluaran
+    dianggap sah, langkah ini hanya mencatatkan kapan uangnya benar-benar keluar."""
+    if not payload.refs:
         return {"marked": 0}
     pd = payload.paid_date or date.today()
-    rows = (await db.execute(select(Expense).where(
-        Expense.id.in_(payload.ids), Expense.tenant_id == ctx.tenant_id,
-        Expense.is_paid == False, Expense.is_deleted == False,  # noqa: E712
-    ))).scalars().all()
-    for e in rows:
-        e.is_paid = True
-        e.paid_at = pd
-    await db.flush()
-    for e in rows:
-        await sync_expense_cashbook(db, ctx.tenant_id, e)   # baru di sini uang tercatat keluar
-    if rows:
+
+    exp_ids, fee_ids = [], []
+    for ref in payload.refs:
+        kind, _, rid = ref.partition(":")
+        try:
+            rid = uuid.UUID(rid)
+        except ValueError:
+            continue
+        (exp_ids if kind == "expense" else fee_ids if kind == "notary" else []).append(rid)
+
+    marked = 0
+    if exp_ids:
+        rows = (await db.execute(select(Expense).where(
+            Expense.id.in_(exp_ids), Expense.tenant_id == ctx.tenant_id,
+            Expense.is_paid == False, Expense.is_deleted == False,  # noqa: E712
+        ))).scalars().all()
+        for e in rows:
+            e.is_paid = True
+            e.paid_at = pd
+        await db.flush()
+        for e in rows:
+            await sync_expense_cashbook(db, ctx.tenant_id, e)   # baru di sini uang tercatat keluar
+        marked += len(rows)
+
+    if fee_ids:
+        fees = (await db.execute(select(NotaryFee).where(
+            NotaryFee.id.in_(fee_ids), NotaryFee.tenant_id == ctx.tenant_id,
+            NotaryFee.is_paid == False, NotaryFee.is_deleted == False,  # noqa: E712
+        ))).scalars().all()
+        for f in fees:
+            f.is_paid = True
+            f.paid_at = pd
+        await db.flush()
+        for f in fees:
+            await sync_notary_fee_cashbook(db, ctx.tenant_id, f)
+        marked += len(fees)
+
+    if marked:
         await record_audit(db, ctx.tenant_id, ctx.user_id, "PAY", "expenses", None,
-                           new_data={"count": len(rows), "paid_date": str(pd),
-                                     "ids": [str(e.id) for e in rows]})
+                           new_data={"count": marked, "paid_date": str(pd), "refs": payload.refs})
         # beri tahu pengaju bahwa tagihannya sudah dibayar
         await notify_roles(
-            db, ctx.tenant_id, (UserRole.PRODUKSI,), NotificationKind.EXPENSE_PAID,
+            db, ctx.tenant_id, (UserRole.PRODUKSI, UserRole.MARKETING), NotificationKind.EXPENSE_PAID,
             title="Biaya sudah dibayar",
-            body=f"{len(rows)} tagihan ditandai lunas ({pd.strftime('%d/%m/%Y')})",
-            link="/utilitas", actor_id=ctx.user_id,
+            body=f"{marked} tagihan ditandai lunas ({pd.strftime('%d/%m/%Y')})",
+            link="/finance/biaya-menunggu-bayar", actor_id=ctx.user_id,
         )
-    return {"marked": len(rows), "paid_date": str(pd)}
+    return {"marked": marked, "paid_date": str(pd)}
