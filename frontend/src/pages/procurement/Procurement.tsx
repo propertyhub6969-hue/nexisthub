@@ -42,7 +42,15 @@ const locId = (loc: string) => loc.slice(2)
 const locParams = (loc: string) => (isWarehouseLoc(loc) ? { warehouse_id: locId(loc) } : { project_id: locId(loc) }) as
   { project_id: string; warehouse_id?: never } | { warehouse_id: string; project_id?: never }
 const emptyExpense = (pid: string): ExpenseCreate => ({ project_id: pid, unit_id: '', category: 'upah', description: '', amount: 0, expense_date: '', is_paid: true })
-const emptyTpl = (pid: string): RabTemplateCreate => ({ project_id: pid, name: '', lines: [] })
+// Biaya utilitas (PLN/PDAM) dicatat lewat panel Utilitas unit dan jatuh ke kategori ini.
+// Tanpa baris anggarannya di template, realisasinya selalu tampil sebagai kebocoran —
+// jadi kedua baris ini selalu disediakan (nominal boleh 0 kalau memang tak dianggarkan).
+const UTIL_TPL_CATS: ExpenseCategory[] = ['kelistrikan', 'air_pdam']
+const DEFAULT_TPL_CATS: ExpenseCategory[] = ['material', 'upah', 'kontraktor', ...UTIL_TPL_CATS]
+
+const emptyTpl = (pid: string): RabTemplateCreate => ({
+  project_id: pid, name: '', lines: DEFAULT_TPL_CATS.map((category) => ({ category, amount: 0 })),
+})
 
 export default function Procurement() {
   const [tab, setTab] = useState<'po' | 'stock' | 'biaya' | 'rab' | 'vendor' | 'material' | 'gudang'>('po')
@@ -359,14 +367,24 @@ export default function Procurement() {
   }, [])
   useEffect(() => { if (tab === 'rab' && stockProject) loadRab(stockProject) }, [tab, stockProject, loadRab])
 
-  function openTplCreate() { setTplEditId(null); setTplForm({ ...emptyTpl(stockProject), lines: [{ category: 'material', amount: 0 }] }); setTplModal(true) }
+  function openTplCreate() { setTplEditId(null); setTplForm(emptyTpl(stockProject)); setTplModal(true) }
   function openTplEdit(t: RabTemplate) {
     setTplEditId(t.id)
-    setTplForm({ project_id: stockProject, name: t.name, notes: t.notes, lines: t.lines.map((l) => ({ category: l.category, amount: Number(l.amount) })) })
+    const lines = t.lines.map((l) => ({ category: l.category, amount: Number(l.amount) }))
+    // template lama dibuat sebelum ada modul utilitas — sediakan barisnya biar tinggal diisi
+    for (const c of UTIL_TPL_CATS) if (!lines.some((l) => l.category === c)) lines.push({ category: c, amount: 0 })
+    setTplForm({ project_id: stockProject, name: t.name, notes: t.notes, lines })
     setTplModal(true)
   }
   const tplTotal = tplForm.lines.reduce((a, l) => a + Number(l.amount || 0), 0)
-  function addTplLine() { setTplForm((f) => ({ ...f, lines: [...f.lines, { category: 'material', amount: 0 }] })) }
+  function addTplLine() {
+    setTplForm((f) => {
+      // pilih kategori pertama yang belum dipakai — hindari baris kembar
+      const cats = Object.keys(expCatLabel) as ExpenseCategory[]
+      const next = cats.find((c) => !f.lines.some((l) => l.category === c)) ?? 'lain'
+      return { ...f, lines: [...f.lines, { category: next, amount: 0 }] }
+    })
+  }
   function setTplLine(i: number, patch: Partial<{ category: ExpenseCategory; amount: number }>) {
     setTplForm((f) => ({ ...f, lines: f.lines.map((l, idx) => idx === i ? { ...l, ...patch } : l) }))
   }

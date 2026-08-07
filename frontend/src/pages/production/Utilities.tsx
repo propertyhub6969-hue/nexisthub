@@ -65,7 +65,7 @@ export default function Utilities() {
   const rows = (data?.rows ?? []).filter((r) => !query || r.unit_label.toLowerCase().includes(query))
 
   return (
-    <div className="max-w-6xl mx-auto p-4 sm:p-6 space-y-5">
+    <div className="space-y-4">
       <div>
         <h1 className="text-lg font-semibold text-slate-900 flex items-center gap-2">
           <Zap size={20} className="text-amber-500" /> Utilitas Unit

@@ -22,7 +22,7 @@ export default function NotaryMonitor() {
   const [tab, setTab] = useState<'hutang' | 'kerja'>('hutang')
 
   return (
-    <div className="max-w-6xl mx-auto p-4 sm:p-6 space-y-5">
+    <div className="space-y-4">
       <div>
         <h1 className="text-lg font-semibold text-slate-900 flex items-center gap-2">
           <Scale size={20} className="text-brand-600" /> Pemantauan Notaris
