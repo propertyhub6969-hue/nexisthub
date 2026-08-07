@@ -72,3 +72,31 @@ class CashBookSummary(BaseModel):
     saldo: Decimal          # total_in − total_out (periode difilter, bukan saldo kas absolut)
     by_category: list[CashBookCategoryTotal]
     months: list[CashBookMonth]
+
+
+# ── Biaya menunggu bayar (pengeluaran diajukan, belum masuk Buku Kas) ──
+class PendingExpenseRow(BaseModel):
+    id: uuid.UUID
+    description: str
+    category: str
+    category_label: str
+    amount: Decimal
+    expense_date: Optional[date] = None
+    project_name: Optional[str] = None
+    unit_label: Optional[str] = None
+    source: str              # "utilitas" | "opname" | "biaya"
+    utility_kind: Optional[str] = None    # PLN/PDAM bila sumbernya utilitas
+    utility_status: Optional[str] = None  # belum/diajukan/terpasang
+    applied_date: Optional[date] = None
+    installed_date: Optional[date] = None
+    days_waiting: Optional[int] = None
+
+
+class PendingExpenseList(BaseModel):
+    rows: list[PendingExpenseRow]
+    total_amount: Decimal
+
+
+class MarkExpensePaidRequest(BaseModel):
+    ids: list[uuid.UUID]
+    paid_date: Optional[date] = None   # kosong = hari ini

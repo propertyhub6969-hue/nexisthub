@@ -10,11 +10,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.api.deps import get_current_context, AuthContext
+from app.core.audit import record_audit
+from app.core.cashbook import sync_expense_cashbook
+from app.core.notify import notify_roles
 from app.models.cashbook import AccountCategory, CashBookEntry, CashDirection
+from app.models.expense import Expense
 from app.models.marketing import Client
-from app.models.property import Project
+from app.models.notification import NotificationKind
+from app.models.property import Project, Unit, UnitUtility
+from app.models.user import UserRole
 from app.schemas.marketing import Paginated
-from app.schemas.cashbook import CategoryResponse, CashBookEntryResponse, CashBookSummary, CashBookCategoryTotal, CashBookMonth
+from app.schemas.cashbook import (
+    CategoryResponse, CashBookEntryResponse, CashBookSummary, CashBookCategoryTotal, CashBookMonth,
+    PendingExpenseRow, PendingExpenseList, MarkExpensePaidRequest,
+)
 
 router = APIRouter()
 
@@ -130,3 +139,105 @@ async def cashbook_summary(
         total_in=total_in, total_out=total_out, saldo=total_in - total_out,
         by_category=by_category, months=months,
     )
+
+
+# ═══════════════ BIAYA MENUNGGU BAYAR (pengeluaran diajukan) ═══════════════
+# Pengeluaran lahir berstatus DIAJUKAN (is_paid=False) dan BELUM masuk Buku Kas —
+# lihat sync_expense_cashbook. Keuangan yang menandainya lunas beserta tanggal bayar
+# sebenarnya (di lapangan tanggal bayar sering beda dari tanggal pasang/opname).
+# Cakupan saat ini: biaya utilitas & opname borongan. Sengaja dinamai umum supaya
+# bisa diperluas ke seluruh jenis biaya tanpa mengganti nama menu.
+
+_EXP_LABEL = {
+    "material": "Material", "upah": "Upah", "kontraktor": "Kontraktor",
+    "kelistrikan": "Kelistrikan", "air_pdam": "Air / PDAM",
+    "operasional": "Operasional", "perizinan": "Perizinan", "lain": "Lain-lain",
+}
+
+
+def _unit_label(u) -> Optional[str]:
+    if u is None:
+        return None
+    return f"{u.block}-{u.unit_number}" if u.block else u.unit_number
+
+
+@router.get("/pending-expenses", response_model=PendingExpenseList)
+async def list_pending_expenses(
+    ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db),
+):
+    """Pengeluaran yang sudah diajukan tapi belum ditandai lunas oleh keuangan."""
+    rows = (await db.execute(
+        select(Expense, UnitUtility, Unit, Project)
+        .outerjoin(UnitUtility, UnitUtility.id == Expense.utility_id)
+        .outerjoin(Unit, Unit.id == Expense.unit_id)
+        .outerjoin(Project, Project.id == Expense.project_id)
+        .where(Expense.tenant_id == ctx.tenant_id, Expense.is_paid == False,  # noqa: E712
+               Expense.is_deleted == False)                                    # noqa: E712
+        .order_by(Expense.expense_date.desc())
+    )).all()
+
+    today = date.today()
+    out, total = [], Decimal(0)
+    for exp, util, unit, proj in rows:
+        total += Decimal(exp.amount or 0)
+        cat = exp.category.value if exp.category else "lain"
+        ref = (util.applied_date if util else None) or exp.expense_date
+        out.append(PendingExpenseRow(
+            id=exp.id, description=exp.description or "-", category=cat,
+            category_label=_EXP_LABEL.get(cat, cat), amount=Decimal(exp.amount or 0),
+            expense_date=exp.expense_date,
+            project_name=proj.name if proj else None, unit_label=_unit_label(unit),
+            source="utilitas" if util else ("opname" if exp.contract_id else "biaya"),
+            utility_kind=util.kind.value if util else None,
+            utility_status=util.status.value if util else None,
+            applied_date=util.applied_date if util else None,
+            installed_date=util.installed_date if util else None,
+            days_waiting=(today - ref).days if ref else None,
+        ))
+    return PendingExpenseList(rows=out, total_amount=total)
+
+
+@router.get("/pending-expenses/count")
+async def pending_expenses_count(
+    ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db),
+):
+    """Jumlah tagihan menunggu bayar — untuk badge sidebar."""
+    n = (await db.execute(
+        select(func.count()).select_from(Expense).where(
+            Expense.tenant_id == ctx.tenant_id, Expense.is_paid == False,  # noqa: E712
+            Expense.is_deleted == False)                                    # noqa: E712
+    )).scalar() or 0
+    return {"count": int(n)}
+
+
+@router.post("/pending-expenses/mark-paid")
+async def mark_expenses_paid(
+    payload: MarkExpensePaidRequest,
+    ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db),
+):
+    """Tandai sekelompok pengeluaran LUNAS dengan tanggal bayar sebenarnya → masuk Buku Kas."""
+    if not payload.ids:
+        return {"marked": 0}
+    pd = payload.paid_date or date.today()
+    rows = (await db.execute(select(Expense).where(
+        Expense.id.in_(payload.ids), Expense.tenant_id == ctx.tenant_id,
+        Expense.is_paid == False, Expense.is_deleted == False,  # noqa: E712
+    ))).scalars().all()
+    for e in rows:
+        e.is_paid = True
+        e.paid_at = pd
+    await db.flush()
+    for e in rows:
+        await sync_expense_cashbook(db, ctx.tenant_id, e)   # baru di sini uang tercatat keluar
+    if rows:
+        await record_audit(db, ctx.tenant_id, ctx.user_id, "PAY", "expenses", None,
+                           new_data={"count": len(rows), "paid_date": str(pd),
+                                     "ids": [str(e.id) for e in rows]})
+        # beri tahu pengaju bahwa tagihannya sudah dibayar
+        await notify_roles(
+            db, ctx.tenant_id, (UserRole.PRODUKSI,), NotificationKind.EXPENSE_PAID,
+            title="Biaya sudah dibayar",
+            body=f"{len(rows)} tagihan ditandai lunas ({pd.strftime('%d/%m/%Y')})",
+            link="/utilitas", actor_id=ctx.user_id,
+        )
+    return {"marked": len(rows), "paid_date": str(pd)}

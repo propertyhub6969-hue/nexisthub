@@ -32,6 +32,7 @@ import Subscription from './pages/settings/Subscription'
 import Reports from './pages/Reports'
 import PaymentApproval from './pages/finance/PaymentApproval'
 import CashBook from './pages/finance/CashBook'
+import PendingExpenses from './pages/finance/PendingExpenses'
 import Platform from './pages/platform/Platform'
 import PublicMonthlyTax from './pages/public/PublicMonthlyTax'
 import PublicBankFiling from './pages/public/PublicBankFiling'
@@ -96,6 +97,7 @@ export default function App() {
           <Route path="/reports/:category"   element={<Reports />} />
           <Route path="/payments/approval"   element={<PaymentApproval />} />
           <Route path="/cashbook"            element={<CashBook />} />
+          <Route path="/finance/biaya-menunggu-bayar" element={<PendingExpenses />} />
           <Route path="/platform/tenants"    element={<Platform />} />
         </Route>
 

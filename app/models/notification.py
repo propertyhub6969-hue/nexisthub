@@ -16,6 +16,8 @@ class NotificationKind(str, enum.Enum):
     PAYMENT_REJECTED = "payment_rejected"      # finance tolak → si penginput
     BANK_SUBMISSION = "bank_submission"        # bank kirim update lewat tautan
     NOTARY_SUBMISSION = "notary_submission"    # notaris kirim update lewat tautan
+    EXPENSE_SUBMITTED = "expense_submitted"    # produksi ajukan biaya (utilitas) → finance
+    EXPENSE_PAID = "expense_paid"              # finance tandai lunas → si pengaju
     INFO = "info"
 
 

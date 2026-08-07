@@ -64,6 +64,7 @@ const PATH_FEATURE: [string, string][] = [
   ['/reports', 'laporan'],
   ['/payments', 'pembayaran'],
   ['/cashbook', 'laporan'],
+  ['/finance', 'laporan'],
 ]
 
 export function featureForPath(path: string): string | null {

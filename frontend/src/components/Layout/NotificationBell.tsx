@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Bell, CheckCheck, Loader2, Wallet, CheckCircle2, XCircle, Inbox, Info } from 'lucide-react'
+import { Bell, CheckCheck, Loader2, Wallet, CheckCircle2, XCircle, Inbox, Info, Receipt } from 'lucide-react'
 import { notificationService } from '../../services/notification'
 import type { AppNotification, NotificationKind } from '../../types'
 
@@ -10,6 +10,8 @@ const ICON: Record<NotificationKind, { icon: typeof Bell; cls: string }> = {
   payment_rejected: { icon: XCircle, cls: 'text-red-600' },
   bank_submission: { icon: Inbox, cls: 'text-blue-600' },
   notary_submission: { icon: Inbox, cls: 'text-indigo-600' },
+  expense_submitted: { icon: Receipt, cls: 'text-amber-600' },
+  expense_paid: { icon: Wallet, cls: 'text-emerald-600' },
   info: { icon: Info, cls: 'text-slate-400' },
 }
 

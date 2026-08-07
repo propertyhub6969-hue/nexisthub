@@ -42,6 +42,17 @@ MAX_SITEPLAN_BYTES = 8 * 1024 * 1024  # 8 MB
 _UTIL_LABEL = {UtilityKind.PLN: "Listrik PLN", UtilityKind.PDAM: "Air PDAM"}
 _UTIL_EXPENSE_CAT = {UtilityKind.PLN: ExpenseCategory.KELISTRIKAN, UtilityKind.PDAM: ExpenseCategory.AIR_PDAM}
 
+# Yang berhak menindak tagihan biaya — sama dengan persetujuan pembayaran (payment.py::APPROVERS).
+EXPENSE_APPROVERS = (UserRole.OWNER, UserRole.ADMIN, UserRole.FINANCE)
+
+
+def _rp(n) -> str:
+    """Format rupiah singkat utk isi notifikasi (mis. Rp 1.500.000)."""
+    try:
+        return "Rp " + f"{int(Decimal(n or 0)):,}".replace(",", ".")
+    except Exception:
+        return "Rp 0"
+
 
 
 def _paginate(items, total, page, size):
@@ -716,8 +727,17 @@ async def reject_booking_request(
 
 
 
-async def _sync_utility_expense(db, tenant_id, util: UnitUtility, unit: Unit) -> None:
-    """Biaya utilitas → satu baris Expense (dibuat/diperbarui/dihapus mengikuti nilai biaya)."""
+async def _sync_utility_expense(db, tenant_id, util: UnitUtility, unit: Unit) -> str | None:
+    """Biaya utilitas → satu baris Expense (dibuat/diperbarui/dihapus mengikuti nilai biaya).
+
+    Biaya lahir berstatus DIAJUKAN (is_paid=False) — belum masuk Buku Kas. Yang menandai
+    lunas adalah keuangan, lewat menu Biaya Menunggu Bayar, dengan tanggal bayar sebenarnya
+    (di lapangan tanggal bayar sering beda dari tanggal pasang). Pola ini sama dengan opname
+    borongan, lihat contractor.py::add_opname.
+
+    Mengembalikan alasan notifikasi ke keuangan ("baru"/"ubah") bila ada yang perlu ditindak,
+    atau None bila tak ada tagihan baru (mis. biaya dikosongkan, atau tak ada perubahan nominal).
+    """
     exp = (await db.execute(select(Expense).where(
         Expense.utility_id == util.id, Expense.tenant_id == tenant_id))).scalar_one_or_none()
     if not util.cost or Decimal(util.cost) <= 0:
@@ -725,10 +745,19 @@ async def _sync_utility_expense(db, tenant_id, util: UnitUtility, unit: Unit) ->
             exp.is_deleted = True
             exp.deleted_at = datetime.utcnow()
             await sync_expense_cashbook(db, tenant_id, exp)
-        return
+        return None
     if exp is None:
-        exp = Expense(tenant_id=tenant_id, utility_id=util.id)
+        exp = Expense(tenant_id=tenant_id, utility_id=util.id, is_paid=False, paid_at=None)
         db.add(exp)
+        reason = "baru"
+    else:
+        # nominal berubah setelah keuangan membayar → tetap lunas (keputusan keuangan berdiri),
+        # tapi mereka perlu tahu supaya bisa mencocokkan selisihnya.
+        reason = "ubah" if Decimal(exp.amount or 0) != Decimal(util.cost) else None
+        if exp.is_deleted:  # biaya dihidupkan lagi setelah sempat dikosongkan
+            exp.is_paid = False
+            exp.paid_at = None
+            reason = "baru"
     exp.is_deleted = False
     exp.deleted_at = None
     exp.project_id = unit.project_id
@@ -737,10 +766,9 @@ async def _sync_utility_expense(db, tenant_id, util: UnitUtility, unit: Unit) ->
     exp.description = f"Pasang {_UTIL_LABEL[util.kind]} — unit {_unit_label(unit)}"
     exp.amount = util.cost
     exp.expense_date = util.installed_date or util.applied_date or date.today()
-    exp.is_paid = True
-    exp.paid_at = exp.expense_date
     await db.flush()
     await sync_expense_cashbook(db, tenant_id, exp)
+    return reason
 
 
 @router.get("/units/{unit_id}/utilities", response_model=list[UtilityResponse])
@@ -780,9 +808,16 @@ async def upsert_unit_utility(
     if util.status == UtilityStatus.TERPASANG and util.installed_date is None:
         util.installed_date = date.today()
     await db.flush()
-    await _sync_utility_expense(db, ctx.tenant_id, util, unit)
+    reason = await _sync_utility_expense(db, ctx.tenant_id, util, unit)
     await record_audit(db, ctx.tenant_id, ctx.user_id, "UPSERT", "unit_utilities", util.id,
                        new_data={"unit": _unit_label(unit), "jenis": util.kind.value, "status": util.status.value})
+    if reason:
+        await notify_roles(
+            db, ctx.tenant_id, EXPENSE_APPROVERS, NotificationKind.EXPENSE_SUBMITTED,
+            title=("Biaya utilitas diajukan" if reason == "baru" else "Nominal biaya utilitas diubah"),
+            body=f"{_UTIL_LABEL[util.kind]} unit {_unit_label(unit)} — {_rp(util.cost)}",
+            link="/finance/biaya-menunggu-bayar", actor_id=ctx.user_id,
+        )
     await db.refresh(util)
     return util
 

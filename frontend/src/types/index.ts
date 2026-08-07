@@ -1791,7 +1791,8 @@ export interface CashBookSummary {
 // ── Notifikasi (riwayat per-pengguna) ─────────────────────────────
 export type NotificationKind =
   | 'payment_submitted' | 'payment_approved' | 'payment_rejected'
-  | 'bank_submission' | 'notary_submission' | 'info'
+  | 'bank_submission' | 'notary_submission'
+  | 'expense_submitted' | 'expense_paid' | 'info'
 
 export interface AppNotification {
   id: string
@@ -1907,4 +1908,27 @@ export interface UtilitySummary {
   ready: number
   total_cost: number
   rows: UtilityUnitRow[]
+}
+
+// ── Biaya menunggu bayar (pengeluaran diajukan, belum masuk Buku Kas) ──
+export interface PendingExpenseRow {
+  id: string
+  description: string
+  category: ExpenseCategory
+  category_label: string
+  amount: number
+  expense_date?: string | null
+  project_name?: string | null
+  unit_label?: string | null
+  source: 'utilitas' | 'opname' | 'biaya'
+  utility_kind?: 'pln' | 'pdam' | null
+  utility_status?: UtilityStatus | null
+  applied_date?: string | null
+  installed_date?: string | null
+  days_waiting?: number | null
+}
+
+export interface PendingExpenseList {
+  rows: PendingExpenseRow[]
+  total_amount: number
 }

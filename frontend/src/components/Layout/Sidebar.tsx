@@ -34,6 +34,7 @@ import { kprService } from '../../services/kpr'
 import { taxService } from '../../services/tax'
 import { paymentService } from '../../services/payment'
 import { propertyService } from '../../services/property'
+import { cashbookService } from '../../services/cashbook'
 import NexistLogo from '../ui/NexistLogo'
 
 interface NavChild {
@@ -95,6 +96,7 @@ const financeItem: NavItem = {
   icon: ShieldCheck,
   children: [
     { label: 'Persetujuan Pembayaran', to: '/payments/approval', icon: ShieldCheck },
+    { label: 'Biaya Menunggu Bayar', to: '/finance/biaya-menunggu-bayar', icon: Receipt },
     { label: 'Buku Kas', to: '/cashbook', icon: Wallet },
   ],
 }
@@ -169,6 +171,7 @@ export default function Sidebar({ open = false, onClose }: { open?: boolean; onC
   const [notaryPendingCount, setNotaryPendingCount] = useState(0)
   const [payPendingCount, setPayPendingCount] = useState(0)
   const [bookingPendingCount, setBookingPendingCount] = useState(0)
+  const [expPendingCount, setExpPendingCount] = useState(0)
   useEffect(() => {
     if (!user) return
     const refresh = () => {
@@ -176,6 +179,7 @@ export default function Sidebar({ open = false, onClose }: { open?: boolean; onC
       taxService.notarySubmissionsPendingCount().then(setNotaryPendingCount).catch(() => {})
       paymentService.pendingCount().then(setPayPendingCount).catch(() => {})
       propertyService.bookingRequestsPendingCount().then(setBookingPendingCount).catch(() => {})
+      cashbookService.pendingExpensesCount().then(setExpPendingCount).catch(() => {})
     }
     refresh()
     // segarkan berkala — finance tahu ada entry baru dari marketing tanpa perlu muat ulang
@@ -260,6 +264,9 @@ export default function Sidebar({ open = false, onClose }: { open?: boolean; onC
                   )}
                   {child.to === '/marketing/booking-requests' && bookingPendingCount > 0 && (
                     <span className="ml-auto text-[10px] font-semibold bg-brass-500 text-white rounded-full px-1.5 py-0.5 leading-none">{bookingPendingCount}</span>
+                  )}
+                  {child.to === '/finance/biaya-menunggu-bayar' && expPendingCount > 0 && (
+                    <span className="ml-auto text-[10px] font-semibold bg-brass-500 text-white rounded-full px-1.5 py-0.5 leading-none">{expPendingCount}</span>
                   )}
                   {child.to === '/payments/approval' && payPendingCount > 0 && (
                     <span className="ml-auto text-[10px] font-semibold bg-brass-500 text-white rounded-full px-1.5 py-0.5 leading-none">{payPendingCount}</span>
