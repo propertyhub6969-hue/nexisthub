@@ -1522,7 +1522,7 @@ export interface StockReturnUnitCreate {
 }
 
 // ── Biaya (Expense) & Rollup ──────────────────────────────────────
-export type ExpenseCategory = 'material' | 'upah' | 'kontraktor' | 'kelistrikan' | 'operasional' | 'perizinan' | 'lain'
+export type ExpenseCategory = 'material' | 'upah' | 'kontraktor' | 'kelistrikan' | 'air_pdam' | 'operasional' | 'perizinan' | 'lain'
 
 export interface Expense {
   id: string

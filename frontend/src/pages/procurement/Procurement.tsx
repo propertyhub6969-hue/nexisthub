@@ -16,7 +16,8 @@ import type {
 } from '../../types'
 
 const expCatLabel: Record<ExpenseCategory, string> = {
-  material: 'Material', upah: 'Upah', kontraktor: 'Kontraktor', kelistrikan: 'Kelistrikan', operasional: 'Operasional', perizinan: 'Perizinan', lain: 'Lain-lain',
+  material: 'Material', upah: 'Upah', kontraktor: 'Kontraktor', kelistrikan: 'Kelistrikan',
+  air_pdam: 'Air / PDAM', operasional: 'Operasional', perizinan: 'Perizinan', lain: 'Lain-lain',
 }
 
 const VENDOR_CATEGORIES = ['Material', 'Kontraktor', 'Jasa', 'PLN', 'PDAM', 'Lainnya'] as const
