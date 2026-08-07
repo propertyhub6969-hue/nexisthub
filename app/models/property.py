@@ -137,7 +137,8 @@ class SiteplanShareLink(BaseModel):
 class BookingRequestStatus(str, enum.Enum):
     PENDING = "pending"      # menunggu ditinjau developer
     ACCEPTED = "accepted"    # diterima → unit ditandai Booking/DP
-    REJECTED = "rejected"
+    REJECTED = "rejected"    # ditolak saat ditinjau (unit tak pernah ditahan)
+    CANCELLED = "cancelled"  # sudah diterima lalu BATAL (calon mundur/tak bayar) → unit dilepas
 
 
 class UnitBookingRequest(BaseModel):

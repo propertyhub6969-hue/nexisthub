@@ -169,7 +169,7 @@ export default function Dashboard() {
       {/* Unit tertahan tanpa data Pembeli — biasanya booking agen yg diterima tapi belum dilanjutkan.
           Sengaja diberi peringatan supaya unit tak diam-diam tertahan & tak tercatat di CRM. */}
       {(s?.units_held_no_client ?? 0) > 0 && (
-        <Link to="/marketing/booking-requests" className="card p-4 flex items-center gap-4 border-amber-200 bg-amber-50/60 hover:bg-amber-50 transition-colors">
+        <Link to="/marketing/booking-requests?tab=accepted" className="card p-4 flex items-center gap-4 border-amber-200 bg-amber-50/60 hover:bg-amber-50 transition-colors">
           <div className="w-10 h-10 rounded-lg bg-amber-100 flex items-center justify-center shrink-0">
             <AlertTriangle size={18} className="text-amber-600" />
           </div>

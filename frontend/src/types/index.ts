@@ -1825,7 +1825,7 @@ export interface SiteplanShareLinkCreate {
   show_price: boolean
   expires_days: number
 }
-export type BookingRequestStatus = 'pending' | 'accepted' | 'rejected'
+export type BookingRequestStatus = 'pending' | 'accepted' | 'rejected' | 'cancelled'
 export interface BookingRequest {
   id: string
   unit_id: string

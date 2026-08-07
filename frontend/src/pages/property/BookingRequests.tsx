@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
-import { Loader2, Check, X, Inbox, Phone, Home, UserPlus, Users } from 'lucide-react'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { Loader2, Check, X, Inbox, Phone, Home, UserPlus, Users, Undo2 } from 'lucide-react'
 import Modal from '../../components/ui/Modal'
 import { propertyService } from '../../services/property'
 import type { BookingRequest, BookingRequestStatus } from '../../types'
@@ -9,12 +9,14 @@ const TABS: { key: BookingRequestStatus | 'all'; label: string }[] = [
   { key: 'pending', label: 'Menunggu' },
   { key: 'accepted', label: 'Diterima' },
   { key: 'rejected', label: 'Ditolak' },
+  { key: 'cancelled', label: 'Dibatalkan' },
   { key: 'all', label: 'Semua' },
 ]
 const STATUS_CLS: Record<BookingRequestStatus, string> = {
   pending: 'bg-amber-100 text-amber-700',
   accepted: 'bg-emerald-100 text-emerald-700',
   rejected: 'bg-red-100 text-red-700',
+  cancelled: 'bg-slate-200 text-slate-600',
 }
 const fmtDate = (d?: string) => d ? new Date(d).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'
 
@@ -31,12 +33,15 @@ export default function BookingRequests() {
     navigate(`/marketing/clients?${p.toString()}`)
   }
 
-  const [tab, setTab] = useState<BookingRequestStatus | 'all'>('pending')
+  const [sp] = useSearchParams()
+  const initialTab = (sp.get('tab') as BookingRequestStatus | 'all' | null) ?? 'pending'
+  const [tab, setTab] = useState<BookingRequestStatus | 'all'>(initialTab)
   const [items, setItems] = useState<BookingRequest[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [busyId, setBusyId] = useState<string | null>(null)
   const [rejectTarget, setRejectTarget] = useState<BookingRequest | null>(null)
+  const [rejectMode, setRejectMode] = useState<'reject' | 'cancel'>('reject')
   const [reason, setReason] = useState('')
   const [saving, setSaving] = useState(false)
 
@@ -58,7 +63,8 @@ export default function BookingRequests() {
     if (!rejectTarget || !reason.trim()) return
     setSaving(true)
     try {
-      await propertyService.rejectBookingRequest(rejectTarget.id, reason.trim())
+      if (rejectMode === 'cancel') await propertyService.cancelBookingRequest(rejectTarget.id, reason.trim())
+      else await propertyService.rejectBookingRequest(rejectTarget.id, reason.trim())
       setRejectTarget(null); setReason(''); await load()
     } catch { /* toast global */ } finally { setSaving(false) }
   }
@@ -151,6 +157,11 @@ export default function BookingRequests() {
                           className="inline-flex items-center gap-1 text-xs font-medium rounded-lg bg-brand-600 text-white px-2.5 py-1.5 hover:bg-brand-700">
                           <UserPlus size={12} /> Jadikan Pembeli
                         </button>
+                        <button onClick={() => { setRejectTarget(b); setRejectMode('cancel'); setReason('') }}
+                          title="Calon mundur / tak ada pembayaran → unit dilepas jadi Tersedia"
+                          className="inline-flex items-center gap-1 text-xs font-medium rounded-lg border border-slate-200 text-slate-600 px-2.5 py-1.5 hover:bg-slate-50">
+                          <Undo2 size={12} /> Batalkan
+                        </button>
                       </div>
                     )}
                     {b.status === 'pending' && (
@@ -159,7 +170,7 @@ export default function BookingRequests() {
                           className="inline-flex items-center gap-1 text-xs font-medium rounded-lg bg-emerald-600 text-white px-2.5 py-1.5 hover:bg-emerald-700 disabled:opacity-50">
                           {busyId === b.id ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />} Terima
                         </button>
-                        <button onClick={() => { setRejectTarget(b); setReason('') }}
+                        <button onClick={() => { setRejectTarget(b); setRejectMode('reject'); setReason('') }}
                           className="inline-flex items-center gap-1 text-xs font-medium rounded-lg border border-slate-200 text-slate-600 px-2.5 py-1.5 hover:bg-slate-50">
                           <X size={12} /> Tolak
                         </button>
@@ -173,20 +184,29 @@ export default function BookingRequests() {
         </div>
       )}
 
-      <Modal open={!!rejectTarget} onClose={() => setRejectTarget(null)} title="Tolak Permintaan Booking">
-        <p className="text-sm text-slate-500">
-          Menolak permintaan unit <b>{rejectTarget?.unit_label}</b> dari <b>{rejectTarget?.agent_name}</b>.
-          Status unit tidak berubah.
-        </p>
+      <Modal open={!!rejectTarget} onClose={() => setRejectTarget(null)}
+             title={rejectMode === 'cancel' ? 'Batalkan Booking' : 'Tolak Permintaan Booking'}>
+        {rejectMode === 'cancel' ? (
+          <p className="text-sm text-slate-500">
+            Membatalkan booking unit <b>{rejectTarget?.unit_label}</b> dari <b>{rejectTarget?.agent_name}</b> —
+            unit <b>dilepas kembali jadi Tersedia</b>. Prospek calon tetap tersimpan di CRM & bisa ditawari unit lain.
+          </p>
+        ) : (
+          <p className="text-sm text-slate-500">
+            Menolak permintaan unit <b>{rejectTarget?.unit_label}</b> dari <b>{rejectTarget?.agent_name}</b>.
+            Status unit tidak berubah.
+          </p>
+        )}
         <div className="mt-3">
           <label className="label">Alasan *</label>
           <textarea className="input" rows={3} value={reason} onChange={(e) => setReason(e.target.value)}
-            placeholder="mis. unit sudah dipesan pembeli lain, data calon belum lengkap" />
+            placeholder={rejectMode === 'cancel' ? 'mis. calon mundur, tidak ada pembayaran DP' : 'mis. unit sudah dipesan pembeli lain, data calon belum lengkap'} />
         </div>
         <div className="mt-4 flex justify-end gap-2">
           <button onClick={() => setRejectTarget(null)} className="btn-secondary text-sm">Batal</button>
           <button onClick={doReject} disabled={saving || !reason.trim()} className="btn-primary text-sm flex items-center gap-1.5">
-            {saving ? <Loader2 size={14} className="animate-spin" /> : <X size={14} />} Tolak
+            {saving ? <Loader2 size={14} className="animate-spin" /> : (rejectMode === 'cancel' ? <Undo2 size={14} /> : <X size={14} />)}
+            {rejectMode === 'cancel' ? 'Batalkan & Lepas Unit' : 'Tolak'}
           </button>
         </div>
       </Modal>

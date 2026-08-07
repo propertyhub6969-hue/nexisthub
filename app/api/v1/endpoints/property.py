@@ -625,6 +625,48 @@ async def accept_booking_request(
     return rows[0]
 
 
+@router.post("/booking-requests/{bid}/cancel", response_model=BookingRequestResponse)
+async def cancel_booking_request(
+    bid: uuid.UUID, payload: BookingRejectRequest,
+    ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db),
+):
+    """Batalkan booking yang SUDAH diterima (mis. calon mundur / tak ada pembayaran) → unit dilepas
+    kembali jadi Tersedia. Prospek yang terlanjur dibuat TIDAK dihapus — calonnya tetap data CRM
+    yang sah & bisa ditawari unit lain."""
+    b = (await db.execute(select(UnitBookingRequest).where(
+        UnitBookingRequest.id == bid, UnitBookingRequest.tenant_id == ctx.tenant_id))).scalar_one_or_none()
+    if b is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Permintaan booking tidak ditemukan")
+    if b.status != BookingRequestStatus.ACCEPTED:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Hanya booking yang sudah diterima yang bisa dibatalkan")
+
+    unit = (await db.execute(select(Unit).where(Unit.id == b.unit_id, Unit.tenant_id == ctx.tenant_id))).scalar_one_or_none()
+    released = False
+    if unit is not None:
+        # PENGAMAN: jangan lepas unit yang sudah punya data Pembeli / sudah akad — itu bukan lagi
+        # sekadar "ditahan booking", dan melepasnya diam-diam bisa merusak data penjualan.
+        has_client = await db.scalar(select(func.count()).select_from(Client).where(
+            Client.unit_id == unit.id, Client.tenant_id == ctx.tenant_id, Client.is_deleted == False))  # noqa: E712
+        if has_client:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                detail=f"Unit {_unit_label(unit)} sudah punya data Pembeli — batalkan lewat menu Pembeli, bukan dari sini.")
+        if unit.status == UnitStatus.BOOKED:
+            unit.status = UnitStatus.AVAILABLE
+            released = True
+
+    b.status = BookingRequestStatus.CANCELLED
+    b.reviewed_by = ctx.user_id
+    b.reviewed_at = datetime.now(timezone.utc)
+    b.review_notes = payload.reason.strip()
+    await db.flush()
+    await record_audit(db, ctx.tenant_id, ctx.user_id, "CANCEL", "unit_booking_requests", bid,
+                       new_data={"unit": _unit_label(unit) if unit else None, "unit_dilepas": released},
+                       reason=payload.reason.strip())
+    rows = await _booking_rows(db, ctx.tenant_id, [UnitBookingRequest.id == bid])
+    return rows[0]
+
+
 @router.post("/booking-requests/{bid}/reject", response_model=BookingRequestResponse)
 async def reject_booking_request(
     bid: uuid.UUID, payload: BookingRejectRequest,

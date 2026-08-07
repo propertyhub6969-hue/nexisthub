@@ -124,6 +124,10 @@ export const propertyService = {
     const { data } = await api.post<BookingRequest>(`/property/booking-requests/${id}/accept`)
     return data
   },
+  async cancelBookingRequest(id: string, reason: string): Promise<BookingRequest> {
+    const { data } = await api.post<BookingRequest>(`/property/booking-requests/${id}/cancel`, { reason })
+    return data
+  },
   async rejectBookingRequest(id: string, reason: string): Promise<BookingRequest> {
     const { data } = await api.post<BookingRequest>(`/property/booking-requests/${id}/reject`, { reason })
     return data
