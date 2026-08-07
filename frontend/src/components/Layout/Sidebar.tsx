@@ -25,6 +25,7 @@ import {
   Inbox,
   Scale,
   type LucideIcon,
+  Zap,
 } from 'lucide-react'
 import { clsx } from 'clsx'
 import { useAuth } from '../../context/AuthContext'
@@ -84,6 +85,7 @@ const produksiItem: NavItem = {
   children: [
     { label: 'Konstruksi', to: '/construction', icon: HardHat },
     { label: 'Procurement', to: '/procurement', icon: ShoppingCart },
+    { label: 'Utilitas', to: '/utilitas', icon: Zap },
   ],
 }
 

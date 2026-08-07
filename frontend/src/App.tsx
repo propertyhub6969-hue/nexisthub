@@ -25,6 +25,7 @@ import LegalSplitting from './pages/property/LegalSplitting'
 import BookingRequests from './pages/property/BookingRequests'
 import Procurement from './pages/procurement/Procurement'
 import Construction from './pages/construction/Construction'
+import Utilities from './pages/production/Utilities'
 import Team from './pages/settings/Team'
 import Profile from './pages/settings/Profile'
 import Subscription from './pages/settings/Subscription'
@@ -85,6 +86,7 @@ export default function App() {
           <Route path="/property/projects/:projectId/legal-splitting" element={<LegalSplitting />} />
           <Route path="/construction"        element={<Construction />} />
           <Route path="/procurement"         element={<Procurement />} />
+          <Route path="/utilitas"            element={<Utilities />} />
           <Route path="/legal"               element={<Notaries />} />
           <Route path="/pemberkasan"         element={<Pemberkasan />} />
           <Route path="/settings/team"       element={<Team />} />

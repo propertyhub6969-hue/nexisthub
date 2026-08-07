@@ -5,7 +5,7 @@ import type { UserRole } from '../types'
 // - marketing: grup Marketing & Properti (+ Pemberkasan) + Report > Marketing saja
 // - role lain (owner/admin/manager/viewer): akses penuh KECUALI area Produksi yg dibatasi PROD_ROLES
 const ROLE_PATHS: Partial<Record<UserRole, string[]>> = {
-  produksi: ['/dashboard', '/construction', '/procurement', '/reports/pembangunan'],
+  produksi: ['/dashboard', '/construction', '/procurement', '/utilitas', '/reports/pembangunan'],
   marketing: ['/marketing', '/property', '/pemberkasan', '/reports/marketing'],
 }
 
@@ -59,6 +59,7 @@ const PATH_FEATURE: [string, string][] = [
   ['/property/legal-docs', 'dokumen'],
   ['/property', 'properti'],
   ['/construction', 'konstruksi'],
+  ['/utilitas', 'konstruksi'],   // rekap utilitas = pekerjaan produksi/konstruksi
   ['/procurement', 'procurement'],
   ['/reports', 'laporan'],
   ['/payments', 'pembayaran'],
