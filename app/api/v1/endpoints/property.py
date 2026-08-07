@@ -17,7 +17,10 @@ from app.core import storage
 from app.api.deps import get_current_context, AuthContext, require_role
 from app.models.property import (
     Project, Unit, UnitStatus, SiteplanShareLink, UnitBookingRequest, BookingRequestStatus,
+    UnitUtility, UtilityKind, UtilityStatus,
 )
+from app.models.expense import Expense, ExpenseCategory
+from app.core.cashbook import sync_expense_cashbook
 from app.models.marketing import Client, ClientStatus, Prospect, ProspectStatus
 from app.models.user import User, UserRole
 from app.schemas.marketing import Paginated
@@ -27,6 +30,7 @@ from app.schemas.property import (
     UnitBulkGenerate, UnitBulkResult,
     SiteplanShareLinkCreate, SiteplanShareLinkResponse,
     BookingRequestResponse, BookingRejectRequest,
+    UtilityUpsert, UtilityResponse, UtilityUnitRow, UtilitySummary,
 )
 from app.core.notify import notify_roles
 from app.models.notification import NotificationKind
@@ -34,6 +38,10 @@ from app.models.notification import NotificationKind
 router = APIRouter()
 
 MAX_SITEPLAN_BYTES = 8 * 1024 * 1024  # 8 MB
+
+_UTIL_LABEL = {UtilityKind.PLN: "Listrik PLN", UtilityKind.PDAM: "Air PDAM"}
+_UTIL_EXPENSE_CAT = {UtilityKind.PLN: ExpenseCategory.KELISTRIKAN, UtilityKind.PDAM: ExpenseCategory.AIR_PDAM}
+
 
 
 def _paginate(items, total, page, size):
@@ -434,8 +442,24 @@ async def create_bast(
     ctx: AuthContext = Depends(get_current_context),
     db: AsyncSession = Depends(get_db),
 ):
-    """Buat BAST (serah terima) → nomor otomatis, petugas = user login, status unit → Serah Terima."""
+    """Buat BAST (serah terima) → nomor otomatis, petugas = user login, status unit → Serah Terima.
+
+    DIBLOKIR bila utilitas (PLN/PDAM) belum terpasang — rumah tak layak diserahterimakan
+    kalau listrik/air belum menyala. Kalau di lapangan sudah terpasang, catat dulu di
+    panel Utilitas unit tersebut."""
     unit = await _get_unit(db, ctx.tenant_id, unit_id)
+
+    utils = (await db.execute(select(UnitUtility).where(
+        UnitUtility.unit_id == unit.id, UnitUtility.tenant_id == ctx.tenant_id))).scalars().all()
+    by_kind = {u.kind: u.status for u in utils}
+    belum = [_UTIL_LABEL[k] for k in (UtilityKind.PLN, UtilityKind.PDAM)
+             if by_kind.get(k) != UtilityStatus.TERPASANG]
+    if belum:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail=f"Belum bisa serah terima — {' & '.join(belum)} belum terpasang. "
+                   f"Catat dulu di panel Utilitas unit {_unit_label(unit)}.")
+
     if unit.bast_number is None:
         n = await db.scalar(select(func.count()).select_from(Unit).where(
             Unit.tenant_id == ctx.tenant_id, Unit.bast_number.isnot(None)))
@@ -683,3 +707,124 @@ async def reject_booking_request(
                        reason=payload.reason.strip())
     rows = await _booking_rows(db, ctx.tenant_id, [UnitBookingRequest.id == bid])
     return rows[0]
+
+
+# ═══════════════════════ UTILITAS UNIT (PLN / PDAM) ═══════════════════════
+# Biaya ditanggung developer & WAJIB terpasang sebelum serah terima (guard di endpoint BAST).
+# Biaya pemasangan TIDAK disimpan ganda: nilainya melahirkan/menyunting satu baris Expense
+# supaya ikut terhitung di biaya proyek, RAB vs realisasi, & Buku Kas.
+
+
+
+async def _sync_utility_expense(db, tenant_id, util: UnitUtility, unit: Unit) -> None:
+    """Biaya utilitas → satu baris Expense (dibuat/diperbarui/dihapus mengikuti nilai biaya)."""
+    exp = (await db.execute(select(Expense).where(
+        Expense.utility_id == util.id, Expense.tenant_id == tenant_id))).scalar_one_or_none()
+    if not util.cost or Decimal(util.cost) <= 0:
+        if exp is not None:
+            exp.is_deleted = True
+            exp.deleted_at = datetime.utcnow()
+            await sync_expense_cashbook(db, tenant_id, exp)
+        return
+    if exp is None:
+        exp = Expense(tenant_id=tenant_id, utility_id=util.id)
+        db.add(exp)
+    exp.is_deleted = False
+    exp.deleted_at = None
+    exp.project_id = unit.project_id
+    exp.unit_id = unit.id
+    exp.category = _UTIL_EXPENSE_CAT[util.kind]
+    exp.description = f"Pasang {_UTIL_LABEL[util.kind]} — unit {_unit_label(unit)}"
+    exp.amount = util.cost
+    exp.expense_date = util.installed_date or util.applied_date or date.today()
+    exp.is_paid = True
+    exp.paid_at = exp.expense_date
+    await db.flush()
+    await sync_expense_cashbook(db, tenant_id, exp)
+
+
+@router.get("/units/{unit_id}/utilities", response_model=list[UtilityResponse])
+async def list_unit_utilities(
+    unit_id: uuid.UUID, ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db),
+):
+    """Utilitas satu unit. Selalu mengembalikan 2 baris (PLN & PDAM) — yang belum dicatat
+    dikembalikan sebagai status 'belum' tanpa disimpan, supaya form di UI selalu lengkap."""
+    unit = await _get_unit(db, ctx.tenant_id, unit_id)
+    rows = (await db.execute(select(UnitUtility).where(
+        UnitUtility.unit_id == unit.id, UnitUtility.tenant_id == ctx.tenant_id))).scalars().all()
+    by_kind = {r.kind: r for r in rows}
+    out = []
+    for k in (UtilityKind.PLN, UtilityKind.PDAM):
+        r = by_kind.get(k)
+        out.append(r if r is not None else UtilityResponse(
+            id=uuid.UUID(int=0), unit_id=unit.id, kind=k, status=UtilityStatus.BELUM))
+    return out
+
+
+@router.put("/units/{unit_id}/utilities", response_model=UtilityResponse)
+async def upsert_unit_utility(
+    unit_id: uuid.UUID, payload: UtilityUpsert,
+    ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db),
+):
+    """Simpan utilitas satu jenis (PLN atau PDAM) untuk sebuah unit — buat bila belum ada."""
+    unit = await _get_unit(db, ctx.tenant_id, unit_id)
+    util = (await db.execute(select(UnitUtility).where(
+        UnitUtility.unit_id == unit.id, UnitUtility.kind == payload.kind,
+        UnitUtility.tenant_id == ctx.tenant_id))).scalar_one_or_none()
+    if util is None:
+        util = UnitUtility(tenant_id=ctx.tenant_id, unit_id=unit.id, kind=payload.kind)
+        db.add(util)
+    for f, v in payload.model_dump(exclude={"kind"}).items():
+        setattr(util, f, v)
+    # tanggal terpasang otomatis terisi bila ditandai terpasang tapi tanggalnya kosong
+    if util.status == UtilityStatus.TERPASANG and util.installed_date is None:
+        util.installed_date = date.today()
+    await db.flush()
+    await _sync_utility_expense(db, ctx.tenant_id, util, unit)
+    await record_audit(db, ctx.tenant_id, ctx.user_id, "UPSERT", "unit_utilities", util.id,
+                       new_data={"unit": _unit_label(unit), "jenis": util.kind.value, "status": util.status.value})
+    await db.refresh(util)
+    return util
+
+
+@router.get("/utilities/summary", response_model=UtilitySummary)
+async def utilities_summary(
+    project_id: uuid.UUID = Query(...),
+    only_incomplete: bool = Query(False),
+    ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db),
+):
+    """Rekap kesiapan utilitas per unit dalam satu proyek — untuk tahu unit mana yang
+    belum siap serah terima karena listrik/air belum masuk."""
+    units = (await db.execute(
+        select(Unit).where(Unit.project_id == project_id, Unit.tenant_id == ctx.tenant_id)
+        .order_by(Unit.block, Unit.unit_number)
+    )).scalars().all()
+    if not units:
+        return UtilitySummary(total_units=0, pln_terpasang=0, pdam_terpasang=0, ready=0,
+                              total_cost=Decimal(0), rows=[])
+    uids = [u.id for u in units]
+    utils = (await db.execute(select(UnitUtility).where(
+        UnitUtility.unit_id.in_(uids), UnitUtility.tenant_id == ctx.tenant_id))).scalars().all()
+    by_unit: dict = {}
+    total_cost = Decimal(0)
+    for x in utils:
+        by_unit.setdefault(x.unit_id, {})[x.kind] = x.status
+        total_cost += Decimal(x.cost or 0)
+
+    rows, pln_ok, pdam_ok, ready = [], 0, 0, 0
+    for u in units:
+        m = by_unit.get(u.id, {})
+        pln = m.get(UtilityKind.PLN)
+        pdam = m.get(UtilityKind.PDAM)
+        is_ready = pln == UtilityStatus.TERPASANG and pdam == UtilityStatus.TERPASANG
+        if pln == UtilityStatus.TERPASANG: pln_ok += 1
+        if pdam == UtilityStatus.TERPASANG: pdam_ok += 1
+        if is_ready: ready += 1
+        if only_incomplete and is_ready:
+            continue
+        rows.append(UtilityUnitRow(
+            unit_id=u.id, unit_label=_unit_label(u), unit_status=u.status.value,
+            pln=pln, pdam=pdam, ready=is_ready,
+        ))
+    return UtilitySummary(total_units=len(units), pln_terpasang=pln_ok, pdam_terpasang=pdam_ok,
+                          ready=ready, total_cost=total_cost, rows=rows)

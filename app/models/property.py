@@ -177,3 +177,45 @@ class UnitBookingRequest(BaseModel):
 
     def __repr__(self) -> str:
         return f"<UnitBookingRequest {self.agent_name} unit={self.unit_id} [{self.status}]>"
+
+
+class UtilityKind(str, enum.Enum):
+    """Jenis sambungan utilitas rumah. Bisa ditambah nanti (gas, internet) tanpa ubah struktur."""
+    PLN = "pln"        # Listrik PLN
+    PDAM = "pdam"      # Air PDAM
+
+
+class UtilityStatus(str, enum.Enum):
+    BELUM = "belum"          # belum diurus sama sekali
+    DIAJUKAN = "diajukan"    # sudah didaftarkan ke PLN/PDAM, menunggu pemasangan
+    TERPASANG = "terpasang"  # meteran sudah terpasang & menyala
+
+
+class UnitUtility(BaseModel):
+    """Sambungan utilitas (PLN/PDAM) per UNIT — biaya ditanggung developer & WAJIB terpasang
+    sebelum serah terima (lihat guard di endpoint BAST).
+
+    Biaya pemasangan tak disimpan ganda: nilainya melahirkan/menyunting satu baris Expense
+    (kategori Kelistrikan utk PLN, Air/PDAM utk PDAM) supaya ikut terhitung di biaya proyek,
+    RAB vs realisasi, dan Buku Kas — satu entri, mengalir ke semua laporan."""
+    __tablename__ = "unit_utilities"
+
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    unit_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("units.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    kind: Mapped[UtilityKind] = mapped_column(SAEnum(UtilityKind), nullable=False)
+    status: Mapped[UtilityStatus] = mapped_column(
+        SAEnum(UtilityStatus), default=UtilityStatus.BELUM, nullable=False, index=True
+    )
+    customer_no: Mapped[str] = mapped_column(String(60), nullable=True)   # ID pelanggan / no. meteran
+    power_va: Mapped[int] = mapped_column(Integer, nullable=True)         # daya listrik (VA) — khusus PLN
+    applied_date: Mapped[Date] = mapped_column(Date, nullable=True)       # tgl diajukan
+    installed_date: Mapped[Date] = mapped_column(Date, nullable=True)     # tgl terpasang
+    cost: Mapped[float] = mapped_column(Numeric(15, 2), nullable=True)    # biaya pasang (→ Expense)
+    notes: Mapped[str] = mapped_column(Text, nullable=True)
+
+    def __repr__(self) -> str:
+        return f"<UnitUtility {self.kind} unit={self.unit_id} [{self.status}]>"

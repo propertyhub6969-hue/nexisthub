@@ -4,7 +4,7 @@ from datetime import datetime, date
 from decimal import Decimal
 import uuid
 
-from app.models.property import ProjectStatus, UnitStatus
+from app.models.property import ProjectStatus, UnitStatus, UtilityKind, UtilityStatus
 
 
 # ── Project ───────────────────────────────────────────────────────
@@ -202,3 +202,50 @@ class PublicSiteplanResponse(BaseModel):
     has_siteplan: bool
     show_price: bool
     units: list[PublicSiteplanUnit]
+
+
+# ── Utilitas unit (PLN/PDAM) ─────────────────────────────────────────
+class UtilityUpsert(BaseModel):
+    kind: UtilityKind
+    status: UtilityStatus = UtilityStatus.BELUM
+    customer_no: Optional[str] = Field(None, max_length=60)
+    power_va: Optional[int] = Field(None, ge=0)
+    applied_date: Optional[date] = None
+    installed_date: Optional[date] = None
+    cost: Optional[Decimal] = Field(None, ge=0)
+    notes: Optional[str] = None
+
+
+class UtilityResponse(BaseModel):
+    id: uuid.UUID
+    unit_id: uuid.UUID
+    kind: UtilityKind
+    status: UtilityStatus
+    customer_no: Optional[str] = None
+    power_va: Optional[int] = None
+    applied_date: Optional[date] = None
+    installed_date: Optional[date] = None
+    cost: Optional[Decimal] = None
+    notes: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+class UtilityUnitRow(BaseModel):
+    """Ringkasan utilitas per unit — untuk daftar/rekap proyek."""
+    unit_id: uuid.UUID
+    unit_label: str
+    unit_status: str
+    pln: Optional[UtilityStatus] = None
+    pdam: Optional[UtilityStatus] = None
+    ready: bool = False      # kedua utilitas terpasang → siap serah terima
+
+
+class UtilitySummary(BaseModel):
+    total_units: int
+    pln_terpasang: int
+    pdam_terpasang: int
+    ready: int               # unit yang PLN & PDAM sudah terpasang
+    total_cost: Decimal
+    rows: list[UtilityUnitRow]

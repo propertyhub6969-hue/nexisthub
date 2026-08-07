@@ -10,7 +10,8 @@ class ExpenseCategory(str, enum.Enum):
     MATERIAL = "material"        # material non-stok / beli langsung
     UPAH = "upah"               # upah tukang harian
     KONTRAKTOR = "kontraktor"   # borongan
-    KELISTRIKAN = "kelistrikan"  # instalasi & material listrik
+    KELISTRIKAN = "kelistrikan"  # instalasi & material listrik (termasuk pasang PLN)
+    AIR_PDAM = "air_pdam"        # sambungan air / PDAM
     OPERASIONAL = "operasional"
     PERIZINAN = "perizinan"
     LAIN = "lain"
@@ -44,6 +45,9 @@ class Expense(BaseModel, SoftDeleteMixin):
     split_batch_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("certificate_split_batches.id", ondelete="SET NULL"), nullable=True, index=True
     )  # biaya pemecahan sertifikat (PNBP/ukur/notaris) ditautkan ke batch (opsional)
+    utility_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("unit_utilities.id", ondelete="SET NULL"), nullable=True, index=True
+    )  # biaya pasang PLN/PDAM ditautkan ke catatan utilitas unit (dibuat otomatis dari modul Utilitas)
     permit_log_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("document_progress_logs.id", ondelete="SET NULL"), nullable=True, index=True
     )  # biaya perizinan ditautkan ke tahapan tertentu (opsional) — mis. biaya ukur di tahap "diproses"

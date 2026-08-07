@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { today } from '../../utils/date'
 import { useParams, Link } from 'react-router-dom'
-import { Plus, Trash2, Pencil, Loader2, ArrowLeft, Map, FileSignature, Printer, Boxes, X, Search } from 'lucide-react'
+import { Plus, Trash2, Pencil, Loader2, ArrowLeft, Map, FileSignature, Printer, Boxes, X, Search, Zap } from 'lucide-react'
 import Badge from '../../components/ui/Badge'
 import DateInput from '../../components/ui/DateInput'
 import MoneyInput from '../../components/ui/MoneyInput'
@@ -12,6 +12,7 @@ import { useAuth } from '../../context/AuthContext'
 import { hasAnyRole } from '../../utils/access'
 import { tenantLogoUrl } from '../../services/users'
 import { printBast } from '../../utils/bast'
+import UtilityModal from '../../components/property/UtilityModal'
 import type { Project, Unit, UnitCreate, UnitStatus, UnitBulkGenerate, PriceItem } from '../../types'
 
 const PRICE_PRESETS = ['Harga Dasar', 'Hook', 'Lebih Tanah', 'Lebih Bangunan', 'Booking Fee']
@@ -50,6 +51,9 @@ export default function ProjectUnits() {
 
   const priceSubtotal = priceRows.reduce((a, r) => a + (Number(r.amount) || 0), 0)
   const priceTotal = Math.max(0, priceSubtotal - (Number(form.discount) || 0))
+
+  // Utilitas (PLN/PDAM) per unit
+  const [utilUnit, setUtilUnit] = useState<Unit | null>(null)
 
   // BAST
   const [bastModal, setBastModal] = useState(false)
@@ -212,7 +216,11 @@ export default function ProjectUnits() {
       await propertyService.createBast(bastUnit.id, { bast_date: bastDate || undefined })
       setBastModal(false)
       await load(page, statusFilter, searchQ)
-    } catch { setError('Gagal membuat BAST.') } finally { setSavingBast(false) }
+    } catch (err) {
+      // Guard backend memberi alasan spesifik (mis. utilitas belum terpasang) — tampilkan apa adanya
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      setError(typeof detail === 'string' ? detail : 'Gagal membuat BAST.')
+    } finally { setSavingBast(false) }
   }
   function doPrintBast(u: Unit) {
     printBast({
@@ -320,6 +328,9 @@ export default function ProjectUnits() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-end gap-3">
+                        <button onClick={() => setUtilUnit(u)} className="text-slate-400 hover:text-amber-500 transition-colors" title="Utilitas (PLN/PDAM)">
+                          <Zap size={15} />
+                        </button>
                         <button onClick={() => openBast(u)} className="text-slate-400 hover:text-emerald-600 transition-colors" title={u.bast_number ? 'Ubah BAST' : 'Serah Terima (BAST)'}>
                           <FileSignature size={15} />
                         </button>
@@ -504,6 +515,14 @@ export default function ProjectUnits() {
           </div>
         </form>
       </Modal>
-    </div>
+    
+      {utilUnit && (
+        <UtilityModal
+          unitId={utilUnit.id}
+          unitLabel={[utilUnit.block, utilUnit.unit_number].filter(Boolean).join('-')}
+          onClose={() => setUtilUnit(null)}
+        />
+      )}
+</div>
   )
 }

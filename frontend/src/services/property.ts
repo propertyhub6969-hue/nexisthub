@@ -4,6 +4,7 @@ import type {
   Unit, UnitCreate, UnitBulkGenerate, UnitBulkResult,
   PaginatedResponse,
   SiteplanShareLink, SiteplanShareLinkCreate, BookingRequest, PublicSiteplanPage,
+  UnitUtility, UtilityUpsert, UtilitySummary,
 } from '../types'
 
 interface ListParams {
@@ -145,5 +146,21 @@ export const propertyService = {
     const fd = new FormData()
     Object.entries(payload).forEach(([k, v]) => { if (v) fd.append(k, v) })
     await api.post(`/public/siteplan/${token}/booking`, fd, { headers: { 'Content-Type': 'multipart/form-data' } })
+  },
+
+  // ── Utilitas unit (PLN/PDAM) ──
+  async listUnitUtilities(unitId: string): Promise<UnitUtility[]> {
+    const { data } = await api.get<UnitUtility[]>(`/property/units/${unitId}/utilities`)
+    return data
+  },
+  async saveUnitUtility(unitId: string, payload: UtilityUpsert): Promise<UnitUtility> {
+    const { data } = await api.put<UnitUtility>(`/property/units/${unitId}/utilities`, payload)
+    return data
+  },
+  async utilitiesSummary(projectId: string, onlyIncomplete = false): Promise<UtilitySummary> {
+    const { data } = await api.get<UtilitySummary>('/property/utilities/summary', {
+      params: { project_id: projectId, only_incomplete: onlyIncomplete },
+    })
+    return data
   },
 }

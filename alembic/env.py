@@ -14,7 +14,7 @@ from app.core.database import Base
 from app.models.tenant import Tenant
 from app.models.user import User
 from app.models.marketing import Lead, Prospect, Client
-from app.models.property import Project, Unit, SiteplanShareLink, UnitBookingRequest
+from app.models.property import Project, Unit, SiteplanShareLink, UnitBookingRequest, UnitUtility
 from app.models.sale import Sale
 from app.models.payment import PaymentSchedule, Payment
 from app.models.tax import Notary, TaxRecord, NotaryFee, MonthlyTaxShareLink

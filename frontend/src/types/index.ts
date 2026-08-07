@@ -1865,3 +1865,46 @@ export interface PublicSiteplanPage {
   show_price: boolean
   units: PublicSiteplanUnit[]
 }
+
+// ── Utilitas unit (PLN / PDAM) ────────────────────────────────────
+export type UtilityKind = 'pln' | 'pdam'
+export type UtilityStatus = 'belum' | 'diajukan' | 'terpasang'
+
+export interface UnitUtility {
+  id: string
+  unit_id: string
+  kind: UtilityKind
+  status: UtilityStatus
+  customer_no?: string
+  power_va?: number
+  applied_date?: string
+  installed_date?: string
+  cost?: number
+  notes?: string
+}
+export interface UtilityUpsert {
+  kind: UtilityKind
+  status: UtilityStatus
+  customer_no?: string
+  power_va?: number
+  applied_date?: string
+  installed_date?: string
+  cost?: number
+  notes?: string
+}
+export interface UtilityUnitRow {
+  unit_id: string
+  unit_label: string
+  unit_status: string
+  pln?: UtilityStatus
+  pdam?: UtilityStatus
+  ready: boolean
+}
+export interface UtilitySummary {
+  total_units: number
+  pln_terpasang: number
+  pdam_terpasang: number
+  ready: number
+  total_cost: number
+  rows: UtilityUnitRow[]
+}

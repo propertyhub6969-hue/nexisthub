@@ -27,6 +27,7 @@ _EXPENSE_LABEL = {
     ExpenseCategory.MATERIAL: "Material", ExpenseCategory.UPAH: "Upah",
     ExpenseCategory.KONTRAKTOR: "Kontraktor", ExpenseCategory.KELISTRIKAN: "Kelistrikan",
     ExpenseCategory.OPERASIONAL: "Operasional", ExpenseCategory.PERIZINAN: "Perizinan",
+    ExpenseCategory.AIR_PDAM: "Air / PDAM",
     ExpenseCategory.LAIN: "Lain-lain",
 }
 
