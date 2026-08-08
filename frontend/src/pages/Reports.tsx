@@ -9,6 +9,7 @@ import { reportingService } from '../services/reporting'
 import { propertyService } from '../services/property'
 import { printMonthlyTax, downloadMonthlyTaxCsv } from '../utils/monthlyTax'
 import { printCashflow } from '../utils/cashflow'
+import { printProjectProfit } from '../utils/profit'
 import { useAuth } from '../context/AuthContext'
 import Modal from '../components/ui/Modal'
 import Badge from '../components/ui/Badge'
@@ -78,6 +79,7 @@ function BreakdownSection({ title, colLabel, totalLabel, items }: {
  *  - Biaya basis accrual → angkanya cocok dgn RAB & Kebocoran.
  *  - Biaya unit BELUM terjual = persediaan/modal tertanam, TIDAK mengurangi laba. */
 function ProjectProfitTab() {
+  const { user } = useAuth()
   const [data, setData] = useState<ProjectProfitReport | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -106,6 +108,15 @@ function ProjectProfitTab() {
 
   return (
     <div className="space-y-4">
+      <div className="flex justify-end">
+        <button
+          className="btn-secondary text-sm flex items-center gap-1.5"
+          onClick={() => printProjectProfit(data, { tenantName: user?.tenant_name ?? undefined, detail })}
+        >
+          <Printer size={14} /> Cetak / PDF
+        </button>
+      </div>
+
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
         <div className="card p-4"><p className="text-xs text-slate-500">Nilai Kontrak</p>
           <p className="font-display text-lg font-bold text-slate-900">{fmtRp(data.revenue_contract)}</p></div>
