@@ -1095,3 +1095,259 @@ async def revoke_monthly_tax_share_link(link_id: uuid.UUID, ctx: AuthContext = D
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Tautan tidak ditemukan")
     link.revoked_at = datetime.now(timezone.utc)
     await db.flush()
+
+
+# ═══════════════════════ LABA / RUGI PER PROYEK ═══════════════════════
+# Bukan akuntansi formal (tak ada jurnal/neraca) — laporan OPERASIONAL: berapa
+# untung tiap proyek & unit. Fase B2 double-entry sengaja tidak dibangun.
+#
+# ★ DUA KEPUTUSAN YANG MENENTUKAN ANGKANYA:
+# 1. Basis ACCRUAL — biaya dihitung saat TERJADI, bukan saat dibayar. Ini menyamakan
+#    angkanya dengan RAB & Kebocoran (rab.py::_realisasi_map); kalau dipakai basis kas,
+#    dua laporan akan berbeda dan pengguna kehilangan kepercayaan pada keduanya.
+# 2. Biaya unit BELUM TERJUAL = PERSEDIAAN (modal tertanam), TIDAK dikurangkan dari laba.
+#    Kalau dikurangkan, proyek yang sedang membangun banyak unit selalu tampak rugi —
+#    padahal uangnya berubah jadi rumah, bukan hilang.
+#
+# Logika biaya SENGAJA menyalin rab.py::_realisasi_map (transfer & retur-vendor bukan
+# biaya; retur-unit mengurangi biaya unit asal). Kalau aturan itu berubah di sana,
+# ubah di sini juga — silang-cek keduanya lewat total realisasi per unit.
+
+_PROFIT_COST_GROUP = {
+    ExpenseCategory.MATERIAL: "material",
+    ExpenseCategory.UPAH: "upah", ExpenseCategory.KONTRAKTOR: "upah",
+    ExpenseCategory.KELISTRIKAN: "utilitas", ExpenseCategory.AIR_PDAM: "utilitas",
+    ExpenseCategory.OPERASIONAL: "lain", ExpenseCategory.PERIZINAN: "lain",
+    ExpenseCategory.LAIN: "lain",
+}
+
+
+class ProjectProfitRow(BaseModel):
+    project_id: uuid.UUID
+    project_name: str
+    units_total: int
+    units_sold: int                 # unit yang sudah punya pembeli aktif
+    revenue_contract: Decimal       # Σ nilai kontrak pembeli proyek ini
+    revenue_cash: Decimal           # kas masuk yang sudah disetujui keuangan
+    cost_sold: Decimal              # biaya unit yang sudah terjual
+    cost_general: Decimal           # biaya umum proyek (tak melekat ke unit manapun)
+    cost_notary: Decimal            # biaya notaris pembeli proyek ini
+    profit: Decimal                 # revenue_contract − (cost_sold + cost_general + cost_notary)
+    margin_pct: Optional[Decimal] = None
+    inventory_value: Decimal        # biaya unit BELUM terjual — modal tertanam, bukan biaya
+    clients_without_unit: int       # pembeli tanpa unit_id → pendapatannya tak punya lawan biaya
+
+
+class ProjectProfitReport(BaseModel):
+    rows: list[ProjectProfitRow]
+    revenue_contract: Decimal
+    revenue_cash: Decimal
+    cost_total: Decimal
+    profit: Decimal
+    inventory_value: Decimal
+
+
+class UnitProfitRow(BaseModel):
+    unit_id: uuid.UUID
+    unit_label: str
+    unit_status: str
+    client_name: Optional[str] = None
+    contract_value: Optional[Decimal] = None
+    cost_material: Decimal
+    cost_upah: Decimal
+    cost_utilitas: Decimal
+    cost_lain: Decimal
+    cost_total: Decimal
+    profit: Optional[Decimal] = None     # None bila belum terjual (tak ada pendapatan)
+    margin_pct: Optional[Decimal] = None
+    is_sold: bool
+
+
+class ProjectProfitDetail(BaseModel):
+    project_id: uuid.UUID
+    project_name: str
+    rows: list[UnitProfitRow]
+    cost_general: Decimal
+    cost_notary: Decimal
+    revenue_unattributed: Decimal   # kontrak pembeli yang unit_id-nya kosong
+
+
+async def _project_cost_map(db, tenant_id, project_id):
+    """dict[unit_id | None][grup] = Decimal. Grup: material/upah/utilitas/lain.
+    Salinan aturan rab.py::_realisasi_map — accrual, transfer & retur-vendor bukan biaya."""
+    from app.models.stock import StockMovement, MovementType, MovementSource
+    res: dict = {}
+
+    def bucket(uid):
+        return res.setdefault(uid, {"material": Decimal(0), "upah": Decimal(0),
+                                    "utilitas": Decimal(0), "lain": Decimal(0)})
+
+    movs = (await db.execute(select(StockMovement).where(
+        StockMovement.tenant_id == tenant_id, StockMovement.project_id == project_id,
+        StockMovement.is_deleted == False))).scalars().all()  # noqa: E712
+    NOT_A_COST = (MovementSource.RETURN_VENDOR, MovementSource.TRANSFER_OUT)
+    for m in movs:
+        nilai = Decimal(m.quantity) * Decimal(m.unit_price)
+        if m.movement_type == MovementType.OUT and m.source not in NOT_A_COST:
+            bucket(m.unit_id)["material"] += nilai
+        elif m.movement_type == MovementType.IN and m.source == MovementSource.RETURN_UNIT:
+            bucket(m.unit_id)["material"] -= nilai   # retur dari unit → kurangi biaya unit asal
+
+    exps = (await db.execute(select(Expense).where(
+        Expense.tenant_id == tenant_id, Expense.project_id == project_id,
+        Expense.is_deleted == False))).scalars().all()  # noqa: E712
+    for e in exps:
+        bucket(e.unit_id)[_PROFIT_COST_GROUP.get(e.category, "lain")] += Decimal(e.amount)
+    return res
+
+
+def _unit_label(u) -> str:
+    return "-".join(x for x in [u.block, u.unit_number] if x) or "?"
+
+
+def _margin_pct(profit: Decimal, revenue: Decimal) -> Optional[Decimal]:
+    if not revenue or revenue == 0:
+        return None
+    return (profit / revenue * 100).quantize(Decimal("0.1"))
+
+
+async def _clients_of_project(db, tenant_id, project_id=None):
+    """Pembeli aktif (bukan batal/terhapus) + nilai kontraknya."""
+    conds = [Client.tenant_id == tenant_id, Client.is_deleted == False,  # noqa: E712
+             Client.status != ClientStatus.INACTIVE]
+    if project_id is not None:
+        conds.append(Client.project_id == project_id)
+    return (await db.execute(
+        select(Client.id, Client.project_id, Client.unit_id,
+               Client.contract_value, Client.full_name).where(*conds)
+    )).all()
+
+
+@router.get("/project-profit", response_model=ProjectProfitReport)
+async def project_profit(
+    ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db),
+):
+    """Laba/rugi per proyek. Pendapatan = nilai kontrak pembeli aktif; biaya = accrual
+    (material terdistribusi + biaya + opname + utilitas) + biaya notaris."""
+    t = ctx.tenant_id
+    projects = (await db.execute(
+        select(Project.id, Project.name).where(Project.tenant_id == t).order_by(Project.name)
+    )).all()
+
+    units = (await db.execute(select(Unit).where(Unit.tenant_id == t))).scalars().all()
+    units_by_proj: dict = {}
+    for u in units:
+        units_by_proj.setdefault(u.project_id, []).append(u)
+
+    clients = await _clients_of_project(db, t)
+    sold_unit_ids = {c.unit_id for c in clients if c.unit_id is not None}
+
+    pay_rows = (await db.execute(
+        select(Payment.client_id, func.coalesce(func.sum(Payment.amount), 0))
+        .where(Payment.tenant_id == t, Payment.is_deleted == False,  # noqa: E712
+               Payment.approval_status == PaymentApprovalStatus.APPROVED)
+        .group_by(Payment.client_id)
+    )).all()
+    paid_by_client = {cid: Decimal(v) for cid, v in pay_rows}
+
+    fee_rows = (await db.execute(
+        select(NotaryFee.client_id, func.coalesce(func.sum(NotaryFee.amount), 0))
+        .where(NotaryFee.tenant_id == t, NotaryFee.is_deleted == False)  # noqa: E712
+        .group_by(NotaryFee.client_id)
+    )).all()
+    fee_by_client = {cid: Decimal(v) for cid, v in fee_rows}
+
+    rows = []
+    for pid, pname in projects:
+        pclients = [c for c in clients if c.project_id == pid]
+        revenue = sum((Decimal(c.contract_value or 0) for c in pclients), Decimal(0))
+        cash = sum((paid_by_client.get(c.id, Decimal(0)) for c in pclients), Decimal(0))
+        notary = sum((fee_by_client.get(c.id, Decimal(0)) for c in pclients), Decimal(0))
+
+        cost_map = await _project_cost_map(db, t, pid)
+        cost_sold = Decimal(0)
+        inventory = Decimal(0)
+        for uid, grp in cost_map.items():
+            total = sum(grp.values(), Decimal(0))
+            if uid is None:
+                continue                       # biaya umum ditangani terpisah
+            if uid in sold_unit_ids:
+                cost_sold += total
+            else:
+                inventory += total             # ★ persediaan, BUKAN pengurang laba
+        general = sum(cost_map.get(None, {}).values(), Decimal(0))
+
+        profit = revenue - (cost_sold + general + notary)
+        punits = units_by_proj.get(pid, [])
+        rows.append(ProjectProfitRow(
+            project_id=pid, project_name=pname,
+            units_total=len(punits),
+            units_sold=len([u for u in punits if u.id in sold_unit_ids]),
+            revenue_contract=revenue, revenue_cash=cash,
+            cost_sold=cost_sold, cost_general=general, cost_notary=notary,
+            profit=profit, margin_pct=_margin_pct(profit, revenue),
+            inventory_value=inventory,
+            clients_without_unit=len([c for c in pclients if c.unit_id is None]),
+        ))
+
+    return ProjectProfitReport(
+        rows=rows,
+        revenue_contract=sum((r.revenue_contract for r in rows), Decimal(0)),
+        revenue_cash=sum((r.revenue_cash for r in rows), Decimal(0)),
+        cost_total=sum((r.cost_sold + r.cost_general + r.cost_notary for r in rows), Decimal(0)),
+        profit=sum((r.profit for r in rows), Decimal(0)),
+        inventory_value=sum((r.inventory_value for r in rows), Decimal(0)),
+    )
+
+
+@router.get("/project-profit/{project_id}", response_model=ProjectProfitDetail)
+async def project_profit_detail(
+    project_id: uuid.UUID,
+    ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db),
+):
+    """Rincian laba/rugi per unit dalam satu proyek."""
+    t = ctx.tenant_id
+    proj = (await db.execute(
+        select(Project).where(Project.id == project_id, Project.tenant_id == t)
+    )).scalar_one_or_none()
+    if proj is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Proyek tidak ditemukan")
+
+    units = (await db.execute(
+        select(Unit).where(Unit.project_id == project_id, Unit.tenant_id == t)
+        .order_by(Unit.block, Unit.unit_number)
+    )).scalars().all()
+    clients = await _clients_of_project(db, t, project_id)
+    client_by_unit = {c.unit_id: c for c in clients if c.unit_id is not None}
+
+    fee_rows = (await db.execute(
+        select(func.coalesce(func.sum(NotaryFee.amount), 0)).where(
+            NotaryFee.tenant_id == t, NotaryFee.is_deleted == False,  # noqa: E712
+            NotaryFee.client_id.in_([c.id for c in clients] or [uuid.UUID(int=0)]))
+    )).scalar() or 0
+
+    cost_map = await _project_cost_map(db, t, project_id)
+    rows = []
+    for u in units:
+        grp = cost_map.get(u.id, {})
+        m = grp.get("material", Decimal(0)); up = grp.get("upah", Decimal(0))
+        ut = grp.get("utilitas", Decimal(0)); ln = grp.get("lain", Decimal(0))
+        total = m + up + ut + ln
+        c = client_by_unit.get(u.id)
+        cv = Decimal(c.contract_value or 0) if c else None
+        profit = (cv - total) if cv is not None else None
+        rows.append(UnitProfitRow(
+            unit_id=u.id, unit_label=_unit_label(u), unit_status=u.status.value,
+            client_name=c.full_name if c else None, contract_value=cv,
+            cost_material=m, cost_upah=up, cost_utilitas=ut, cost_lain=ln, cost_total=total,
+            profit=profit, margin_pct=_margin_pct(profit, cv) if cv is not None else None,
+            is_sold=c is not None,
+        ))
+
+    return ProjectProfitDetail(
+        project_id=project_id, project_name=proj.name, rows=rows,
+        cost_general=sum(cost_map.get(None, {}).values(), Decimal(0)),
+        cost_notary=Decimal(fee_rows),
+        revenue_unattributed=sum(
+            (Decimal(c.contract_value or 0) for c in clients if c.unit_id is None), Decimal(0)),
+    )

@@ -1937,3 +1937,54 @@ export interface PendingExpenseList {
   rows: PendingExpenseRow[]
   total_amount: number
 }
+
+// ── Laba/Rugi per proyek (laporan operasional, bukan akuntansi formal) ──
+export interface ProjectProfitRow {
+  project_id: string
+  project_name: string
+  units_total: number
+  units_sold: number
+  revenue_contract: number
+  revenue_cash: number
+  cost_sold: number
+  cost_general: number
+  cost_notary: number
+  profit: number
+  margin_pct?: number | null
+  inventory_value: number
+  clients_without_unit: number
+}
+
+export interface ProjectProfitReport {
+  rows: ProjectProfitRow[]
+  revenue_contract: number
+  revenue_cash: number
+  cost_total: number
+  profit: number
+  inventory_value: number
+}
+
+export interface UnitProfitRow {
+  unit_id: string
+  unit_label: string
+  unit_status: string
+  client_name?: string | null
+  contract_value?: number | null
+  cost_material: number
+  cost_upah: number
+  cost_utilitas: number
+  cost_lain: number
+  cost_total: number
+  profit?: number | null
+  margin_pct?: number | null
+  is_sold: boolean
+}
+
+export interface ProjectProfitDetail {
+  project_id: string
+  project_name: string
+  rows: UnitProfitRow[]
+  cost_general: number
+  cost_notary: number
+  revenue_unattributed: number
+}

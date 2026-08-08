@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import {
   Loader2, Landmark, TrendingDown, CheckCircle2, XCircle, FileStack,
   Wallet, Users, Building2, PiggyBank, HandCoins, Home, AlertTriangle, Clock, HardHat, CalendarClock, Receipt,
-  Printer, FileDown, Share2, Copy, Trash2, Check, ExternalLink,
+  Printer, FileDown, Share2, Copy, Trash2, Check, ExternalLink, Package, ChevronDown, ChevronRight,
 } from 'lucide-react'
 import { reportingService } from '../services/reporting'
 import { propertyService } from '../services/property'
@@ -13,7 +13,7 @@ import { useAuth } from '../context/AuthContext'
 import Modal from '../components/ui/Modal'
 import Badge from '../components/ui/Badge'
 import DateInput from '../components/ui/DateInput'
-import type { KprRejectionReport, CashflowReport, SalesRecapReport, AgingReport, ConstructionProgressReport, MonthlyTaxReport, MonthlyTaxShareLink, Project, TaxChecklistReport, TaxChecklistItem, TaxChecklistStatus } from '../types'
+import type { KprRejectionReport, CashflowReport, SalesRecapReport, AgingReport, ConstructionProgressReport, MonthlyTaxReport, MonthlyTaxShareLink, Project, TaxChecklistReport, TaxChecklistItem, TaxChecklistStatus, ProjectProfitReport, ProjectProfitDetail } from '../types'
 
 const fmtRp = (n?: number | null) =>
   n == null ? '—' : new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(Number(n))
@@ -67,6 +67,181 @@ function BreakdownSection({ title, colLabel, totalLabel, items }: {
               <td className="px-4 py-2.5 text-right font-bold text-red-700">{fmtRp(total)}</td>
             </tr>
           </tfoot>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+/** Laba/Rugi per proyek — laporan OPERASIONAL, bukan akuntansi formal.
+ *  Dua aturan yang menentukan angkanya (samakan dgn reporting.py):
+ *  - Biaya basis accrual → angkanya cocok dgn RAB & Kebocoran.
+ *  - Biaya unit BELUM terjual = persediaan/modal tertanam, TIDAK mengurangi laba. */
+function ProjectProfitTab() {
+  const [data, setData] = useState<ProjectProfitReport | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [openId, setOpenId] = useState<string | null>(null)
+  const [detail, setDetail] = useState<ProjectProfitDetail | null>(null)
+  const [detailLoading, setDetailLoading] = useState(false)
+
+  useEffect(() => {
+    reportingService.projectProfit()
+      .then(setData).catch(() => setError('Gagal memuat laporan laba/rugi.')).finally(() => setLoading(false))
+  }, [])
+
+  function toggle(pid: string) {
+    if (openId === pid) { setOpenId(null); setDetail(null); return }
+    setOpenId(pid); setDetail(null); setDetailLoading(true)
+    reportingService.projectProfitDetail(pid)
+      .then(setDetail).catch(() => setError('Gagal memuat rincian unit.')).finally(() => setDetailLoading(false))
+  }
+
+  if (loading) return <div className="card p-12 text-center text-slate-400"><Loader2 size={20} className="inline animate-spin" /></div>
+  if (error) return <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-2">{error}</div>
+  if (!data) return null
+
+  const rows = data.rows.filter((r) => r.units_total > 0 || r.revenue_contract > 0)
+  const adaBiayaKosong = rows.some((r) => r.units_sold > 0 && r.cost_sold === 0)
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+        <div className="card p-4"><p className="text-xs text-slate-500">Nilai Kontrak</p>
+          <p className="font-display text-lg font-bold text-slate-900">{fmtRp(data.revenue_contract)}</p></div>
+        <div className="card p-4"><p className="text-xs text-slate-500">Kas Sudah Masuk</p>
+          <p className="font-display text-lg font-bold text-emerald-600">{fmtRp(data.revenue_cash)}</p></div>
+        <div className="card p-4"><p className="text-xs text-slate-500">Total Biaya</p>
+          <p className="font-display text-lg font-bold text-red-600">{fmtRp(data.cost_total)}</p></div>
+        <div className="card p-4"><p className="text-xs text-slate-500">{data.profit < 0 ? 'Rugi' : 'Laba'}</p>
+          <p className={`font-display text-lg font-bold ${data.profit < 0 ? 'text-red-600' : 'text-emerald-600'}`}>{fmtRp(Math.abs(data.profit))}</p></div>
+        <div className="card p-4"><p className="text-xs text-slate-500 flex items-center gap-1"><Package size={12} /> Modal Tertanam</p>
+          <p className="font-display text-lg font-bold text-amber-600">{fmtRp(data.inventory_value)}</p>
+          <p className="text-[11px] text-slate-400">unit belum terjual</p></div>
+      </div>
+
+      <div className="rounded-lg bg-slate-50 border border-slate-200 px-4 py-2.5 text-xs text-slate-600">
+        <b>Cara membaca:</b> biaya dihitung <b>saat terjadi</b> (bukan saat dibayar), jadi angkanya sama dengan
+        realisasi di RAB &amp; Kebocoran. Biaya unit yang <b>belum terjual tidak mengurangi laba</b> — uangnya
+        belum hilang, hanya berubah jadi rumah, dan ditampilkan sebagai <b>Modal Tertanam</b>.
+      </div>
+
+      {adaBiayaKosong && (
+        <div className="rounded-lg bg-amber-50 border border-amber-200 px-4 py-2.5 flex items-start gap-2">
+          <AlertTriangle size={15} className="text-amber-600 mt-0.5 shrink-0" />
+          <p className="text-sm text-amber-800">
+            Ada proyek dengan unit terjual tapi <b>biayanya Rp 0</b> — labanya akan tampak 100%.
+            Itu berarti biaya pembangunan belum dicatat, bukan berarti tanpa modal.
+          </p>
+        </div>
+      )}
+
+      <div className="card overflow-x-auto">
+        <table className="w-full text-sm min-w-[900px]">
+          <thead className="bg-slate-50 border-b border-slate-200">
+            <tr>{['Proyek', 'Terjual', 'Nilai Kontrak', 'Biaya Unit Terjual', 'Biaya Umum', 'Notaris', 'Laba/Rugi', 'Margin', 'Modal Tertanam'].map((h, i) => (
+              <th key={i} className={`px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap ${i === 0 ? 'text-left' : 'text-right'}`}>{h}</th>))}</tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {rows.length === 0 ? (
+              <tr><td colSpan={9} className="px-4 py-10 text-center text-slate-400">Belum ada data proyek.</td></tr>
+            ) : rows.map((r) => (
+              <Fragment key={r.project_id}>
+                <tr className="hover:bg-slate-50 cursor-pointer" onClick={() => toggle(r.project_id)}>
+                  <td className="px-4 py-2.5 font-medium text-slate-900 whitespace-nowrap">
+                    <span className="inline-flex items-center gap-1.5">
+                      {openId === r.project_id ? <ChevronDown size={14} className="text-slate-400" /> : <ChevronRight size={14} className="text-slate-400" />}
+                      {r.project_name}
+                    </span>
+                    {r.clients_without_unit > 0 && (
+                      <span className="ml-2 text-[11px] text-amber-600">{r.clients_without_unit} pembeli tanpa unit</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-2.5 text-right text-slate-500 whitespace-nowrap">{r.units_sold} / {r.units_total}</td>
+                  <td className="px-4 py-2.5 text-right text-slate-700 whitespace-nowrap">{fmtRp(r.revenue_contract)}</td>
+                  <td className="px-4 py-2.5 text-right text-slate-500 whitespace-nowrap">{fmtRp(r.cost_sold)}</td>
+                  <td className="px-4 py-2.5 text-right text-slate-500 whitespace-nowrap">{fmtRp(r.cost_general)}</td>
+                  <td className="px-4 py-2.5 text-right text-slate-500 whitespace-nowrap">{fmtRp(r.cost_notary)}</td>
+                  <td className={`px-4 py-2.5 text-right font-semibold whitespace-nowrap ${r.profit < 0 ? 'text-red-600' : 'text-emerald-600'}`}>{fmtRp(r.profit)}</td>
+                  <td className="px-4 py-2.5 text-right whitespace-nowrap">
+                    {r.margin_pct == null ? <span className="text-slate-400">—</span> : (
+                      <span className={r.margin_pct < 0 ? 'text-red-600' : 'text-slate-600'}>{Number(r.margin_pct).toFixed(1)}%</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-2.5 text-right text-amber-600 whitespace-nowrap">{fmtRp(r.inventory_value)}</td>
+                </tr>
+                {openId === r.project_id && (
+                  <tr>
+                    <td colSpan={9} className="px-4 py-3 bg-slate-50/70">
+                      {detailLoading ? (
+                        <p className="text-center text-slate-400 py-4"><Loader2 size={16} className="inline animate-spin" /></p>
+                      ) : !detail ? null : (
+                        <UnitProfitTable detail={detail} />
+                      )}
+                    </td>
+                  </tr>
+                )}
+              </Fragment>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+function UnitProfitTable({ detail }: { detail: ProjectProfitDetail }) {
+  const [semua, setSemua] = useState(false)
+  // default: hanya unit yang punya angka (terjual atau sudah ada biaya) — proyek bisa ratusan unit kosong
+  const rows = detail.rows.filter((r) => semua || r.is_sold || r.cost_total !== 0)
+
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs text-slate-500">
+          Biaya umum proyek <b>{fmtRp(detail.cost_general)}</b> · Notaris <b>{fmtRp(detail.cost_notary)}</b>
+          {detail.revenue_unattributed > 0 && <> · <span className="text-amber-600">Kontrak tanpa unit {fmtRp(detail.revenue_unattributed)}</span></>}
+        </p>
+        <label className="flex items-center gap-1.5 text-xs text-slate-500 cursor-pointer">
+          <input type="checkbox" checked={semua} onChange={(e) => setSemua(e.target.checked)} className="rounded border-slate-300" />
+          Tampilkan semua unit ({detail.rows.length})
+        </label>
+      </div>
+      <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+        <table className="w-full text-xs min-w-[820px]">
+          <thead className="bg-white border-b border-slate-200">
+            <tr>{['Unit', 'Pembeli', 'Harga Jual', 'Material', 'Upah/Borongan', 'Utilitas', 'Lain', 'Total Biaya', 'Laba', 'Margin'].map((h, i) => (
+              <th key={i} className={`px-3 py-2 font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap ${i < 2 ? 'text-left' : 'text-right'}`}>{h}</th>))}</tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {rows.length === 0 ? (
+              <tr><td colSpan={10} className="px-3 py-6 text-center text-slate-400">Belum ada unit dengan pendapatan atau biaya.</td></tr>
+            ) : rows.map((r) => (
+              <tr key={r.unit_id} className="hover:bg-slate-50">
+                <td className="px-3 py-2 font-medium text-slate-800 whitespace-nowrap">{r.unit_label}</td>
+                <td className="px-3 py-2 text-slate-500 whitespace-nowrap">
+                  {r.client_name ?? <span className="text-slate-400 capitalize">{r.unit_status}</span>}
+                </td>
+                <td className="px-3 py-2 text-right text-slate-700 whitespace-nowrap">{fmtRp(r.contract_value)}</td>
+                <td className="px-3 py-2 text-right text-slate-500 whitespace-nowrap">{fmtRp(r.cost_material)}</td>
+                <td className="px-3 py-2 text-right text-slate-500 whitespace-nowrap">{fmtRp(r.cost_upah)}</td>
+                <td className="px-3 py-2 text-right text-slate-500 whitespace-nowrap">{fmtRp(r.cost_utilitas)}</td>
+                <td className="px-3 py-2 text-right text-slate-500 whitespace-nowrap">{fmtRp(r.cost_lain)}</td>
+                <td className="px-3 py-2 text-right text-slate-700 whitespace-nowrap">{fmtRp(r.cost_total)}</td>
+                <td className={`px-3 py-2 text-right font-semibold whitespace-nowrap ${(r.profit ?? 0) < 0 ? 'text-red-600' : r.profit == null ? 'text-slate-400' : 'text-emerald-600'}`}>
+                  {r.profit == null ? '—' : fmtRp(r.profit)}
+                </td>
+                <td className="px-3 py-2 text-right whitespace-nowrap">
+                  {r.margin_pct == null ? <span className="text-slate-400">—</span> : (
+                    <span className={r.margin_pct < 0 ? 'text-red-600' : r.cost_total === 0 ? 'text-amber-600' : 'text-slate-600'}>
+                      {Number(r.margin_pct).toFixed(1)}%
+                      {r.is_sold && r.cost_total === 0 && <AlertTriangle size={11} className="inline ml-1 -mt-0.5" />}
+                    </span>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
         </table>
       </div>
     </div>
@@ -952,6 +1127,7 @@ function TaxChecklistTab() {
 // ═══════════════════════ PAGE ═══════════════════════
 const TABS = [
   { key: 'cashflow', label: 'Arus Kas', desc: 'Kas masuk dari pembeli vs bank, plus piutang & retensi.' },
+  { key: 'profit', label: 'Laba/Rugi Proyek', desc: 'Untung-rugi per proyek & margin per unit. Laporan operasional, bukan akuntansi formal.' },
   { key: 'sales', label: 'Rekap Penjualan', desc: 'Penjualan & kas masuk per proyek, status unit.' },
   { key: 'construction', label: 'Progres Konstruksi', desc: 'Progres pembangunan per proyek: tahap, % rata-rata, selesai & keterlambatan.' },
   { key: 'aging', label: 'Tunggakan', desc: 'Termin lewat jatuh tempo, dikelompokkan umur & per pembeli.' },
@@ -964,7 +1140,7 @@ type TabKey = (typeof TABS)[number]['key']
 // Report dipecah per kategori (menu sidebar) — tiap kategori hanya menampilkan subset tab yang relevan.
 const CATEGORIES: Record<string, { label: string; tabs: TabKey[] }> = {
   pajak: { label: 'Report Pajak', tabs: ['tax', 'tax-checklist'] },
-  keuangan: { label: 'Report Keuangan', tabs: ['cashflow'] },
+  keuangan: { label: 'Report Keuangan', tabs: ['cashflow', 'profit'] },
   marketing: { label: 'Report Marketing', tabs: ['kpr', 'sales', 'aging'] },
   pembangunan: { label: 'Report Pembangunan', tabs: ['construction'] },
 }
@@ -1006,6 +1182,7 @@ export default function Reports() {
       )}
 
       {active.key === 'cashflow' && <CashflowTab />}
+      {active.key === 'profit' && <ProjectProfitTab />}
       {active.key === 'sales' && <SalesRecapTab />}
       {active.key === 'construction' && <ConstructionProgressTab />}
       {active.key === 'aging' && <AgingTab />}

@@ -106,7 +106,7 @@ const reportItem: NavItem = {
   icon: BarChart3,
   children: [
     { label: 'Marketing', to: '/reports/marketing', icon: TrendingUp },
-    { label: 'Arus Kas', to: '/reports/keuangan', icon: Wallet },
+    { label: 'Keuangan', to: '/reports/keuangan', icon: Wallet },
     { label: 'Pajak', to: '/reports/pajak', icon: Receipt },
     { label: 'Pembangunan', to: '/reports/pembangunan', icon: HardHat },
   ],
