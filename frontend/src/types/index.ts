@@ -1988,3 +1988,24 @@ export interface ProjectProfitDetail {
   cost_notary: number
   revenue_unattributed: number
 }
+
+// ── Ringkasan SPPR/KPR per proyek (dashboard seksi B) ──
+export interface KprMethodCount {
+  method: string
+  label: string
+  count: number
+  pct: number
+}
+export interface ProjectKprRow {
+  project_id: string
+  project_name: string
+  total_sppr: number
+  approved_bank: number
+  not_approved: number
+  rejected: number
+  methods: KprMethodCount[]
+}
+export interface KprSummaryReport {
+  projects: ProjectKprRow[]
+  sppr_active_total: number
+}

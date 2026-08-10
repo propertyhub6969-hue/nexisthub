@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.api.deps import get_current_context, AuthContext
-from app.models.marketing import Lead, Prospect, Client, ProspectStatus, ClientStatus
+from app.models.marketing import Lead, Prospect, Client, ProspectStatus, ClientStatus, ClientPaymentType
 from app.models.property import Project, Unit, UnitStatus
 from app.models.payment import Payment, PaymentSchedule, ScheduleStatus, PaymentSource, PaymentApprovalStatus
 from app.models.kpr import KprApplication, KprStage
@@ -1351,3 +1351,90 @@ async def project_profit_detail(
         revenue_unattributed=sum(
             (Decimal(c.contract_value or 0) for c in clients if c.unit_id is None), Decimal(0)),
     )
+
+
+# ═══════════════════════ RINGKASAN SPPR / KPR PER PROYEK (dashboard seksi B) ═══════════════════════
+# "SPPR" = pengajuan KPR. "Disetujui bank" = tahap sudah SP3K+ (pakai APPROVED_STAGES yg sama dgn
+# laporan lain agar konsisten). "Ditolak" = KprApplication.is_rejected (rejected_date terisi).
+# Metode pembayaran = rincian pembeli aktif per ClientPaymentType (cash/kpr) — ditampilkan sbg BARIS,
+# bukan donut (keputusan user).
+
+class KprMethodCount(BaseModel):
+    method: str          # "kpr" | "cash"
+    label: str
+    count: int
+    pct: float
+
+
+class ProjectKprRow(BaseModel):
+    project_id: uuid.UUID
+    project_name: str
+    total_sppr: int          # semua pengajuan KPR proyek ini
+    approved_bank: int       # sudah SP3K+ (belum ditolak)
+    not_approved: int        # belum SP3K (belum ditolak)
+    rejected: int            # ditolak bank
+    methods: list[KprMethodCount]   # rincian pembeli aktif per cara beli
+
+
+class KprSummaryReport(BaseModel):
+    projects: list[ProjectKprRow]
+    sppr_active_total: int   # total pengajuan aktif (belum ditolak) — utk KPI atas
+
+
+@router.get("/kpr-summary", response_model=KprSummaryReport)
+async def kpr_summary(
+    ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db),
+):
+    t = ctx.tenant_id
+    projects = (await db.execute(
+        select(Project.id, Project.name).where(Project.tenant_id == t).order_by(Project.name)
+    )).all()
+
+    # KPR → Client (utk project_id). Ambil stage + rejected_date.
+    kpr_rows = (await db.execute(
+        select(KprApplication.stage, KprApplication.rejected_date, Client.project_id)
+        .join(Client, Client.id == KprApplication.client_id)
+        .where(KprApplication.tenant_id == t, KprApplication.is_deleted == False,  # noqa: E712
+               Client.is_deleted == False)                                          # noqa: E712
+    )).all()
+
+    # pembeli aktif per proyek + cara beli (utk metode bayar)
+    client_rows = (await db.execute(
+        select(Client.project_id, Client.payment_type).where(
+            Client.tenant_id == t, Client.is_deleted == False,   # noqa: E712
+            Client.status != ClientStatus.INACTIVE)
+    )).all()
+
+    from collections import defaultdict
+    kpr_by_proj: dict = defaultdict(lambda: {"total": 0, "approved": 0, "belum": 0, "rejected": 0})
+    for stage, rejected_date, pid in kpr_rows:
+        d = kpr_by_proj[pid]
+        d["total"] += 1
+        if rejected_date is not None:
+            d["rejected"] += 1
+        elif stage in APPROVED_STAGES:
+            d["approved"] += 1
+        else:
+            d["belum"] += 1
+
+    method_by_proj: dict = defaultdict(lambda: defaultdict(int))
+    for pid, ptype in client_rows:
+        method_by_proj[pid][ptype.value if ptype else "cash"] += 1
+
+    _METHOD_LABEL = {"kpr": "KPR", "cash": "Cash / Inhouse"}
+    out, active_total = [], 0
+    for pid, pname in projects:
+        d = kpr_by_proj.get(pid, {"total": 0, "approved": 0, "belum": 0, "rejected": 0})
+        active_total += d["total"] - d["rejected"]
+        mtot = sum(method_by_proj.get(pid, {}).values())
+        methods = [
+            KprMethodCount(method=m, label=_METHOD_LABEL.get(m, m.title()), count=c,
+                           pct=round(c / mtot * 100, 1) if mtot else 0.0)
+            for m, c in sorted(method_by_proj.get(pid, {}).items(), key=lambda x: -x[1])
+        ]
+        out.append(ProjectKprRow(
+            project_id=pid, project_name=pname,
+            total_sppr=d["total"], approved_bank=d["approved"],
+            not_approved=d["belum"], rejected=d["rejected"], methods=methods,
+        ))
+    return KprSummaryReport(projects=out, sppr_active_total=active_total)
