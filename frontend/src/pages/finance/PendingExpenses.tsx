@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useMemo } from 'react'
 import { Loader2, Wallet, Zap, Droplets, HardHat, Receipt, AlertTriangle, CheckCircle2, Scale } from 'lucide-react'
 import Badge from '../../components/ui/Badge'
 import Modal from '../../components/ui/Modal'
@@ -34,6 +34,7 @@ export default function PendingExpenses() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [sel, setSel] = useState<Set<string>>(new Set())
+  const [catFilter, setCatFilter] = useState<string | null>(null)
   const [payModal, setPayModal] = useState(false)
   const [paidDate, setPaidDate] = useState('')
   const [saving, setSaving] = useState(false)
@@ -47,10 +48,34 @@ export default function PendingExpenses() {
   }, [])
   useEffect(load, [load])
 
+  // daftar kategori diturunkan dari data (bukan hardcode) + jumlah tagihan tiap kategori
+  const categories = useMemo(() => {
+    const m = new Map<string, { label: string; count: number }>()
+    for (const r of rows) {
+      const e = m.get(r.category) ?? { label: r.category_label, count: 0 }
+      e.count++; m.set(r.category, e)
+    }
+    return [...m.entries()].map(([key, v]) => ({ key, ...v })).sort((a, b) => b.count - a.count)
+  }, [rows])
+  // kalau kategori terpilih habis (mis. setelah semua dibayar) → balik ke "Semua"
+  useEffect(() => {
+    if (catFilter && !rows.some((r) => r.category === catFilter)) setCatFilter(null)
+  }, [rows, catFilter])
+
+  const shown = catFilter ? rows.filter((r) => r.category === catFilter) : rows
+  const shownTotal = shown.reduce((a, r) => a + Number(r.amount || 0), 0)
+
   const toggle = (id: string) => setSel((s) => {
     const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n
   })
-  const toggleAll = () => setSel((s) => s.size === rows.length ? new Set() : new Set(rows.map((r) => r.ref)))
+  // ★ pilih-semua HANYA menyentuh baris yang sedang tampil (hormati filter),
+  //   supaya tak sengaja menandai lunas baris kategori lain yang tersembunyi.
+  const allShownSelected = shown.length > 0 && shown.every((r) => sel.has(r.ref))
+  const toggleAll = () => setSel((s) => {
+    const n = new Set(s)
+    shown.forEach((r) => (allShownSelected ? n.delete(r.ref) : n.add(r.ref)))
+    return n
+  })
   const selTotal = rows.filter((r) => sel.has(r.ref)).reduce((a, r) => a + Number(r.amount || 0), 0)
 
   async function submitPaid() {
@@ -88,17 +113,44 @@ export default function PendingExpenses() {
           <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
             <div className="card p-4">
               <p className="text-xs text-slate-500">Tagihan Menunggu</p>
-              <p className="font-display text-lg font-bold text-slate-900">{rows.length}</p>
+              <p className="font-display text-lg font-bold text-slate-900">
+                {shown.length}{catFilter && <span className="text-sm font-normal text-slate-400"> / {rows.length}</span>}
+              </p>
             </div>
             <div className="card p-4">
-              <p className="text-xs text-slate-500">Total Nilai</p>
-              <p className="font-display text-lg font-bold text-red-600">{fmt(total)}</p>
+              <p className="text-xs text-slate-500">{catFilter ? 'Nilai Kategori Ini' : 'Total Nilai'}</p>
+              <p className="font-display text-lg font-bold text-red-600">{fmt(catFilter ? shownTotal : total)}</p>
             </div>
             <div className="card p-4">
               <p className="text-xs text-slate-500">Dipilih</p>
               <p className="font-display text-lg font-bold text-brand-600">{sel.size > 0 ? fmt(selTotal) : '—'}</p>
             </div>
           </div>
+
+          {/* Filter kategori — chip diturunkan dari data */}
+          {categories.length > 1 && (
+            <div className="flex flex-wrap items-center gap-1.5">
+              <button
+                onClick={() => setCatFilter(null)}
+                className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
+                  catFilter === null ? 'bg-brand-600 text-white border-brand-600' : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'
+                }`}
+              >
+                Semua ({rows.length})
+              </button>
+              {categories.map((c) => (
+                <button
+                  key={c.key}
+                  onClick={() => setCatFilter(c.key)}
+                  className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
+                    catFilter === c.key ? 'bg-brand-600 text-white border-brand-600' : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'
+                  }`}
+                >
+                  {c.label} ({c.count})
+                </button>
+              ))}
+            </div>
+          )}
 
           {sel.size > 0 && (
             <div className="rounded-lg bg-brand-50 border border-brand-200 px-4 py-2.5 flex items-center justify-between">
@@ -113,7 +165,7 @@ export default function PendingExpenses() {
                 <tr>
                   <th className="px-4 py-3 w-10">
                     <input type="checkbox" className="rounded border-slate-300"
-                      checked={sel.size === rows.length && rows.length > 0} onChange={toggleAll} />
+                      checked={allShownSelected} onChange={toggleAll} />
                   </th>
                   {['Uraian', 'Proyek / Unit atau Pembeli', 'Kategori', 'Sumber', 'Menunggu', 'Nominal'].map((h, i) => (
                     <th key={i} className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">{h}</th>
@@ -121,7 +173,7 @@ export default function PendingExpenses() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {rows.map((r) => (
+                {shown.map((r) => (
                   <tr key={r.ref} className={`hover:bg-slate-50 ${sel.has(r.ref) ? 'bg-brand-50/40' : ''}`}>
                     <td className="px-4 py-2.5">
                       <input type="checkbox" className="rounded border-slate-300"
