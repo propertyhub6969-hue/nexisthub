@@ -2044,4 +2044,8 @@ export interface UnitDetailRow {
   bucket: 'terjual' | 'belum'
   client_id?: string | null
   client_name?: string | null
+  payment_type?: string | null
+  payment_type_label?: string | null
+  cash_in?: number | null
+  remaining?: number | null
 }

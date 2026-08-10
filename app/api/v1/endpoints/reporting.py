@@ -1594,6 +1594,10 @@ class UnitDetailRow(BaseModel):
     bucket: str                    # "terjual" | "belum"
     client_id: Optional[uuid.UUID] = None
     client_name: Optional[str] = None
+    payment_type: Optional[str] = None        # "cash" | "kpr" (cara beli pembeli)
+    payment_type_label: Optional[str] = None
+    cash_in: Optional[Decimal] = None         # uang masuk pembeli (approved)
+    remaining: Optional[Decimal] = None       # sisa = kontrak − terbayar (clamp≥0)
 
 
 @router.get("/units-detail", response_model=list[UnitDetailRow])
@@ -1602,16 +1606,33 @@ async def units_detail(
     ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db),
 ):
     """Daftar unit satu proyek + pembeli aktif (bila ada) — dipakai dialog saat angka
-    Penjualan di dashboard diklik. Frontend menyaring per bucket (all/terjual/belum)."""
+    Penjualan di dashboard diklik. Frontend menyaring per bucket (all/terjual/belum).
+    Kolom uang masuk/sisa/cara beli konsisten dgn strip Keuangan (hanya approved,
+    sisa = kontrak − terbayar)."""
     t = ctx.tenant_id
     # pembeli aktif per unit (anti-dobel 409 → maks satu aktif per unit)
     client_rows = (await db.execute(
-        select(Client.unit_id, Client.id, Client.full_name).where(
+        select(Client.unit_id, Client.id, Client.full_name, Client.payment_type, Client.contract_value).where(
             Client.tenant_id == t, Client.is_deleted == False,  # noqa: E712
             Client.status != ClientStatus.INACTIVE, Client.unit_id.isnot(None),
             Client.project_id == project_id)
     )).all()
-    client_by_unit = {uid: (cid, name) for uid, cid, name in client_rows}
+    client_by_unit: dict = {}
+    client_ids = []
+    for uid, cid, name, ptype, contract in client_rows:
+        client_by_unit[uid] = {"id": cid, "name": name, "ptype": ptype, "contract": Decimal(contract or 0)}
+        client_ids.append(cid)
+
+    # uang masuk per pembeli (hanya approved) — sama dgn semua laporan lain
+    paid_by_client: dict = {}
+    if client_ids:
+        pay_rows = (await db.execute(
+            select(Payment.client_id, func.coalesce(func.sum(Payment.amount), 0)).where(
+                Payment.tenant_id == t, Payment.is_deleted == False,  # noqa: E712
+                Payment.approval_status == PaymentApprovalStatus.APPROVED,
+                Payment.client_id.in_(client_ids)).group_by(Payment.client_id)
+        )).all()
+        paid_by_client = {cid: Decimal(v) for cid, v in pay_rows}
 
     units = (await db.execute(
         select(Unit).where(Unit.project_id == project_id, Unit.tenant_id == t)
@@ -1621,11 +1642,23 @@ async def units_detail(
     out = []
     for u in units:
         c = client_by_unit.get(u.id)
+        cid = cname = ptype = ptype_label = None
+        cash_in = remaining = None
+        if c:
+            cid, cname = c["id"], c["name"]
+            paid = paid_by_client.get(cid, Decimal(0))
+            cash_in = paid
+            rem = c["contract"] - paid
+            remaining = rem if rem > 0 else Decimal(0)
+            ptype = c["ptype"].value if c["ptype"] else "cash"
+            ptype_label = "KPR" if ptype == "kpr" else "Cash"
         out.append(UnitDetailRow(
             unit_id=u.id, unit_label="-".join(x for x in [u.block, u.unit_number] if x) or "?",
             unit_type=u.unit_type, price=u.price, status=u.status.value,
             status_label=_UNIT_STATUS_LABEL.get(u.status, u.status.value),
             bucket="terjual" if u.status in _SOLD_STATUSES else "belum",
-            client_id=c[0] if c else None, client_name=c[1] if c else None,
+            client_id=cid, client_name=cname,
+            payment_type=ptype, payment_type_label=ptype_label,
+            cash_in=cash_in, remaining=remaining,
         ))
     return out

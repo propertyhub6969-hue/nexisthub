@@ -136,21 +136,37 @@ function SalesSection({ report }: { report: SalesRecapReport | null }) {
             ) : (
               <div className="overflow-x-auto">
                 <p className="text-xs text-slate-400 mb-2">{shownRows.length} kavling</p>
-                <table className="w-full text-sm min-w-[520px]">
+                <table className="w-full text-sm min-w-[760px]">
                   <thead className="bg-slate-50 border-b border-slate-200">
-                    <tr>{['Unit', 'Tipe', 'Harga', 'Status', 'Pembeli', ''].map((h, i) => (
-                      <th key={i} className="px-3 py-2 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">{h}</th>))}</tr>
+                    <tr>
+                      {['Unit', 'Tipe', 'Status', 'Cara Beli', 'Pembeli'].map((h, i) => (
+                        <th key={i} className="px-3 py-2 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">{h}</th>))}
+                      {['Harga', 'Uang Masuk', 'Sisa'].map((h, i) => (
+                        <th key={i} className="px-3 py-2 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">{h}</th>))}
+                      <th className="px-3 py-2" />
+                    </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {shownRows.map((r) => (
                       <tr key={r.unit_id} className="hover:bg-slate-50">
                         <td className="px-3 py-2 font-medium text-slate-900 whitespace-nowrap">{r.unit_label}</td>
                         <td className="px-3 py-2 text-slate-500 whitespace-nowrap">{r.unit_type ?? '—'}</td>
-                        <td className="px-3 py-2 text-slate-500 whitespace-nowrap">{fmt(r.price ?? undefined)}</td>
                         <td className="px-3 py-2 whitespace-nowrap">
                           <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${UNIT_STATUS_CHIP[r.status] ?? 'bg-slate-100 text-slate-600'}`}>{r.status_label}</span>
                         </td>
+                        <td className="px-3 py-2 whitespace-nowrap">
+                          {r.payment_type_label
+                            ? <span className={`inline-flex items-center gap-1 text-xs ${r.payment_type === 'kpr' ? 'text-blue-600' : 'text-emerald-600'}`}>
+                                <span className={`w-1.5 h-1.5 rounded-full ${r.payment_type === 'kpr' ? 'bg-blue-500' : 'bg-emerald-500'}`} />{r.payment_type_label}
+                              </span>
+                            : <span className="text-slate-400">—</span>}
+                        </td>
                         <td className="px-3 py-2 text-slate-500 whitespace-nowrap">{r.client_name ?? '—'}</td>
+                        <td className="px-3 py-2 text-right text-slate-500 whitespace-nowrap">{fmt(r.price ?? undefined)}</td>
+                        <td className="px-3 py-2 text-right whitespace-nowrap">{r.client_id ? <span className="text-emerald-600">{fmt(r.cash_in ?? 0)}</span> : <span className="text-slate-400">—</span>}</td>
+                        <td className="px-3 py-2 text-right whitespace-nowrap">
+                          {r.client_id ? <span className={(r.remaining ?? 0) > 0 ? 'text-amber-600 font-medium' : 'text-slate-400'}>{fmt(r.remaining ?? 0)}</span> : <span className="text-slate-400">—</span>}
+                        </td>
                         <td className="px-3 py-2 text-right">
                           {r.client_id && (
                             <Link to={`/marketing/clients/${r.client_id}/payments`} className="text-brand-600 hover:underline text-xs inline-flex items-center gap-0.5">
