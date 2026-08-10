@@ -11,7 +11,7 @@ import Modal from '../components/ui/Modal'
 import type {
   DashboardStats, SalesMonthly, Project,
   SalesRecapReport, SalesProject, KprSummaryReport, ProjectKprRow,
-  ConstructionProgressReport, ConstructionProject, FinanceSummary, KprDetailRow,
+  ConstructionProgressReport, ConstructionProject, FinanceSummary, KprDetailRow, UnitDetailRow,
 } from '../types'
 
 const fmt = (n?: number) =>
@@ -84,6 +84,15 @@ function SectionShell({ title, right, children }: {
 }
 
 // ═══════════ A. PENJUALAN ═══════════
+type UnitBucket = 'all' | 'terjual' | 'belum'
+const UNIT_BUCKET_TITLE: Record<UnitBucket, string> = {
+  all: 'Semua Kavling', terjual: 'Kavling Terjual', belum: 'Kavling Belum Laku',
+}
+const UNIT_STATUS_CHIP: Record<string, string> = {
+  available: 'bg-emerald-50 text-emerald-700', booked: 'bg-amber-50 text-amber-700',
+  sold: 'bg-blue-50 text-blue-700', handover: 'bg-purple-50 text-purple-700',
+}
+
 function SalesSection({ report }: { report: SalesRecapReport | null }) {
   const projects: SalesProject[] = report?.projects ?? []
   const { pid, setPid, sel } = useProjectPick(projects)
@@ -92,20 +101,70 @@ function SalesSection({ report }: { report: SalesRecapReport | null }) {
   const belumLaku = total - sold
   const pct = total ? (sold / total) * 100 : 0
 
+  const [bucket, setBucket] = useState<UnitBucket | null>(null)
+  const [rows, setRows] = useState<UnitDetailRow[]>([])
+  const [loadingRows, setLoadingRows] = useState(false)
+
+  function openDialog(b: UnitBucket) {
+    if (!sel) return
+    setBucket(b); setLoadingRows(true); setRows([])
+    reportingService.unitsDetail(sel.project_id)
+      .then(setRows).catch(() => {}).finally(() => setLoadingRows(false))
+  }
+  const shownRows = bucket === 'all' || bucket == null ? rows : rows.filter((r) => r.bucket === bucket)
+
   return (
     <SectionShell title="Penjualan"
       right={<ProjectSelect value={pid} onChange={setPid} projects={projects} />}>
       {!sel ? <p className="py-8 text-center text-sm text-slate-400">Belum ada proyek.</p> : (
         <>
           <div className="grid grid-cols-2 gap-4">
-            <Metric label="Total Kavling" value={total} />
-            <Metric label="Terjual" value={sold} accent="text-blue-600" />
-            <Metric label="Belum Laku" value={belumLaku} accent="text-amber-600" />
+            <ClickMetric label="Total Kavling" value={total} onClick={() => openDialog('all')} disabled={total === 0} />
+            <ClickMetric label="Terjual" value={sold} accent="text-blue-600" onClick={() => openDialog('terjual')} disabled={sold === 0} />
+            <ClickMetric label="Belum Laku" value={belumLaku} accent="text-amber-600" onClick={() => openDialog('belum')} disabled={belumLaku === 0} />
             <div className="flex items-center gap-3">
               <Ring pct={pct} color="text-emerald-500" />
               <div><p className="text-xs text-slate-500">Persentase Terjual</p><p className="text-xs text-slate-400">dari total kavling</p></div>
             </div>
           </div>
+
+          <Modal open={bucket != null} onClose={() => setBucket(null)} title={bucket ? `${UNIT_BUCKET_TITLE[bucket]} — ${sel.project_name}` : ''} size="lg">
+            {loadingRows ? (
+              <div className="py-10 text-center text-slate-400"><Loader2 size={18} className="inline animate-spin" /></div>
+            ) : shownRows.length === 0 ? (
+              <p className="py-8 text-center text-sm text-slate-400">Tidak ada kavling pada kategori ini.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <p className="text-xs text-slate-400 mb-2">{shownRows.length} kavling</p>
+                <table className="w-full text-sm min-w-[520px]">
+                  <thead className="bg-slate-50 border-b border-slate-200">
+                    <tr>{['Unit', 'Tipe', 'Harga', 'Status', 'Pembeli', ''].map((h, i) => (
+                      <th key={i} className="px-3 py-2 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">{h}</th>))}</tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {shownRows.map((r) => (
+                      <tr key={r.unit_id} className="hover:bg-slate-50">
+                        <td className="px-3 py-2 font-medium text-slate-900 whitespace-nowrap">{r.unit_label}</td>
+                        <td className="px-3 py-2 text-slate-500 whitespace-nowrap">{r.unit_type ?? '—'}</td>
+                        <td className="px-3 py-2 text-slate-500 whitespace-nowrap">{fmt(r.price ?? undefined)}</td>
+                        <td className="px-3 py-2 whitespace-nowrap">
+                          <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${UNIT_STATUS_CHIP[r.status] ?? 'bg-slate-100 text-slate-600'}`}>{r.status_label}</span>
+                        </td>
+                        <td className="px-3 py-2 text-slate-500 whitespace-nowrap">{r.client_name ?? '—'}</td>
+                        <td className="px-3 py-2 text-right">
+                          {r.client_id && (
+                            <Link to={`/marketing/clients/${r.client_id}/payments`} className="text-brand-600 hover:underline text-xs inline-flex items-center gap-0.5">
+                              Buka <ChevronRight size={12} />
+                            </Link>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Modal>
           <div className="mt-4 rounded-lg bg-slate-50 border border-slate-100 p-3">
             <p className="text-xs font-semibold text-brand-700 mb-1">Progress Penjualan</p>
             <p className="text-[11px] text-slate-500 mb-2">Dari total {total} kavling, {sold} kavling telah terjual.</p>

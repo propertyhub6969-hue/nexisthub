@@ -2032,3 +2032,16 @@ export interface KprDetailRow {
   submitted_date?: string | null
   sp3k_date?: string | null
 }
+
+// ── Rincian unit (dialog klik angka Penjualan di dashboard) ──
+export interface UnitDetailRow {
+  unit_id: string
+  unit_label: string
+  unit_type?: string | null
+  price?: number | null
+  status: string
+  status_label: string
+  bucket: 'terjual' | 'belum'
+  client_id?: string | null
+  client_name?: string | null
+}

@@ -1574,3 +1574,58 @@ async def kpr_detail(
             bucket=bucket, plafond=k.plafond, submitted_date=k.submitted_date, sp3k_date=k.sp3k_date,
         ))
     return out
+
+
+# ── Rincian unit per proyek (utk dialog klik angka Penjualan di dashboard) ──
+_UNIT_STATUS_LABEL = {
+    UnitStatus.AVAILABLE: "Tersedia", UnitStatus.BOOKED: "Booking / DP",
+    UnitStatus.SOLD: "Terjual", UnitStatus.HANDOVER: "Serah Terima",
+}
+_SOLD_STATUSES = (UnitStatus.SOLD, UnitStatus.HANDOVER)   # sama dgn units_sold di sales-recap
+
+
+class UnitDetailRow(BaseModel):
+    unit_id: uuid.UUID
+    unit_label: str
+    unit_type: Optional[str] = None
+    price: Optional[Decimal] = None
+    status: str
+    status_label: str
+    bucket: str                    # "terjual" | "belum"
+    client_id: Optional[uuid.UUID] = None
+    client_name: Optional[str] = None
+
+
+@router.get("/units-detail", response_model=list[UnitDetailRow])
+async def units_detail(
+    project_id: uuid.UUID = Query(...),
+    ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db),
+):
+    """Daftar unit satu proyek + pembeli aktif (bila ada) — dipakai dialog saat angka
+    Penjualan di dashboard diklik. Frontend menyaring per bucket (all/terjual/belum)."""
+    t = ctx.tenant_id
+    # pembeli aktif per unit (anti-dobel 409 → maks satu aktif per unit)
+    client_rows = (await db.execute(
+        select(Client.unit_id, Client.id, Client.full_name).where(
+            Client.tenant_id == t, Client.is_deleted == False,  # noqa: E712
+            Client.status != ClientStatus.INACTIVE, Client.unit_id.isnot(None),
+            Client.project_id == project_id)
+    )).all()
+    client_by_unit = {uid: (cid, name) for uid, cid, name in client_rows}
+
+    units = (await db.execute(
+        select(Unit).where(Unit.project_id == project_id, Unit.tenant_id == t)
+        .order_by(Unit.block, Unit.unit_number)
+    )).scalars().all()
+
+    out = []
+    for u in units:
+        c = client_by_unit.get(u.id)
+        out.append(UnitDetailRow(
+            unit_id=u.id, unit_label="-".join(x for x in [u.block, u.unit_number] if x) or "?",
+            unit_type=u.unit_type, price=u.price, status=u.status.value,
+            status_label=_UNIT_STATUS_LABEL.get(u.status, u.status.value),
+            bucket="terjual" if u.status in _SOLD_STATUSES else "belum",
+            client_id=c[0] if c else None, client_name=c[1] if c else None,
+        ))
+    return out
