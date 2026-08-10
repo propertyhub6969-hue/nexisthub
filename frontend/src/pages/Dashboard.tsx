@@ -67,16 +67,14 @@ function Metric({ label, value, accent }: { label: string; value: string | numbe
   )
 }
 
-function SectionShell({ icon: Icon, iconBg, title, letter, right, children }: {
-  icon: LucideIcon; iconBg: string; title: string; letter: string; right?: React.ReactNode; children: React.ReactNode
+// Gaya seksi = identitas NexistHub: label KAPITAL muted, tanpa prefiks huruf & kotak ikon warna.
+function SectionShell({ title, right, children }: {
+  title: string; right?: React.ReactNode; children: React.ReactNode
 }) {
   return (
     <div className="card p-4 sm:p-5 flex flex-col">
-      <div className="flex items-center justify-between gap-2 mb-4">
-        <h3 className="text-sm font-semibold text-slate-800 flex items-center gap-2">
-          <span className={`w-6 h-6 rounded-md ${iconBg} flex items-center justify-center`}><Icon size={14} className="text-white" /></span>
-          {letter}. {title}
-        </h3>
+      <div className="flex items-center justify-between gap-2 mb-3">
+        <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">{title}</h3>
         {right}
       </div>
       {children}
@@ -94,7 +92,7 @@ function SalesSection({ report }: { report: SalesRecapReport | null }) {
   const pct = total ? (sold / total) * 100 : 0
 
   return (
-    <SectionShell icon={BarChart3} iconBg="bg-blue-500" letter="A" title="Penjualan"
+    <SectionShell title="Penjualan"
       right={<ProjectSelect value={pid} onChange={setPid} projects={projects} />}>
       {!sel ? <p className="py-8 text-center text-sm text-slate-400">Belum ada proyek.</p> : (
         <>
@@ -127,7 +125,7 @@ function KprSection({ report }: { report: KprSummaryReport | null }) {
   const { pid, setPid, sel } = useProjectPick(projects)
 
   return (
-    <SectionShell icon={FileText} iconBg="bg-orange-500" letter="B" title="Data SPPR"
+    <SectionShell title="Data SPPR / KPR"
       right={<ProjectSelect value={pid} onChange={setPid} projects={projects} />}>
       {!sel ? <p className="py-8 text-center text-sm text-slate-400">Belum ada proyek.</p> : (
         <>
@@ -166,7 +164,7 @@ function ConstructionSection({ report }: { report: ConstructionProgressReport | 
   const { pid, setPid, sel } = useProjectPick(projects)
 
   return (
-    <SectionShell icon={Hammer} iconBg="bg-purple-500" letter="C" title="Pembangunan"
+    <SectionShell title="Pembangunan"
       right={<ProjectSelect value={pid} onChange={setPid} projects={projects} />}>
       {!sel ? <p className="py-8 text-center text-sm text-slate-400">Belum ada proyek.</p> : (
         <>
@@ -250,13 +248,13 @@ function SalesChart() {
 }
 
 // KPI atas
-function KpiCard({ icon: Icon, label, value, iconBg }: { icon: LucideIcon; label: string; value: string | number; iconBg: string }) {
+function KpiCard({ icon: Icon, label, value, color, bg }: { icon: LucideIcon; label: string; value: string | number; color: string; bg: string }) {
   return (
-    <div className="card p-4 sm:p-5 flex items-center gap-3">
-      <div className={`w-11 h-11 rounded-xl ${iconBg} flex items-center justify-center shrink-0`}><Icon size={18} className="text-white" /></div>
+    <div className="card p-4 sm:p-5 flex items-center gap-3 sm:gap-4 hover:shadow-soft transition-shadow">
+      <div className={`w-11 h-11 rounded-xl ${bg} flex items-center justify-center shrink-0`}><Icon size={18} className={color} /></div>
       <div className="min-w-0">
-        <p className="font-display text-2xl font-bold text-slate-900 leading-none tracking-tight">{value}</p>
-        <p className="text-xs text-slate-500 mt-1">{label}</p>
+        <p className="font-display text-xl font-bold text-slate-900 truncate tracking-tight">{value}</p>
+        <p className="text-xs text-slate-500 mt-0.5">{label}</p>
       </div>
     </div>
   )
@@ -273,10 +271,10 @@ function monthOptions(): { value: string; label: string }[] {
   })
 }
 
-function FinanceCol({ icon: Icon, iconBg, label, value }: { icon: LucideIcon; iconBg: string; label: string; value: string }) {
+function FinanceCol({ icon: Icon, color, bg, label, value }: { icon: LucideIcon; color: string; bg: string; label: string; value: string }) {
   return (
     <div className="flex items-center gap-3">
-      <div className={`w-10 h-10 rounded-lg ${iconBg} flex items-center justify-center shrink-0`}><Icon size={16} className="text-white" /></div>
+      <div className={`w-10 h-10 rounded-lg ${bg} flex items-center justify-center shrink-0`}><Icon size={16} className={color} /></div>
       <div className="min-w-0">
         <p className="font-display text-lg font-bold text-slate-900 truncate tracking-tight">{value}</p>
         <p className="text-xs text-slate-500">{label}</p>
@@ -317,10 +315,10 @@ function FinanceStrip() {
         </div>
       </div>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <FinanceCol icon={Wallet} iconBg="bg-emerald-500" label={`Uang Masuk · ${monthLabel}`} value={fmt(data?.cash_in)} />
-        <FinanceCol icon={TrendingUp} iconBg="bg-amber-500" label="Sisa Piutang · seluruh" value={fmt(data?.outstanding)} />
-        <FinanceCol icon={CheckCircle2} iconBg="bg-blue-500" label="Total Terbayar · seluruh" value={fmt(data?.total_paid)} />
-        <FinanceCol icon={AlertTriangle} iconBg="bg-red-500" label="Termin Terlambat" value={String(data?.overdue_count ?? 0)} />
+        <FinanceCol icon={Wallet} color="text-emerald-500" bg="bg-emerald-50" label={`Uang Masuk · ${monthLabel}`} value={fmt(data?.cash_in)} />
+        <FinanceCol icon={TrendingUp} color="text-amber-500" bg="bg-amber-50" label="Sisa Piutang · seluruh" value={fmt(data?.outstanding)} />
+        <FinanceCol icon={CheckCircle2} color="text-blue-500" bg="bg-blue-50" label="Total Terbayar · seluruh" value={fmt(data?.total_paid)} />
+        <FinanceCol icon={AlertTriangle} color="text-red-500" bg="bg-red-50" label="Termin Terlambat" value={String(data?.overdue_count ?? 0)} />
       </div>
     </div>
   )
@@ -351,10 +349,10 @@ export default function Dashboard() {
     <div className="space-y-6">
       {/* KPI atas */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <KpiCard icon={Users} label="Total Client Terdaftar" value={s?.clients_total ?? 0} iconBg="bg-blue-500" />
-        <KpiCard icon={Layers} label="Total Kavling" value={s?.units_total ?? 0} iconBg="bg-emerald-500" />
-        <KpiCard icon={FileText} label="SPPR Aktif" value={kpr?.sppr_active_total ?? 0} iconBg="bg-orange-500" />
-        <KpiCard icon={Hammer} label="Pembangunan Aktif" value={pembangunanAktif} iconBg="bg-purple-500" />
+        <KpiCard icon={Users} label="Total Client Terdaftar" value={s?.clients_total ?? 0} color="text-blue-500" bg="bg-blue-50" />
+        <KpiCard icon={Layers} label="Total Kavling" value={s?.units_total ?? 0} color="text-emerald-500" bg="bg-emerald-50" />
+        <KpiCard icon={FileText} label="SPPR Aktif" value={kpr?.sppr_active_total ?? 0} color="text-orange-500" bg="bg-orange-50" />
+        <KpiCard icon={Hammer} label="Pembangunan Aktif" value={pembangunanAktif} color="text-purple-500" bg="bg-purple-50" />
       </div>
 
       {/* Strip keuangan berfilter (lokasi + bulan) */}
