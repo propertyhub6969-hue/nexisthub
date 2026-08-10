@@ -17,6 +17,29 @@ const sourceCfg: Record<PendingExpenseRow['source'], { label: string; variant: '
   notaris:  { label: 'Notaris', variant: 'green' },
 }
 
+/** Satu baris chip filter (dipakai untuk Kategori & Sumber). `active`=null berarti "Semua". */
+function FilterChips({ label, active, onPick, allCount, items }: {
+  label: string
+  active: string | null
+  onPick: (key: string | null) => void
+  allCount: number
+  items: { key: string; label: string; count: number }[]
+}) {
+  const cls = (on: boolean) =>
+    `px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
+      on ? 'bg-brand-600 text-white border-brand-600' : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'
+    }`
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      <span className="text-xs font-medium text-slate-400 w-16 shrink-0">{label}</span>
+      <button onClick={() => onPick(null)} className={cls(active === null)}>Semua ({allCount})</button>
+      {items.map((c) => (
+        <button key={c.key} onClick={() => onPick(c.key)} className={cls(active === c.key)}>{c.label} ({c.count})</button>
+      ))}
+    </div>
+  )
+}
+
 function SourceIcon({ row }: { row: PendingExpenseRow }) {
   if (row.utility_kind === 'pln') return <Zap size={15} className="text-amber-500" />
   if (row.utility_kind === 'pdam') return <Droplets size={15} className="text-blue-500" />
@@ -35,6 +58,7 @@ export default function PendingExpenses() {
   const [error, setError] = useState('')
   const [sel, setSel] = useState<Set<string>>(new Set())
   const [catFilter, setCatFilter] = useState<string | null>(null)
+  const [srcFilter, setSrcFilter] = useState<string | null>(null)
   const [payModal, setPayModal] = useState(false)
   const [paidDate, setPaidDate] = useState('')
   const [saving, setSaving] = useState(false)
@@ -48,22 +72,37 @@ export default function PendingExpenses() {
   }, [])
   useEffect(load, [load])
 
-  // daftar kategori diturunkan dari data (bukan hardcode) + jumlah tagihan tiap kategori
-  const categories = useMemo(() => {
-    const m = new Map<string, { label: string; count: number }>()
-    for (const r of rows) {
-      const e = m.get(r.category) ?? { label: r.category_label, count: 0 }
-      e.count++; m.set(r.category, e)
+  // Dua dimensi filter: KATEGORI (jenis biaya) & SUMBER (jalur asal: utilitas/opname/biaya/notaris).
+  // Penghitungan FASET: jumlah di chip kategori mengikuti filter sumber yg aktif, dan sebaliknya —
+  // supaya chip tak pernah menampilkan angka yang, saat diklik, ternyata 0 karena filter lain.
+  const facet = useMemo(() => (
+    (list: PendingExpenseRow[], keyOf: (r: PendingExpenseRow) => string, labelOf: (r: PendingExpenseRow) => string) => {
+      const m = new Map<string, { label: string; count: number }>()
+      for (const r of list) {
+        const e = m.get(keyOf(r)) ?? { label: labelOf(r), count: 0 }
+        e.count++; m.set(keyOf(r), e)
+      }
+      return [...m.entries()].map(([key, v]) => ({ key, ...v })).sort((a, b) => b.count - a.count)
     }
-    return [...m.entries()].map(([key, v]) => ({ key, ...v })).sort((a, b) => b.count - a.count)
-  }, [rows])
-  // kalau kategori terpilih habis (mis. setelah semua dibayar) → balik ke "Semua"
+  ), [])
+
+  const catBase = srcFilter ? rows.filter((r) => r.source === srcFilter) : rows   // basis chip kategori
+  const srcBase = catFilter ? rows.filter((r) => r.category === catFilter) : rows // basis chip sumber
+  const categories = facet(catBase, (r) => r.category, (r) => r.category_label)
+  const sources = facet(srcBase, (r) => r.source, (r) => sourceCfg[r.source].label)
+
+  // filter terpilih habis (mis. semua dibayar) → balik ke "Semua"
   useEffect(() => {
     if (catFilter && !rows.some((r) => r.category === catFilter)) setCatFilter(null)
   }, [rows, catFilter])
+  useEffect(() => {
+    if (srcFilter && !rows.some((r) => r.source === srcFilter)) setSrcFilter(null)
+  }, [rows, srcFilter])
 
-  const shown = catFilter ? rows.filter((r) => r.category === catFilter) : rows
+  const shown = rows.filter((r) =>
+    (!catFilter || r.category === catFilter) && (!srcFilter || r.source === srcFilter))
   const shownTotal = shown.reduce((a, r) => a + Number(r.amount || 0), 0)
+  const anyFilter = catFilter != null || srcFilter != null
 
   const toggle = (id: string) => setSel((s) => {
     const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n
@@ -118,8 +157,8 @@ export default function PendingExpenses() {
               </p>
             </div>
             <div className="card p-4">
-              <p className="text-xs text-slate-500">{catFilter ? 'Nilai Kategori Ini' : 'Total Nilai'}</p>
-              <p className="font-display text-lg font-bold text-red-600">{fmt(catFilter ? shownTotal : total)}</p>
+              <p className="text-xs text-slate-500">{anyFilter ? 'Nilai Terfilter' : 'Total Nilai'}</p>
+              <p className="font-display text-lg font-bold text-red-600">{fmt(anyFilter ? shownTotal : total)}</p>
             </div>
             <div className="card p-4">
               <p className="text-xs text-slate-500">Dipilih</p>
@@ -127,28 +166,15 @@ export default function PendingExpenses() {
             </div>
           </div>
 
-          {/* Filter kategori — chip diturunkan dari data */}
-          {categories.length > 1 && (
-            <div className="flex flex-wrap items-center gap-1.5">
-              <button
-                onClick={() => setCatFilter(null)}
-                className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
-                  catFilter === null ? 'bg-brand-600 text-white border-brand-600' : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'
-                }`}
-              >
-                Semua ({rows.length})
-              </button>
-              {categories.map((c) => (
-                <button
-                  key={c.key}
-                  onClick={() => setCatFilter(c.key)}
-                  className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
-                    catFilter === c.key ? 'bg-brand-600 text-white border-brand-600' : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'
-                  }`}
-                >
-                  {c.label} ({c.count})
-                </button>
-              ))}
+          {/* Filter — chip diturunkan dari data (faset). Baris muncul hanya bila ada >1 nilai. */}
+          {(categories.length > 1 || sources.length > 1) && (
+            <div className="space-y-2">
+              {categories.length > 1 && (
+                <FilterChips label="Kategori" active={catFilter} onPick={setCatFilter} allCount={catBase.length} items={categories} />
+              )}
+              {sources.length > 1 && (
+                <FilterChips label="Sumber" active={srcFilter} onPick={setSrcFilter} allCount={srcBase.length} items={sources} />
+              )}
             </div>
           )}
 
@@ -173,6 +199,12 @@ export default function PendingExpenses() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
+                {shown.length === 0 && (
+                  <tr><td colSpan={7} className="px-4 py-10 text-center text-sm text-slate-400">
+                    Tidak ada tagihan untuk kombinasi filter ini.{' '}
+                    <button onClick={() => { setCatFilter(null); setSrcFilter(null) }} className="text-brand-600 hover:underline">Reset filter</button>
+                  </td></tr>
+                )}
                 {shown.map((r) => (
                   <tr key={r.ref} className={`hover:bg-slate-50 ${sel.has(r.ref) ? 'bg-brand-50/40' : ''}`}>
                     <td className="px-4 py-2.5">
