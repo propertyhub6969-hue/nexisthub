@@ -1514,3 +1514,63 @@ async def finance_summary(
 
     return FinanceSummary(month=mlabel, cash_in=cash_in, outstanding=outstanding,
                           total_paid=total_paid, overdue_count=overdue_count)
+
+
+# ── Rincian pengajuan KPR per proyek (utk dialog klik angka SPPR di dashboard) ──
+_KPR_STAGE_LABEL = {
+    KprStage.COLLECT_BERKAS: "Collect Berkas",
+    KprStage.BERKAS_MASUK_BANK: "Berkas Masuk Bank",
+    KprStage.SP3K: "SP3K",
+    KprStage.PERSIAPAN_AKAD: "Persiapan Akad",
+    KprStage.AKAD_KREDIT: "Akad Kredit",
+    KprStage.PENCAIRAN: "Pencairan",
+}
+
+
+class KprDetailRow(BaseModel):
+    client_id: uuid.UUID
+    client_name: str
+    unit_label: Optional[str] = None
+    bank_name: Optional[str] = None
+    stage: str
+    stage_label: str
+    bucket: str                     # "approved" | "belum" | "rejected"
+    plafond: Optional[Decimal] = None
+    submitted_date: Optional[date] = None
+    sp3k_date: Optional[date] = None
+
+
+@router.get("/kpr-detail", response_model=list[KprDetailRow])
+async def kpr_detail(
+    project_id: uuid.UUID = Query(...),
+    ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db),
+):
+    """Daftar pengajuan KPR satu proyek — dipakai dialog saat angka SPPR di dashboard diklik.
+    Frontend menyaring per `bucket` (all/approved/belum/rejected) di sisi klien."""
+    from app.models.kpr import Bank
+    rows = (await db.execute(
+        select(KprApplication, Client.id, Client.full_name, Client.unit_number,
+               Unit.block, Unit.unit_number, Bank.name)
+        .join(Client, Client.id == KprApplication.client_id)
+        .outerjoin(Unit, Unit.id == Client.unit_id)
+        .outerjoin(Bank, Bank.id == KprApplication.bank_id)
+        .where(KprApplication.tenant_id == ctx.tenant_id, KprApplication.is_deleted == False,  # noqa: E712
+               Client.project_id == project_id, Client.is_deleted == False)                     # noqa: E712
+        .order_by(Client.full_name)
+    )).all()
+
+    out = []
+    for k, cid, cname, c_unitnum, blk, u_num, bank in rows:
+        if k.rejected_date is not None:
+            bucket = "rejected"
+        elif k.stage in APPROVED_STAGES:
+            bucket = "approved"
+        else:
+            bucket = "belum"
+        label = "-".join(x for x in [blk, u_num] if x) or c_unitnum or None
+        out.append(KprDetailRow(
+            client_id=cid, client_name=cname, unit_label=label,
+            bank_name=bank, stage=k.stage.value, stage_label=_KPR_STAGE_LABEL.get(k.stage, k.stage.value),
+            bucket=bucket, plafond=k.plafond, submitted_date=k.submitted_date, sp3k_date=k.sp3k_date,
+        ))
+    return out

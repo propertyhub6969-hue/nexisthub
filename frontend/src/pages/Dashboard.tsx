@@ -7,10 +7,11 @@ import {
 import type { LucideIcon } from 'lucide-react'
 import { reportingService } from '../services/reporting'
 import { propertyService } from '../services/property'
+import Modal from '../components/ui/Modal'
 import type {
   DashboardStats, SalesMonthly, Project,
   SalesRecapReport, SalesProject, KprSummaryReport, ProjectKprRow,
-  ConstructionProgressReport, ConstructionProject, FinanceSummary,
+  ConstructionProgressReport, ConstructionProject, FinanceSummary, KprDetailRow,
 } from '../types'
 
 const fmt = (n?: number) =>
@@ -120,9 +121,41 @@ function SalesSection({ report }: { report: SalesRecapReport | null }) {
 }
 
 // ═══════════ B. DATA SPPR / KPR ═══════════
+type KprBucket = 'all' | 'approved' | 'belum' | 'rejected'
+const BUCKET_TITLE: Record<KprBucket, string> = {
+  all: 'Semua Pengajuan SPPR', approved: 'SPPR Disetujui Bank',
+  belum: 'SPPR Belum Disetujui', rejected: 'SPPR Ditolak',
+}
+
+// Angka yang bisa diklik → buka dialog daftar. Tanpa aksi bila value 0.
+function ClickMetric({ label, value, accent, onClick, disabled }: {
+  label: string; value: number; accent?: string; onClick: () => void; disabled: boolean
+}) {
+  return (
+    <button type="button" onClick={onClick} disabled={disabled}
+      className={`text-left rounded-lg -m-1 p-1 transition-colors ${disabled ? 'cursor-default' : 'hover:bg-slate-50 cursor-pointer'}`}>
+      <p className={`font-display text-xl font-bold ${accent ?? 'text-slate-900'}`}>{value}</p>
+      <p className="text-xs text-slate-500 mt-0.5 flex items-center gap-1">
+        {label}{!disabled && <ChevronRight size={11} className="text-slate-300" />}
+      </p>
+    </button>
+  )
+}
+
 function KprSection({ report }: { report: KprSummaryReport | null }) {
   const projects: ProjectKprRow[] = report?.projects ?? []
   const { pid, setPid, sel } = useProjectPick(projects)
+  const [bucket, setBucket] = useState<KprBucket | null>(null)
+  const [rows, setRows] = useState<KprDetailRow[]>([])
+  const [loadingRows, setLoadingRows] = useState(false)
+
+  function openDialog(b: KprBucket) {
+    if (!sel) return
+    setBucket(b); setLoadingRows(true); setRows([])
+    reportingService.kprDetail(sel.project_id)
+      .then(setRows).catch(() => {}).finally(() => setLoadingRows(false))
+  }
+  const shownRows = bucket === 'all' || bucket == null ? rows : rows.filter((r) => r.bucket === bucket)
 
   return (
     <SectionShell title="Data SPPR / KPR"
@@ -130,11 +163,48 @@ function KprSection({ report }: { report: KprSummaryReport | null }) {
       {!sel ? <p className="py-8 text-center text-sm text-slate-400">Belum ada proyek.</p> : (
         <>
           <div className="grid grid-cols-2 gap-4">
-            <Metric label="Total SPPR" value={sel.total_sppr} />
-            <Metric label="Disetujui Bank" value={sel.approved_bank} accent="text-emerald-600" />
-            <Metric label="Belum Disetujui" value={sel.not_approved} accent="text-amber-600" />
-            <Metric label="SPPR Ditolak" value={sel.rejected} accent={sel.rejected > 0 ? 'text-red-600' : undefined} />
+            <ClickMetric label="Total SPPR" value={sel.total_sppr} onClick={() => openDialog('all')} disabled={sel.total_sppr === 0} />
+            <ClickMetric label="Disetujui Bank" value={sel.approved_bank} accent="text-emerald-600" onClick={() => openDialog('approved')} disabled={sel.approved_bank === 0} />
+            <ClickMetric label="Belum Disetujui" value={sel.not_approved} accent="text-amber-600" onClick={() => openDialog('belum')} disabled={sel.not_approved === 0} />
+            <ClickMetric label="SPPR Ditolak" value={sel.rejected} accent={sel.rejected > 0 ? 'text-red-600' : undefined} onClick={() => openDialog('rejected')} disabled={sel.rejected === 0} />
           </div>
+
+          <Modal open={bucket != null} onClose={() => setBucket(null)} title={bucket ? `${BUCKET_TITLE[bucket]} — ${sel.project_name}` : ''} size="lg">
+            {loadingRows ? (
+              <div className="py-10 text-center text-slate-400"><Loader2 size={18} className="inline animate-spin" /></div>
+            ) : shownRows.length === 0 ? (
+              <p className="py-8 text-center text-sm text-slate-400">Tidak ada pengajuan pada kategori ini.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm min-w-[520px]">
+                  <thead className="bg-slate-50 border-b border-slate-200">
+                    <tr>{['Pembeli', 'Unit', 'Bank', 'Tahap', ''].map((h, i) => (
+                      <th key={i} className="px-3 py-2 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">{h}</th>))}</tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {shownRows.map((r) => (
+                      <tr key={r.client_id} className="hover:bg-slate-50">
+                        <td className="px-3 py-2 font-medium text-slate-900 whitespace-nowrap">{r.client_name}</td>
+                        <td className="px-3 py-2 text-slate-500 whitespace-nowrap">{r.unit_label ?? '—'}</td>
+                        <td className="px-3 py-2 text-slate-500 whitespace-nowrap">{r.bank_name ?? '—'}</td>
+                        <td className="px-3 py-2 whitespace-nowrap">
+                          <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
+                            r.bucket === 'rejected' ? 'bg-red-50 text-red-700'
+                              : r.bucket === 'approved' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
+                          }`}>{r.stage_label}</span>
+                        </td>
+                        <td className="px-3 py-2 text-right">
+                          <Link to={`/marketing/clients/${r.client_id}/kpr`} className="text-brand-600 hover:underline text-xs inline-flex items-center gap-0.5">
+                            Buka <ChevronRight size={12} />
+                          </Link>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Modal>
           <div className="mt-4 rounded-lg bg-slate-50 border border-slate-100 p-3">
             <p className="text-xs font-semibold text-brand-700 mb-2">Metode Pembayaran</p>
             {sel.methods.length === 0 ? (

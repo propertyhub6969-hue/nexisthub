@@ -2018,3 +2018,17 @@ export interface FinanceSummary {
   total_paid: number
   overdue_count: number
 }
+
+// ── Rincian pengajuan KPR (dialog klik angka SPPR di dashboard) ──
+export interface KprDetailRow {
+  client_id: string
+  client_name: string
+  unit_label?: string | null
+  bank_name?: string | null
+  stage: string
+  stage_label: string
+  bucket: 'approved' | 'belum' | 'rejected'
+  plafond?: number | null
+  submitted_date?: string | null
+  sp3k_date?: string | null
+}
