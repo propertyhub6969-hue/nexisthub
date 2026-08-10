@@ -2023,6 +2023,7 @@ export interface FinanceSummary {
 export interface KprDetailRow {
   client_id: string
   client_name: string
+  project_name?: string | null
   unit_label?: string | null
   bank_name?: string | null
   stage: string
@@ -2037,6 +2038,7 @@ export interface KprDetailRow {
 export interface UnitDetailRow {
   unit_id: string
   unit_label: string
+  project_name?: string | null
   unit_type?: string | null
   price?: number | null
   status: string

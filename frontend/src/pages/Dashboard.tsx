@@ -22,11 +22,10 @@ const monShort = (ym: string) => { const [y, m] = ym.split('-'); return `${month
 const CURRENT_YEAR = new Date().getFullYear()
 const YEAR_OPTIONS = Array.from({ length: 5 }, (_, i) => CURRENT_YEAR - i)
 
-// ── Pemilih proyek per-seksi (default: proyek pertama yang ada datanya) ──
+// ── Pemilih proyek per-seksi. pid='' = Semua Proyek (agregat). ──
 function useProjectPick<T extends { project_id: string; project_name: string }>(projects: T[]) {
-  const [pid, setPid] = useState('')
-  useEffect(() => { if (!pid && projects.length) setPid(projects[0].project_id) }, [projects, pid])
-  const sel = projects.find((p) => p.project_id === pid) ?? projects[0]
+  const [pid, setPid] = useState('')   // default: Semua
+  const sel = projects.find((p) => p.project_id === pid)
   return { pid, setPid, sel }
 }
 
@@ -35,7 +34,7 @@ function ProjectSelect({ value, onChange, projects }: {
 }) {
   return (
     <select className="input h-8 py-0 text-xs w-40" value={value} onChange={(e) => onChange(e.target.value)}>
-      {projects.length === 0 && <option value="">— belum ada —</option>}
+      <option value="">{projects.length === 0 ? '— belum ada —' : 'Semua Proyek'}</option>
       {projects.map((p) => <option key={p.project_id} value={p.project_id}>{p.project_name}</option>)}
     </select>
   )
@@ -96,19 +95,21 @@ const UNIT_STATUS_CHIP: Record<string, string> = {
 function SalesSection({ report }: { report: SalesRecapReport | null }) {
   const projects: SalesProject[] = report?.projects ?? []
   const { pid, setPid, sel } = useProjectPick(projects)
-  const total = sel?.units_total ?? 0
-  const sold = sel?.units_sold ?? 0
+  const all = pid === ''
+  const total = all ? projects.reduce((a, p) => a + p.units_total, 0) : (sel?.units_total ?? 0)
+  const sold = all ? projects.reduce((a, p) => a + p.units_sold, 0) : (sel?.units_sold ?? 0)
   const belumLaku = total - sold
   const pct = total ? (sold / total) * 100 : 0
+  const projLabel = all ? 'Semua Proyek' : (sel?.project_name ?? '')
 
   const [bucket, setBucket] = useState<UnitBucket | null>(null)
   const [rows, setRows] = useState<UnitDetailRow[]>([])
   const [loadingRows, setLoadingRows] = useState(false)
 
   function openDialog(b: UnitBucket) {
-    if (!sel) return
+    if (projects.length === 0) return
     setBucket(b); setLoadingRows(true); setRows([])
-    reportingService.unitsDetail(sel.project_id)
+    reportingService.unitsDetail(all ? undefined : pid)
       .then(setRows).catch(() => {}).finally(() => setLoadingRows(false))
   }
   const shownRows = bucket === 'all' || bucket == null ? rows : rows.filter((r) => r.bucket === bucket)
@@ -116,7 +117,7 @@ function SalesSection({ report }: { report: SalesRecapReport | null }) {
   return (
     <SectionShell title="Penjualan"
       right={<ProjectSelect value={pid} onChange={setPid} projects={projects} />}>
-      {!sel ? <p className="py-8 text-center text-sm text-slate-400">Belum ada proyek.</p> : (
+      {projects.length === 0 ? <p className="py-8 text-center text-sm text-slate-400">Belum ada proyek.</p> : (
         <>
           <div className="grid grid-cols-2 gap-4">
             <ClickMetric label="Total Kavling" value={total} onClick={() => openDialog('all')} disabled={total === 0} />
@@ -128,7 +129,7 @@ function SalesSection({ report }: { report: SalesRecapReport | null }) {
             </div>
           </div>
 
-          <Modal open={bucket != null} onClose={() => setBucket(null)} title={bucket ? `${UNIT_BUCKET_TITLE[bucket]} — ${sel.project_name}` : ''} size="lg">
+          <Modal open={bucket != null} onClose={() => setBucket(null)} title={bucket ? `${UNIT_BUCKET_TITLE[bucket]} — ${projLabel}` : ''} size="lg">
             {loadingRows ? (
               <div className="py-10 text-center text-slate-400"><Loader2 size={18} className="inline animate-spin" /></div>
             ) : shownRows.length === 0 ? (
@@ -139,6 +140,7 @@ function SalesSection({ report }: { report: SalesRecapReport | null }) {
                 <table className="w-full text-sm min-w-[760px]">
                   <thead className="bg-slate-50 border-b border-slate-200">
                     <tr>
+                      {all && <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">Proyek</th>}
                       {['Unit', 'Tipe', 'Status', 'Cara Beli', 'Pembeli'].map((h, i) => (
                         <th key={i} className="px-3 py-2 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">{h}</th>))}
                       {['Harga', 'Uang Masuk', 'Sisa'].map((h, i) => (
@@ -149,6 +151,7 @@ function SalesSection({ report }: { report: SalesRecapReport | null }) {
                   <tbody className="divide-y divide-slate-100">
                     {shownRows.map((r) => (
                       <tr key={r.unit_id} className="hover:bg-slate-50">
+                        {all && <td className="px-3 py-2 text-slate-500 whitespace-nowrap">{r.project_name ?? '—'}</td>}
                         <td className="px-3 py-2 font-medium text-slate-900 whitespace-nowrap">{r.unit_label}</td>
                         <td className="px-3 py-2 text-slate-500 whitespace-nowrap">{r.unit_type ?? '—'}</td>
                         <td className="px-3 py-2 whitespace-nowrap">
@@ -217,17 +220,38 @@ function ClickMetric({ label, value, accent, onClick, disabled }: {
   )
 }
 
+// Agregat SPPR lintas proyek (untuk pilihan "Semua").
+function aggregateKpr(projects: ProjectKprRow[]): Omit<ProjectKprRow, 'project_id' | 'project_name'> {
+  const mMap = new Map<string, { label: string; count: number }>()
+  let total = 0, app = 0, bel = 0, rej = 0
+  for (const p of projects) {
+    total += p.total_sppr; app += p.approved_bank; bel += p.not_approved; rej += p.rejected
+    for (const m of p.methods) {
+      const e = mMap.get(m.method) ?? { label: m.label, count: 0 }
+      e.count += m.count; mMap.set(m.method, e)
+    }
+  }
+  const mtot = [...mMap.values()].reduce((a, m) => a + m.count, 0)
+  const methods = [...mMap.entries()]
+    .map(([method, v]) => ({ method, label: v.label, count: v.count, pct: mtot ? Math.round((v.count / mtot) * 1000) / 10 : 0 }))
+    .sort((a, b) => b.count - a.count)
+  return { total_sppr: total, approved_bank: app, not_approved: bel, rejected: rej, methods }
+}
+
 function KprSection({ report }: { report: KprSummaryReport | null }) {
   const projects: ProjectKprRow[] = report?.projects ?? []
   const { pid, setPid, sel } = useProjectPick(projects)
+  const all = pid === ''
+  const view = all ? aggregateKpr(projects) : sel
+  const projLabel = all ? 'Semua Proyek' : (sel?.project_name ?? '')
   const [bucket, setBucket] = useState<KprBucket | null>(null)
   const [rows, setRows] = useState<KprDetailRow[]>([])
   const [loadingRows, setLoadingRows] = useState(false)
 
   function openDialog(b: KprBucket) {
-    if (!sel) return
+    if (projects.length === 0) return
     setBucket(b); setLoadingRows(true); setRows([])
-    reportingService.kprDetail(sel.project_id)
+    reportingService.kprDetail(all ? undefined : pid)
       .then(setRows).catch(() => {}).finally(() => setLoadingRows(false))
   }
   const shownRows = bucket === 'all' || bucket == null ? rows : rows.filter((r) => r.bucket === bucket)
@@ -235,16 +259,16 @@ function KprSection({ report }: { report: KprSummaryReport | null }) {
   return (
     <SectionShell title="Data SPPR / KPR"
       right={<ProjectSelect value={pid} onChange={setPid} projects={projects} />}>
-      {!sel ? <p className="py-8 text-center text-sm text-slate-400">Belum ada proyek.</p> : (
+      {projects.length === 0 || !view ? <p className="py-8 text-center text-sm text-slate-400">Belum ada proyek.</p> : (
         <>
           <div className="grid grid-cols-2 gap-4">
-            <ClickMetric label="Total SPPR" value={sel.total_sppr} onClick={() => openDialog('all')} disabled={sel.total_sppr === 0} />
-            <ClickMetric label="Disetujui Bank" value={sel.approved_bank} accent="text-emerald-600" onClick={() => openDialog('approved')} disabled={sel.approved_bank === 0} />
-            <ClickMetric label="Belum Disetujui" value={sel.not_approved} accent="text-amber-600" onClick={() => openDialog('belum')} disabled={sel.not_approved === 0} />
-            <ClickMetric label="SPPR Ditolak" value={sel.rejected} accent={sel.rejected > 0 ? 'text-red-600' : undefined} onClick={() => openDialog('rejected')} disabled={sel.rejected === 0} />
+            <ClickMetric label="Total SPPR" value={view.total_sppr} onClick={() => openDialog('all')} disabled={view.total_sppr === 0} />
+            <ClickMetric label="Disetujui Bank" value={view.approved_bank} accent="text-emerald-600" onClick={() => openDialog('approved')} disabled={view.approved_bank === 0} />
+            <ClickMetric label="Belum Disetujui" value={view.not_approved} accent="text-amber-600" onClick={() => openDialog('belum')} disabled={view.not_approved === 0} />
+            <ClickMetric label="SPPR Ditolak" value={view.rejected} accent={view.rejected > 0 ? 'text-red-600' : undefined} onClick={() => openDialog('rejected')} disabled={view.rejected === 0} />
           </div>
 
-          <Modal open={bucket != null} onClose={() => setBucket(null)} title={bucket ? `${BUCKET_TITLE[bucket]} — ${sel.project_name}` : ''} size="lg">
+          <Modal open={bucket != null} onClose={() => setBucket(null)} title={bucket ? `${BUCKET_TITLE[bucket]} — ${projLabel}` : ''} size="lg">
             {loadingRows ? (
               <div className="py-10 text-center text-slate-400"><Loader2 size={18} className="inline animate-spin" /></div>
             ) : shownRows.length === 0 ? (
@@ -253,12 +277,13 @@ function KprSection({ report }: { report: KprSummaryReport | null }) {
               <div className="overflow-x-auto">
                 <table className="w-full text-sm min-w-[520px]">
                   <thead className="bg-slate-50 border-b border-slate-200">
-                    <tr>{['Pembeli', 'Unit', 'Bank', 'Tahap', ''].map((h, i) => (
+                    <tr>{[...(all ? ['Proyek'] : []), 'Pembeli', 'Unit', 'Bank', 'Tahap', ''].map((h, i) => (
                       <th key={i} className="px-3 py-2 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">{h}</th>))}</tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {shownRows.map((r) => (
                       <tr key={r.client_id} className="hover:bg-slate-50">
+                        {all && <td className="px-3 py-2 text-slate-500 whitespace-nowrap">{r.project_name ?? '—'}</td>}
                         <td className="px-3 py-2 font-medium text-slate-900 whitespace-nowrap">{r.client_name}</td>
                         <td className="px-3 py-2 text-slate-500 whitespace-nowrap">{r.unit_label ?? '—'}</td>
                         <td className="px-3 py-2 text-slate-500 whitespace-nowrap">{r.bank_name ?? '—'}</td>
@@ -282,11 +307,11 @@ function KprSection({ report }: { report: KprSummaryReport | null }) {
           </Modal>
           <div className="mt-4 rounded-lg bg-slate-50 border border-slate-100 p-3">
             <p className="text-xs font-semibold text-brand-700 mb-2">Metode Pembayaran</p>
-            {sel.methods.length === 0 ? (
+            {view.methods.length === 0 ? (
               <p className="text-[11px] text-slate-400">Belum ada pembeli.</p>
             ) : (
               <div className="space-y-1.5">
-                {sel.methods.map((m) => (
+                {view.methods.map((m) => (
                   <div key={m.method} className="flex items-center gap-2 text-xs">
                     <span className={`w-2 h-2 rounded-full shrink-0 ${m.method === 'kpr' ? 'bg-blue-500' : 'bg-emerald-500'}`} />
                     <span className="text-slate-600 flex-1">{m.label}</span>
@@ -304,37 +329,49 @@ function KprSection({ report }: { report: KprSummaryReport | null }) {
 }
 
 // ═══════════ C. PEMBANGUNAN ═══════════
+// Agregat pembangunan lintas proyek (avg_percent = rata-rata TERBOBOT jumlah unit).
+function aggregateConstr(projects: ConstructionProject[]) {
+  let ut = 0, ns = 0, ip = 0, dn = 0, ot = 0, lu = 0, wsum = 0
+  for (const p of projects) {
+    ut += p.units_total; ns += p.not_started; ip += p.in_progress; dn += p.done
+    ot += p.overdue_target; lu += p.late_update; wsum += p.avg_percent * p.units_total
+  }
+  return { units_total: ut, not_started: ns, in_progress: ip, done: dn, overdue_target: ot, late_update: lu, avg_percent: ut ? wsum / ut : 0 }
+}
+
 function ConstructionSection({ report }: { report: ConstructionProgressReport | null }) {
   const projects: ConstructionProject[] = report?.projects ?? []
   const { pid, setPid, sel } = useProjectPick(projects)
+  const all = pid === ''
+  const view = all ? aggregateConstr(projects) : sel
 
   return (
     <SectionShell title="Pembangunan"
       right={<ProjectSelect value={pid} onChange={setPid} projects={projects} />}>
-      {!sel ? <p className="py-8 text-center text-sm text-slate-400">Belum ada proyek.</p> : (
+      {projects.length === 0 || !view ? <p className="py-8 text-center text-sm text-slate-400">Belum ada proyek.</p> : (
         <>
           <p className="text-xs font-semibold text-slate-500 mb-2">Distribusi Progres Fisik</p>
           <div className="grid grid-cols-3 gap-3">
-            <div className="rounded-lg bg-slate-50 border border-slate-100 p-2.5"><Metric label="Belum Mulai" value={sel.not_started} /></div>
-            <div className="rounded-lg bg-amber-50 border border-amber-100 p-2.5"><Metric label="Dalam Proses" value={sel.in_progress} accent="text-amber-600" /></div>
-            <div className="rounded-lg bg-emerald-50 border border-emerald-100 p-2.5"><Metric label="Selesai" value={sel.done} accent="text-emerald-600" /></div>
+            <div className="rounded-lg bg-slate-50 border border-slate-100 p-2.5"><Metric label="Belum Mulai" value={view.not_started} /></div>
+            <div className="rounded-lg bg-amber-50 border border-amber-100 p-2.5"><Metric label="Dalam Proses" value={view.in_progress} accent="text-amber-600" /></div>
+            <div className="rounded-lg bg-emerald-50 border border-emerald-100 p-2.5"><Metric label="Selesai" value={view.done} accent="text-emerald-600" /></div>
           </div>
 
           <p className="text-xs font-semibold text-slate-500 mt-4 mb-2">Ketepatan Waktu</p>
           <div className="flex items-center gap-4">
-            <Ring pct={sel.avg_percent} color="text-brand-500" size={64} />
+            <Ring pct={view.avg_percent} color="text-brand-500" size={64} />
             <div className="flex-1 space-y-1.5">
               <div className="flex items-center gap-2 text-xs">
-                <AlertTriangle size={13} className={sel.overdue_target > 0 ? 'text-red-500' : 'text-slate-300'} />
+                <AlertTriangle size={13} className={view.overdue_target > 0 ? 'text-red-500' : 'text-slate-300'} />
                 <span className="text-slate-600 flex-1">Lewat target</span>
-                <span className={`font-semibold ${sel.overdue_target > 0 ? 'text-red-600' : 'text-slate-500'}`}>{sel.overdue_target} unit</span>
+                <span className={`font-semibold ${view.overdue_target > 0 ? 'text-red-600' : 'text-slate-500'}`}>{view.overdue_target} unit</span>
               </div>
               <div className="flex items-center gap-2 text-xs">
-                <AlertTriangle size={13} className={sel.late_update > 0 ? 'text-amber-500' : 'text-slate-300'} />
+                <AlertTriangle size={13} className={view.late_update > 0 ? 'text-amber-500' : 'text-slate-300'} />
                 <span className="text-slate-600 flex-1">Telat update &gt;7 hari</span>
-                <span className={`font-semibold ${sel.late_update > 0 ? 'text-amber-600' : 'text-slate-500'}`}>{sel.late_update} unit</span>
+                <span className={`font-semibold ${view.late_update > 0 ? 'text-amber-600' : 'text-slate-500'}`}>{view.late_update} unit</span>
               </div>
-              <p className="text-[11px] text-slate-400 pt-0.5">Cincin = rata-rata progres fisik proyek ini.</p>
+              <p className="text-[11px] text-slate-400 pt-0.5">Cincin = rata-rata progres fisik{all ? ' (semua proyek, terbobot unit)' : ' proyek ini'}.</p>
             </div>
           </div>
         </>

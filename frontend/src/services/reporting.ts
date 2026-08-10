@@ -32,13 +32,13 @@ export const reportingService = {
     return data
   },
 
-  async unitsDetail(projectId: string): Promise<UnitDetailRow[]> {
-    const { data } = await api.get<UnitDetailRow[]>('/reporting/units-detail', { params: { project_id: projectId } })
+  async unitsDetail(projectId?: string): Promise<UnitDetailRow[]> {
+    const { data } = await api.get<UnitDetailRow[]>('/reporting/units-detail', { params: projectId ? { project_id: projectId } : {} })
     return data
   },
 
-  async kprDetail(projectId: string): Promise<KprDetailRow[]> {
-    const { data } = await api.get<KprDetailRow[]>('/reporting/kpr-detail', { params: { project_id: projectId } })
+  async kprDetail(projectId?: string): Promise<KprDetailRow[]> {
+    const { data } = await api.get<KprDetailRow[]>('/reporting/kpr-detail', { params: projectId ? { project_id: projectId } : {} })
     return data
   },
 

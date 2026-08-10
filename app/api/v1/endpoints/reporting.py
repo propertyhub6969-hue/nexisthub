@@ -1530,6 +1530,7 @@ _KPR_STAGE_LABEL = {
 class KprDetailRow(BaseModel):
     client_id: uuid.UUID
     client_name: str
+    project_name: Optional[str] = None   # diisi & ditampilkan saat filter "Semua"
     unit_label: Optional[str] = None
     bank_name: Optional[str] = None
     stage: str
@@ -1542,25 +1543,29 @@ class KprDetailRow(BaseModel):
 
 @router.get("/kpr-detail", response_model=list[KprDetailRow])
 async def kpr_detail(
-    project_id: uuid.UUID = Query(...),
+    project_id: Optional[uuid.UUID] = Query(None, description="kosong = semua proyek"),
     ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db),
 ):
-    """Daftar pengajuan KPR satu proyek — dipakai dialog saat angka SPPR di dashboard diklik.
-    Frontend menyaring per `bucket` (all/approved/belum/rejected) di sisi klien."""
+    """Daftar pengajuan KPR — dipakai dialog saat angka SPPR di dashboard diklik.
+    project_id kosong = semua proyek (tenant-wide). Frontend menyaring per `bucket`."""
     from app.models.kpr import Bank
+    conds = [KprApplication.tenant_id == ctx.tenant_id, KprApplication.is_deleted == False,  # noqa: E712
+             Client.is_deleted == False]                                                      # noqa: E712
+    if project_id is not None:
+        conds.append(Client.project_id == project_id)
     rows = (await db.execute(
         select(KprApplication, Client.id, Client.full_name, Client.unit_number,
-               Unit.block, Unit.unit_number, Bank.name)
+               Unit.block, Unit.unit_number, Bank.name, Project.name)
         .join(Client, Client.id == KprApplication.client_id)
         .outerjoin(Unit, Unit.id == Client.unit_id)
         .outerjoin(Bank, Bank.id == KprApplication.bank_id)
-        .where(KprApplication.tenant_id == ctx.tenant_id, KprApplication.is_deleted == False,  # noqa: E712
-               Client.project_id == project_id, Client.is_deleted == False)                     # noqa: E712
-        .order_by(Client.full_name)
+        .outerjoin(Project, Project.id == Client.project_id)
+        .where(*conds)
+        .order_by(Project.name, Client.full_name)
     )).all()
 
     out = []
-    for k, cid, cname, c_unitnum, blk, u_num, bank in rows:
+    for k, cid, cname, c_unitnum, blk, u_num, bank, pname in rows:
         if k.rejected_date is not None:
             bucket = "rejected"
         elif k.stage in APPROVED_STAGES:
@@ -1569,7 +1574,7 @@ async def kpr_detail(
             bucket = "belum"
         label = "-".join(x for x in [blk, u_num] if x) or c_unitnum or None
         out.append(KprDetailRow(
-            client_id=cid, client_name=cname, unit_label=label,
+            client_id=cid, client_name=cname, project_name=pname, unit_label=label,
             bank_name=bank, stage=k.stage.value, stage_label=_KPR_STAGE_LABEL.get(k.stage, k.stage.value),
             bucket=bucket, plafond=k.plafond, submitted_date=k.submitted_date, sp3k_date=k.sp3k_date,
         ))
@@ -1587,6 +1592,7 @@ _SOLD_STATUSES = (UnitStatus.SOLD, UnitStatus.HANDOVER)   # sama dgn units_sold 
 class UnitDetailRow(BaseModel):
     unit_id: uuid.UUID
     unit_label: str
+    project_name: Optional[str] = None   # diisi & ditampilkan saat filter "Semua"
     unit_type: Optional[str] = None
     price: Optional[Decimal] = None
     status: str
@@ -1602,20 +1608,25 @@ class UnitDetailRow(BaseModel):
 
 @router.get("/units-detail", response_model=list[UnitDetailRow])
 async def units_detail(
-    project_id: uuid.UUID = Query(...),
+    project_id: Optional[uuid.UUID] = Query(None, description="kosong = semua proyek"),
     ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db),
 ):
-    """Daftar unit satu proyek + pembeli aktif (bila ada) — dipakai dialog saat angka
-    Penjualan di dashboard diklik. Frontend menyaring per bucket (all/terjual/belum).
+    """Daftar unit + pembeli aktif (bila ada) — dipakai dialog saat angka Penjualan diklik.
+    project_id kosong = semua proyek (tenant-wide). Frontend menyaring per bucket.
     Kolom uang masuk/sisa/cara beli konsisten dgn strip Keuangan (hanya approved,
     sisa = kontrak − terbayar)."""
     t = ctx.tenant_id
+    proj_name = dict((await db.execute(
+        select(Project.id, Project.name).where(Project.tenant_id == t))).all())
+
     # pembeli aktif per unit (anti-dobel 409 → maks satu aktif per unit)
+    cl_conds = [Client.tenant_id == t, Client.is_deleted == False,  # noqa: E712
+                Client.status != ClientStatus.INACTIVE, Client.unit_id.isnot(None)]
+    if project_id is not None:
+        cl_conds.append(Client.project_id == project_id)
     client_rows = (await db.execute(
-        select(Client.unit_id, Client.id, Client.full_name, Client.payment_type, Client.contract_value).where(
-            Client.tenant_id == t, Client.is_deleted == False,  # noqa: E712
-            Client.status != ClientStatus.INACTIVE, Client.unit_id.isnot(None),
-            Client.project_id == project_id)
+        select(Client.unit_id, Client.id, Client.full_name, Client.payment_type, Client.contract_value)
+        .where(*cl_conds)
     )).all()
     client_by_unit: dict = {}
     client_ids = []
@@ -1634,9 +1645,11 @@ async def units_detail(
         )).all()
         paid_by_client = {cid: Decimal(v) for cid, v in pay_rows}
 
+    u_conds = [Unit.tenant_id == t]
+    if project_id is not None:
+        u_conds.append(Unit.project_id == project_id)
     units = (await db.execute(
-        select(Unit).where(Unit.project_id == project_id, Unit.tenant_id == t)
-        .order_by(Unit.block, Unit.unit_number)
+        select(Unit).where(*u_conds).order_by(Unit.block, Unit.unit_number)
     )).scalars().all()
 
     out = []
@@ -1654,6 +1667,7 @@ async def units_detail(
             ptype_label = "KPR" if ptype == "kpr" else "Cash"
         out.append(UnitDetailRow(
             unit_id=u.id, unit_label="-".join(x for x in [u.block, u.unit_number] if x) or "?",
+            project_name=proj_name.get(u.project_id),
             unit_type=u.unit_type, price=u.price, status=u.status.value,
             status_label=_UNIT_STATUS_LABEL.get(u.status, u.status.value),
             bucket="terjual" if u.status in _SOLD_STATUSES else "belum",
