@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   Users, Layers, FileText, Hammer, Wallet, AlertTriangle, Loader2,
-  BarChart3, ChevronRight, TrendingUp, KeyRound,
+  BarChart3, ChevronRight, TrendingUp, CheckCircle2,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { reportingService } from '../services/reporting'
@@ -10,7 +10,7 @@ import { propertyService } from '../services/property'
 import type {
   DashboardStats, SalesMonthly, Project,
   SalesRecapReport, SalesProject, KprSummaryReport, ProjectKprRow,
-  ConstructionProgressReport, ConstructionProject,
+  ConstructionProgressReport, ConstructionProject, FinanceSummary,
 } from '../types'
 
 const fmt = (n?: number) =>
@@ -262,6 +262,70 @@ function KpiCard({ icon: Icon, label, value, iconBg }: { icon: LucideIcon; label
   )
 }
 
+// ── Strip Keuangan berfilter: Lokasi (proyek) + Bulan ──
+// "Uang Masuk" ikut bulan terpilih; "Sisa Piutang" & "Total Terbayar" akumulatif (seluruh),
+// keduanya tetap ikut filter lokasi. Semua angka dihitung ulang di backend saat filter berubah.
+function monthOptions(): { value: string; label: string }[] {
+  const now = new Date()
+  return Array.from({ length: 12 }, (_, i) => {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+    return { value: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`, label: `${monthLabels[d.getMonth()]} ${d.getFullYear()}` }
+  })
+}
+
+function FinanceCol({ icon: Icon, iconBg, label, value }: { icon: LucideIcon; iconBg: string; label: string; value: string }) {
+  return (
+    <div className="flex items-center gap-3">
+      <div className={`w-10 h-10 rounded-lg ${iconBg} flex items-center justify-center shrink-0`}><Icon size={16} className="text-white" /></div>
+      <div className="min-w-0">
+        <p className="font-display text-lg font-bold text-slate-900 truncate tracking-tight">{value}</p>
+        <p className="text-xs text-slate-500">{label}</p>
+      </div>
+    </div>
+  )
+}
+
+function FinanceStrip() {
+  const [projects, setProjects] = useState<Project[]>([])
+  const [projectId, setProjectId] = useState('')
+  const months = monthOptions()
+  const [month, setMonth] = useState(months[0].value)
+  const [data, setData] = useState<FinanceSummary | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => { propertyService.listProjects({ size: 500 }).then((r) => setProjects(r.items)).catch(() => {}) }, [])
+  useEffect(() => {
+    setBusy(true)
+    reportingService.financeSummary({ project_id: projectId || undefined, month })
+      .then(setData).catch(() => {}).finally(() => setBusy(false))
+  }, [projectId, month])
+
+  const monthLabel = months.find((m) => m.value === month)?.label ?? month
+  return (
+    <div className="card p-4 sm:p-5">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
+        <h3 className="text-sm font-semibold text-slate-800 flex items-center gap-2"><Wallet size={15} /> Keuangan</h3>
+        <div className="flex items-center gap-2">
+          <select className="input h-8 py-0 text-xs w-40" value={projectId} onChange={(e) => setProjectId(e.target.value)}>
+            <option value="">Semua lokasi</option>
+            {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+          <select className="input h-8 py-0 text-xs w-32" value={month} onChange={(e) => setMonth(e.target.value)}>
+            {months.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+          </select>
+          {busy && <Loader2 size={13} className="animate-spin text-slate-300" />}
+        </div>
+      </div>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <FinanceCol icon={Wallet} iconBg="bg-emerald-500" label={`Uang Masuk · ${monthLabel}`} value={fmt(data?.cash_in)} />
+        <FinanceCol icon={TrendingUp} iconBg="bg-amber-500" label="Sisa Piutang · seluruh" value={fmt(data?.outstanding)} />
+        <FinanceCol icon={CheckCircle2} iconBg="bg-blue-500" label="Total Terbayar · seluruh" value={fmt(data?.total_paid)} />
+        <FinanceCol icon={AlertTriangle} iconBg="bg-red-500" label="Termin Terlambat" value={String(data?.overdue_count ?? 0)} />
+      </div>
+    </div>
+  )
+}
+
 export default function Dashboard() {
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [sales, setSales] = useState<SalesRecapReport | null>(null)
@@ -293,13 +357,8 @@ export default function Dashboard() {
         <KpiCard icon={Hammer} label="Pembangunan Aktif" value={pembangunanAktif} iconBg="bg-purple-500" />
       </div>
 
-      {/* Strip keuangan (dipertahankan) */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <KpiCard icon={Wallet} label="Uang Masuk Bulan Ini" value={fmt(s?.payments_this_month)} iconBg="bg-emerald-500" />
-        <KpiCard icon={TrendingUp} label="Sisa Piutang" value={fmt(s?.outstanding)} iconBg="bg-amber-500" />
-        <KpiCard icon={KeyRound} label="Booking / DP" value={s?.units_booked ?? 0} iconBg="bg-blue-500" />
-        <KpiCard icon={AlertTriangle} label="Termin Terlambat" value={s?.overdue_count ?? 0} iconBg="bg-red-500" />
-      </div>
+      {/* Strip keuangan berfilter (lokasi + bulan) */}
+      <FinanceStrip />
 
       {/* 3 seksi utama */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">

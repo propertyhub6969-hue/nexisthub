@@ -1438,3 +1438,79 @@ async def kpr_summary(
             not_approved=d["belum"], rejected=d["rejected"], methods=methods,
         ))
     return KprSummaryReport(projects=out, sppr_active_total=active_total)
+
+
+# ═══════════════════════ RINGKASAN KEUANGAN BERFILTER (dashboard strip) ═══════════════════════
+# Filter lokasi (proyek) + bulan. "Uang Masuk" mengikuti bulan terpilih; "Sisa Piutang" & "Total
+# Terbayar" SELALU akumulatif (seluruh), bulan tak berlaku — hanya ikut filter lokasi.
+# Konsisten dgn /dashboard: hanya pembayaran approved dihitung; piutang = kontrak − terbayar.
+
+class FinanceSummary(BaseModel):
+    month: str            # "YYYY-MM" yang dipakai
+    cash_in: Decimal      # uang masuk bulan terpilih (+ lokasi)
+    outstanding: Decimal  # sisa piutang seluruh (+ lokasi)
+    total_paid: Decimal   # total terbayar seluruh (+ lokasi)
+    overdue_count: int     # termin terlambat (+ lokasi)
+
+
+@router.get("/finance-summary", response_model=FinanceSummary)
+async def finance_summary(
+    project_id: Optional[uuid.UUID] = Query(None),
+    month: Optional[str] = Query(None, description="YYYY-MM; default bulan berjalan"),
+    ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db),
+):
+    t = ctx.tenant_id
+    # rentang bulan
+    today = date.today()
+    try:
+        y, m = (int(x) for x in month.split("-")) if month else (today.year, today.month)
+        mstart = date(y, m, 1)
+    except (ValueError, AttributeError):
+        mstart = today.replace(day=1); y, m = mstart.year, mstart.month
+    mend = date(y + 1, 1, 1) if m == 12 else date(y, m + 1, 1)
+    mlabel = f"{y:04d}-{m:02d}"
+
+    _approved = Payment.approval_status == PaymentApprovalStatus.APPROVED
+    # id pembeli dalam lokasi (semua bila project_id kosong) — dipakai utk membatasi payment/schedule
+    client_conds = [Client.tenant_id == t, Client.is_deleted == False]  # noqa: E712
+    if project_id is not None:
+        client_conds.append(Client.project_id == project_id)
+    client_ids_sq = select(Client.id).where(*client_conds)
+
+    # uang masuk bulan terpilih (approved, dalam lokasi)
+    cash_in = Decimal(await db.scalar(
+        select(func.coalesce(func.sum(Payment.amount), 0)).where(
+            Payment.tenant_id == t, Payment.is_deleted == False, _approved,  # noqa: E712
+            Payment.payment_date >= mstart, Payment.payment_date < mend,
+            Payment.client_id.in_(client_ids_sq))
+    ) or 0)
+
+    # total terbayar (seluruh, approved, dalam lokasi)
+    total_paid = Decimal(await db.scalar(
+        select(func.coalesce(func.sum(Payment.amount), 0)).where(
+            Payment.tenant_id == t, Payment.is_deleted == False, _approved,  # noqa: E712
+            Payment.client_id.in_(client_ids_sq))
+    ) or 0)
+
+    # total kontrak pembeli aktif (dalam lokasi) → sisa piutang
+    contract_conds = [Client.tenant_id == t, Client.is_deleted == False,  # noqa: E712
+                      Client.status != ClientStatus.INACTIVE]
+    if project_id is not None:
+        contract_conds.append(Client.project_id == project_id)
+    total_contract = Decimal(await db.scalar(
+        select(func.coalesce(func.sum(Client.contract_value), 0)).where(*contract_conds)
+    ) or 0)
+    outstanding = total_contract - total_paid
+    if outstanding < 0:
+        outstanding = Decimal(0)
+
+    overdue_count = int(await db.scalar(
+        select(func.count()).select_from(PaymentSchedule).where(
+            PaymentSchedule.tenant_id == t, PaymentSchedule.is_deleted == False,  # noqa: E712
+            PaymentSchedule.status == ScheduleStatus.PENDING,
+            PaymentSchedule.due_date < today,
+            PaymentSchedule.client_id.in_(client_ids_sq))
+    ) or 0)
+
+    return FinanceSummary(month=mlabel, cash_in=cash_in, outstanding=outstanding,
+                          total_paid=total_paid, overdue_count=overdue_count)

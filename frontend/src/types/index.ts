@@ -2009,3 +2009,12 @@ export interface KprSummaryReport {
   projects: ProjectKprRow[]
   sppr_active_total: number
 }
+
+// ── Ringkasan keuangan berfilter (dashboard strip: lokasi + bulan) ──
+export interface FinanceSummary {
+  month: string
+  cash_in: number
+  outstanding: number
+  total_paid: number
+  overdue_count: number
+}
