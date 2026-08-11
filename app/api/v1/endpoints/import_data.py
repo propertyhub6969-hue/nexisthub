@@ -737,8 +737,10 @@ def _doc_field_of(h: str) -> Optional[str]:
     if n.startswith("proyek"): return "project"
     if n.startswith("blok"): return "block"
     if n.startswith("nomor unit") or n.startswith("no unit") or n == "unit": return "unit_number"
-    if "nomor dokumen" in n or n.startswith("no. dok") or n.startswith("no dok"): return "doc_number"
+    if "nomor dokumen" in n or n.startswith("no. dok") or n.startswith("no dok") or n.startswith("nop"): return "doc_number"
     if n.startswith("luas tanah") or n == "lt" or n.startswith("lt "): return "land_area"
+    if n.startswith("alamat") or "objek" in n: return "address"
+    if "masa berlaku" in n or n.startswith("berlaku") or "expiry" in n or "kedaluwarsa" in n: return "expiry_date"
     if n.startswith("tanggal"): return "doc_date"
     if n.startswith("status"): return "status"
     if "nama file" in n or n == "file" or n.startswith("file"): return "file_name"
@@ -768,7 +770,8 @@ def _read_doc_rows(contents: bytes):
             col_map[f] = i
     if "doc_type" not in col_map or "unit_number" not in col_map:
         raise HTTPException(status_code=400, detail="Header 'Jenis Dokumen' & 'Nomor Unit' wajib ada di sheet DOKUMEN.")
-    fields = ["doc_type", "project", "block", "unit_number", "doc_number", "land_area", "doc_date", "status", "file_name"]
+    fields = ["doc_type", "project", "block", "unit_number", "doc_number", "land_area",
+              "address", "expiry_date", "doc_date", "status", "file_name"]
     out = []
     rnum = 1
     for raw in it:
@@ -854,6 +857,11 @@ def _classify_docs(rows, proj_by_name, unit_by_key, unit_by_pu, existing):
             la = _to_decimal(d["land_area"])
         except (InvalidOperation, ValueError):
             errors.append(f"Luas Tanah bukan angka: '{d['land_area']}'"); la = None
+        try:
+            edate = _to_date(d["expiry_date"])
+        except ValueError:
+            errors.append(f"Masa Berlaku tak valid: '{d['expiry_date']}'"); edate = None
+        addr = (str(d["address"]).strip() if d["address"] not in (None, "") else None)
 
         fname = (str(d["file_name"]).strip() if d["file_name"] not in (None, "") else None)
 
@@ -862,7 +870,7 @@ def _classify_docs(rows, proj_by_name, unit_by_key, unit_by_pu, existing):
             continue
 
         payload = {"unit_id": unit_id, "doc_type": canon, "name": (str(d["doc_number"]).strip() if d["doc_number"] not in (None, "") else None),
-                   "doc_date": ddate, "status": st, "land_area": la, "file_name": fname}
+                   "doc_date": ddate, "status": st, "land_area": la, "address": addr, "expiry_date": edate, "file_name": fname}
         key = (unit_id, canon)
         ex = existing.get(key) or seen.get(key)
         note = (f"Lampirkan: {fname}" if fname else "Metadata saja")
@@ -946,6 +954,10 @@ async def commit_documents(
             doc.doc_date = payload["doc_date"]
         if payload["status"] is not None:
             doc.status = payload["status"]
+        if payload["address"] is not None:
+            doc.address = payload["address"]
+        if payload["expiry_date"] is not None:
+            doc.expiry_date = payload["expiry_date"]
         if payload["land_area"] is not None:
             doc.land_area = payload["land_area"]
             # LT dari dokumen legalitas = sumber valid → sinkron ke Unit.land_area (spt modul Dokumen)
@@ -1010,6 +1022,8 @@ async def download_documents_template(
         blk, unum, pnm = umap.get(dc.unit_id, ("", "", ""))
         rows.append({"jenis": dc.doc_type, "proyek": pnm, "blok": blk, "unit": unum,
                      "nomor": dc.name or "", "lt": float(dc.land_area) if dc.land_area is not None else None,
+                     "alamat": dc.address or "",
+                     "berlaku": dc.expiry_date.strftime("%d/%m/%Y") if dc.expiry_date else "",
                      "tgl": dc.doc_date.strftime("%d/%m/%Y") if dc.doc_date else "",
                      "status": DOCST_TO_LABEL.get(dc.status, "Terbit"),
                      "file": dc.file_name or ""})
@@ -1032,9 +1046,10 @@ def _build_doc_template(projects, docs) -> bytes:
         ("Jenis Dokumen", "SHM · HGB · SLF · PBG (IMB) · PBB"),
         ("Kunci pencocokan", "Proyek + (Blok) + Nomor Unit + Jenis → dokumen unit diperbarui bila sudah ada, atau dibuat baru. Isi Blok bila nomor unit dobel antar-blok."),
         ("Nama File", "Nama persis file di dalam ZIP (mis. Daiyan_036_SHM.pdf). Maks 10MB/file."),
-        ("Luas Tanah (m²)", "Opsional. LT dari sertifikat → otomatis ikut memperbarui LT unit."),
+        ("Kolom per jenis (isi yang relevan, sisanya kosong)",
+         "Luas Tanah → SHM/HGB (ikut memperbarui LT unit) · Alamat Objek (NOP) → PBB · Masa Berlaku → SLF/PBG."),
         ("Status", "Belum · Proses · Terbit (default Terbit)"),
-        ("Format", "Tanggal dd/mm/yyyy · angka LT polos (mis. 72)."),
+        ("Format", "Tanggal & Masa Berlaku dd/mm/yyyy · angka LT polos (mis. 72)."),
         ("Nama proyek (persis)", " · ".join(projects)),
     ]
     r = 3
@@ -1047,15 +1062,16 @@ def _build_doc_template(projects, docs) -> bytes:
     wd = wb.create_sheet("DOKUMEN"); wd.sheet_view.showGridLines = False
     cols = [("Jenis Dokumen", 16, False, True), ("Proyek", 18, True, True), ("Blok", 8, True, False),
             ("Nomor Unit", 12, True, True), ("Nomor Dokumen", 20, False, False),
-            ("Luas Tanah (m²)", 14, False, False),
-            ("Tanggal", 14, False, False), ("Status", 12, False, False), ("Nama File", 26, False, False)]
+            ("Luas Tanah (m²)", 13, False, False), ("Alamat Objek (PBB)", 24, False, False),
+            ("Masa Berlaku", 14, False, False), ("Tanggal", 14, False, False),
+            ("Status", 12, False, False), ("Nama File", 26, False, False)]
     _headers(wd, cols)
     row = 2
     if not docs:
         # baris contoh (dihapus otomatis saat impor karena diawali CONTOH)
-        ex = ["SHM", projects[0] if projects else "", "", "036", "12.34.56", 72, "20/05/2025", "Terbit", "Daiyan_036_SHM.pdf"]
+        ex = ["SHM", projects[0] if projects else "", "", "036", "12.34.56", 72, "", "", "20/05/2025", "Terbit", "Daiyan_036_SHM.pdf"]
         for i, v in enumerate(ex, start=1):
-            _cell(wd, row, i, v, fill=_ex_fill, italic=True, align="center" if i in (1, 3, 4, 6, 7, 8) else "left")
+            _cell(wd, row, i, v, fill=_ex_fill, italic=True, align="center" if i in (1, 3, 4, 6, 8, 9, 10) else "left")
         row += 1
     for dc in docs:
         _cell(wd, row, 1, dc["jenis"], align="center")
@@ -1064,12 +1080,14 @@ def _build_doc_template(projects, docs) -> bytes:
         _cell(wd, row, 4, dc["unit"], fill=_key_cell, align="center")
         _cell(wd, row, 5, dc["nomor"])
         _cell(wd, row, 6, dc["lt"], align="right", numfmt="#,##0.##")
-        _cell(wd, row, 7, dc["tgl"], align="center")
-        _cell(wd, row, 8, dc["status"], align="center")
-        _cell(wd, row, 9, dc["file"])
+        _cell(wd, row, 7, dc["alamat"])
+        _cell(wd, row, 8, dc["berlaku"], align="center")
+        _cell(wd, row, 9, dc["tgl"], align="center")
+        _cell(wd, row, 10, dc["status"], align="center")
+        _cell(wd, row, 11, dc["file"])
         row += 1
     _dv(wd, ["SHM", "HGB", "SLF", "PBG", "PBB"], 1, 2, row + 500)
-    _dv(wd, ["Belum", "Proses", "Terbit"], 8, 2, row + 500)
+    _dv(wd, ["Belum", "Proses", "Terbit"], 10, 2, row + 500)
     _dv(wd, projects, 2, 2, row + 500)
     bio = io.BytesIO(); wb.save(bio); bio.seek(0)
     return bio.getvalue()
