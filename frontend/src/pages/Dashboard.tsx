@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   Users, Layers, FileText, Hammer, Wallet, AlertTriangle, Loader2,
-  BarChart3, ChevronRight, TrendingUp, CheckCircle2,
+  BarChart3, ChevronRight, TrendingUp, CheckCircle2, PiggyBank,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { reportingService } from '../services/reporting'
@@ -496,9 +496,10 @@ function FinanceStrip() {
           {busy && <Loader2 size={13} className="animate-spin text-slate-300" />}
         </div>
       </div>
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
         <FinanceCol icon={Wallet} color="text-emerald-500" bg="bg-emerald-50" label={`Uang Masuk · ${monthLabel}`} value={fmt(data?.cash_in)} />
         <FinanceCol icon={TrendingUp} color="text-amber-500" bg="bg-amber-50" label="Sisa Piutang · seluruh" value={fmt(data?.outstanding)} />
+        <FinanceCol icon={PiggyBank} color="text-orange-500" bg="bg-orange-50" label="Retensi Bank · seluruh" value={fmt(data?.retention)} />
         <FinanceCol icon={CheckCircle2} color="text-blue-500" bg="bg-blue-50" label="Total Terbayar · seluruh" value={fmt(data?.total_paid)} />
         <FinanceCol icon={AlertTriangle} color="text-red-500" bg="bg-red-50" label="Termin Terlambat" value={String(data?.overdue_count ?? 0)} />
       </div>

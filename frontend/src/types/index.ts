@@ -2033,6 +2033,7 @@ export interface FinanceSummary {
   outstanding: number
   total_paid: number
   overdue_count: number
+  retention: number
 }
 
 // ── Rincian pengajuan KPR (dialog klik angka SPPR di dashboard) ──

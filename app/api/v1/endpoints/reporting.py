@@ -1451,6 +1451,7 @@ class FinanceSummary(BaseModel):
     outstanding: Decimal  # sisa piutang seluruh (+ lokasi)
     total_paid: Decimal   # total terbayar seluruh (+ lokasi)
     overdue_count: int     # termin terlambat (+ lokasi)
+    retention: Decimal = Decimal(0)  # retensi bank seluruh (+ lokasi) — plafon akad − cair
 
 
 @router.get("/finance-summary", response_model=FinanceSummary)
@@ -1512,8 +1513,31 @@ async def finance_summary(
             PaymentSchedule.client_id.in_(client_ids_sq))
     ) or 0)
 
+    # retensi bank (seluruh + lokasi): plafon KPR yang sudah akad − yang sudah cair.
+    # Konsisten dgn tab Retensi Bank & ringkasan pembayaran (hanya AKAD_KREDIT/PENCAIRAN).
+    kpr_rows = (await db.execute(
+        select(KprApplication.id, KprApplication.plafond).where(
+            KprApplication.tenant_id == t, KprApplication.is_deleted == False,  # noqa: E712
+            KprApplication.stage.in_((KprStage.AKAD_KREDIT, KprStage.PENCAIRAN)),
+            KprApplication.plafond.isnot(None), KprApplication.plafond > 0,
+            KprApplication.client_id.in_(client_ids_sq))
+    )).all()
+    retention = Decimal(0)
+    if kpr_rows:
+        kpr_ids = [r[0] for r in kpr_rows]
+        disb_rows = (await db.execute(
+            select(Payment.kpr_id, func.coalesce(func.sum(Payment.amount), 0)).where(
+                Payment.tenant_id == t, Payment.is_deleted == False, _approved,  # noqa: E712
+                Payment.kpr_id.in_(kpr_ids)).group_by(Payment.kpr_id)
+        )).all()
+        disbursed_by_kpr = {kid: Decimal(v) for kid, v in disb_rows}
+        for kid, plaf in kpr_rows:
+            ret = Decimal(plaf or 0) - disbursed_by_kpr.get(kid, Decimal(0))
+            if ret > 0:
+                retention += ret
+
     return FinanceSummary(month=mlabel, cash_in=cash_in, outstanding=outstanding,
-                          total_paid=total_paid, overdue_count=overdue_count)
+                          total_paid=total_paid, overdue_count=overdue_count, retention=retention)
 
 
 # ── Rincian pengajuan KPR per proyek (utk dialog klik angka SPPR di dashboard) ──
