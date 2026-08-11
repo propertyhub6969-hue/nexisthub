@@ -13,7 +13,7 @@ type Entity = 'units' | 'clients' | 'documents'
 const ENTITY: Record<Entity, {
   tab: string; noun: string; unitCol: string; keyHint: string; archive?: boolean
   download: () => Promise<void>
-  preview: (f: File, a?: File | null) => Promise<ImportPreview>
+  preview: (f: File) => Promise<ImportPreview>
   commit: (f: File, a?: File | null) => Promise<ImportCommitResult>
 }> = {
   units: {
@@ -34,7 +34,7 @@ const ENTITY: Record<Entity, {
     tab: 'Dokumen Legalitas', noun: 'dokumen', unitCol: 'Dokumen', archive: true,
     keyHint: 'Proyek + (Blok) + Nomor Unit + Jenis Dokumen',
     download: () => importDataService.downloadDocumentsTemplate(),
-    preview: (f, a) => importDataService.previewDocuments(f, a),
+    preview: (f) => importDataService.previewDocuments(f),
     commit: (f, a) => importDataService.commitDocuments(f, a),
   },
 }
@@ -67,16 +67,16 @@ export default function ImportData() {
     finally { setDownloading(false) }
   }
 
-  async function runPreview(f: File | null, a: File | null) {
+  async function runPreview(f: File | null) {
     setPreview(null); setResult(null); setError('')
     if (!f) return
     setPreviewing(true)
-    try { setPreview(await cfg.preview(f, a)) }
+    try { setPreview(await cfg.preview(f)) }
     catch (e: any) { setError(e?.response?.data?.detail ?? 'Gagal membaca file. Pastikan format sesuai template.') }
     finally { setPreviewing(false) }
   }
-  function onPick(f: File | null) { setFile(f); runPreview(f, archive) }
-  function onPickArchive(a: File | null) { setArchive(a); if (file) runPreview(file, a) }
+  function onPick(f: File | null) { setFile(f); runPreview(f) }
+  function onPickArchive(a: File | null) { setArchive(a) }  // ZIP hanya dipakai saat Terapkan
 
   async function apply() {
     if (!file) return

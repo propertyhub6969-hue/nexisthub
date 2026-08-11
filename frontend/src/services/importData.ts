@@ -77,10 +77,10 @@ export const importDataService = {
     URL.revokeObjectURL(url)
   },
 
-  async previewDocuments(manifest: File, archive?: File | null): Promise<ImportPreview> {
+  // Pratinjau manifest saja (tanpa ZIP) → ringan; ZIP hanya diunggah saat commit.
+  async previewDocuments(manifest: File): Promise<ImportPreview> {
     const fd = new FormData()
     fd.append('manifest', manifest)
-    if (archive) fd.append('archive', archive)
     const { data } = await api.post<ImportPreview>('/import/documents/preview', fd, {
       headers: { 'Content-Type': 'multipart/form-data' },
     })

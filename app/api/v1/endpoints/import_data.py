@@ -800,8 +800,9 @@ async def _load_doc_maps(db: AsyncSession, tenant_id):
     return proj_by_name, unit_by_key, unit_by_pu, existing
 
 
-def _classify_docs(rows, proj_by_name, unit_by_key, unit_by_pu, existing, zip_names, has_archive):
-    """→ list (row_num, kind, payload, existing_doc, ImportRow). zip_names: basename→fullname."""
+def _classify_docs(rows, proj_by_name, unit_by_key, unit_by_pu, existing):
+    """→ list (row_num, kind, payload, existing_doc, ImportRow). Manifest-only —
+    keberadaan file di ZIP dicek saat commit (agar pratinjau tak perlu unggah ZIP)."""
     parsed = []
     seen = {}  # (unit_id, doc_type) dalam batch → agar dobel di file jadi update
     for rnum, d in rows:
@@ -850,28 +851,16 @@ def _classify_docs(rows, proj_by_name, unit_by_key, unit_by_pu, existing, zip_na
             errors.append(f"Tanggal tak valid: '{d['doc_date']}'"); ddate = None
 
         fname = (str(d["file_name"]).strip() if d["file_name"] not in (None, "") else None)
-        zip_full = None
-        if fname:
-            if not has_archive:
-                errors.append("Nama File diisi tapi ZIP belum diunggah")
-            else:
-                hit = zip_names.get(os.path.basename(fname).lower())
-                if hit is None:
-                    errors.append(f"File '{fname}' tak ada di ZIP")
-                elif isinstance(hit, list) and len(hit) > 1:
-                    errors.append(f"Nama file '{fname}' dobel di ZIP")
-                else:
-                    zip_full = hit[0] if isinstance(hit, list) else hit
 
         if errors:
             parsed.append((rnum, "error", None, None, ImportRow(row=rnum, action="error", label=label, errors=errors)))
             continue
 
         payload = {"unit_id": unit_id, "doc_type": canon, "name": (str(d["doc_number"]).strip() if d["doc_number"] not in (None, "") else None),
-                   "doc_date": ddate, "status": st, "file_name": fname, "zip_full": zip_full}
+                   "doc_date": ddate, "status": st, "file_name": fname}
         key = (unit_id, canon)
         ex = existing.get(key) or seen.get(key)
-        note = "Lampirkan file" if fname else "Metadata saja"
+        note = (f"Lampirkan: {fname}" if fname else "Metadata saja")
         if ex is not None:
             parsed.append((rnum, "update", payload, ex, ImportRow(row=rnum, action="update", label=label, note=note)))
         else:
@@ -899,15 +888,13 @@ def _read_zip_names(archive_bytes: Optional[bytes]):
 @router.post("/documents/preview", response_model=ImportPreview)
 async def preview_documents(
     manifest: UploadFile = File(...),
-    archive: Optional[UploadFile] = File(None),
     ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db),
 ):
+    """Pratinjau MANIFEST saja (tanpa ZIP) — ringan & cepat. Keberadaan file dicek saat Terapkan."""
     contents = await manifest.read()
     rows = _read_doc_rows(contents)
-    arc = await archive.read() if archive is not None else None
-    zip_names = _read_zip_names(arc)
     maps = await _load_doc_maps(db, ctx.tenant_id)
-    parsed = _classify_docs(rows, *maps, zip_names, arc is not None)
+    parsed = _classify_docs(rows, *maps)
     ins = sum(1 for p in parsed if p[1] == "insert")
     upd = sum(1 for p in parsed if p[1] == "update")
     err = sum(1 for p in parsed if p[1] == "error")
@@ -931,9 +918,10 @@ async def commit_documents(
     unit_pid = {}
     for (pid, bl, un), uid in unit_by_key.items():
         unit_pid[uid] = pid
-    parsed = _classify_docs(rows, proj_by_name, unit_by_key, unit_by_pu, existing, zip_names, arc is not None)
+    parsed = _classify_docs(rows, proj_by_name, unit_by_key, unit_by_pu, existing)
     batch_id = str(uuid.uuid4())
     inserted = updated = 0
+    attached = missing = 0
     created = {}  # (unit_id, doc_type) → Document baru dlm batch ini
     for rnum, kind, payload, ex, rowres in parsed:
         if kind == "error":
@@ -953,21 +941,31 @@ async def commit_documents(
             doc.doc_date = payload["doc_date"]
         if payload["status"] is not None:
             doc.status = payload["status"]
-        # lampirkan file dari ZIP
-        if payload["zip_full"] and zf is not None:
-            data = zf.read(payload["zip_full"])
-            if len(data) > _MAX_FILE_BYTES:
-                # lewati file kelebihan ukuran tapi metadata tetap tersimpan
-                rowres.note = (rowres.note or "") + " (file >10MB dilewati)"
+        # lampirkan file dari ZIP (dicek di sini — pratinjau tak perlu ZIP). Metadata tetap tersimpan
+        # walau file tak ada; masalah file jadi CATATAN per-baris, bukan menggagalkan baris.
+        fname = payload["file_name"]
+        if fname:
+            hit = zip_names.get(os.path.basename(fname).lower())
+            if not zf:
+                rowres.note = (rowres.note or "") + " — ZIP tak diunggah, file dilewati"
+            elif hit is None:
+                rowres.note = (rowres.note or "") + f" — file '{fname}' tak ada di ZIP"; missing += 1
+            elif len(hit) > 1:
+                rowres.note = (rowres.note or "") + f" — nama file '{fname}' dobel di ZIP"; missing += 1
             else:
-                fn = os.path.basename(payload["file_name"])
-                key_obj = storage.build_key(ctx.tenant_id, "documents", doc.id, fn)
-                await storage.put(key_obj, data, mimetypes.guess_type(fn)[0])
-                doc.file_key = key_obj
-                doc.file_data = None
-                doc.file_name = fn
-                doc.file_type = mimetypes.guess_type(fn)[0] or "application/octet-stream"
-                doc.file_size = len(data)
+                data = zf.read(hit[0])
+                if len(data) > _MAX_FILE_BYTES:
+                    rowres.note = (rowres.note or "") + " — file >10MB dilewati"; missing += 1
+                else:
+                    fn = os.path.basename(fname)
+                    key_obj = storage.build_key(ctx.tenant_id, "documents", doc.id, fn)
+                    await storage.put(key_obj, data, mimetypes.guess_type(fn)[0])
+                    doc.file_key = key_obj
+                    doc.file_data = None
+                    doc.file_name = fn
+                    doc.file_type = mimetypes.guess_type(fn)[0] or "application/octet-stream"
+                    doc.file_size = len(data)
+                    attached += 1
     if inserted or updated:
         await record_audit(db, ctx.tenant_id, ctx.user_id, "IMPORT", "documents", uuid.UUID(batch_id),
                            new_data={"batch": batch_id, "inserted": inserted, "updated": updated})
