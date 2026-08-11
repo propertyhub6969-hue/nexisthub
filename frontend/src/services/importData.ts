@@ -63,4 +63,37 @@ export const importDataService = {
     })
     return data
   },
+
+  // ── DOKUMEN LEGALITAS UNIT (manifest + ZIP opsional) ──
+  async downloadDocumentsTemplate(): Promise<void> {
+    const res = await api.get('/import/documents/template', { responseType: 'blob' })
+    const url = URL.createObjectURL(res.data as Blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'Template_Import_Dokumen.xlsx'
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(url)
+  },
+
+  async previewDocuments(manifest: File, archive?: File | null): Promise<ImportPreview> {
+    const fd = new FormData()
+    fd.append('manifest', manifest)
+    if (archive) fd.append('archive', archive)
+    const { data } = await api.post<ImportPreview>('/import/documents/preview', fd, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    return data
+  },
+
+  async commitDocuments(manifest: File, archive?: File | null): Promise<ImportCommitResult> {
+    const fd = new FormData()
+    fd.append('manifest', manifest)
+    if (archive) fd.append('archive', archive)
+    const { data } = await api.post<ImportCommitResult>('/import/documents/commit', fd, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    return data
+  },
 }

@@ -9,10 +9,12 @@ const actionCfg: Record<string, { label: string; cls: string; icon: typeof PlusC
   error: { label: 'Error', cls: 'bg-red-50 text-red-700 border-red-200', icon: AlertTriangle },
 }
 
-type Entity = 'units' | 'clients'
+type Entity = 'units' | 'clients' | 'documents'
 const ENTITY: Record<Entity, {
-  tab: string; noun: string; unitCol: string; keyHint: string
-  download: () => Promise<void>; preview: (f: File) => Promise<ImportPreview>; commit: (f: File) => Promise<ImportCommitResult>
+  tab: string; noun: string; unitCol: string; keyHint: string; archive?: boolean
+  download: () => Promise<void>
+  preview: (f: File, a?: File | null) => Promise<ImportPreview>
+  commit: (f: File, a?: File | null) => Promise<ImportCommitResult>
 }> = {
   units: {
     tab: 'Unit', noun: 'unit', unitCol: 'Unit (Proyek / Blok / No.)',
@@ -28,6 +30,13 @@ const ENTITY: Record<Entity, {
     preview: (f) => importDataService.previewClients(f),
     commit: (f) => importDataService.commitClients(f),
   },
+  documents: {
+    tab: 'Dokumen Legalitas', noun: 'dokumen', unitCol: 'Dokumen', archive: true,
+    keyHint: 'Proyek + (Blok) + Nomor Unit + Jenis Dokumen',
+    download: () => importDataService.downloadDocumentsTemplate(),
+    preview: (f, a) => importDataService.previewDocuments(f, a),
+    commit: (f, a) => importDataService.commitDocuments(f, a),
+  },
 }
 
 export default function ImportData() {
@@ -40,11 +49,14 @@ export default function ImportData() {
   const [result, setResult] = useState<ImportCommitResult | null>(null)
   const [error, setError] = useState('')
   const [downloading, setDownloading] = useState(false)
+  const [archive, setArchive] = useState<File | null>(null)
+  const archiveRef = useRef<HTMLInputElement>(null)
   const cfg = ENTITY[entity]
 
   function reset() {
-    setFile(null); setPreview(null); setResult(null); setError('')
+    setFile(null); setArchive(null); setPreview(null); setResult(null); setError('')
     if (fileRef.current) fileRef.current.value = ''
+    if (archiveRef.current) archiveRef.current.value = ''
   }
   function switchEntity(e: Entity) { if (e !== entity) { setEntity(e); reset() } }
 
@@ -55,22 +67,25 @@ export default function ImportData() {
     finally { setDownloading(false) }
   }
 
-  async function onPick(f: File | null) {
-    setFile(f); setPreview(null); setResult(null); setError('')
+  async function runPreview(f: File | null, a: File | null) {
+    setPreview(null); setResult(null); setError('')
     if (!f) return
     setPreviewing(true)
-    try { setPreview(await cfg.preview(f)) }
+    try { setPreview(await cfg.preview(f, a)) }
     catch (e: any) { setError(e?.response?.data?.detail ?? 'Gagal membaca file. Pastikan format sesuai template.') }
     finally { setPreviewing(false) }
   }
+  function onPick(f: File | null) { setFile(f); runPreview(f, archive) }
+  function onPickArchive(a: File | null) { setArchive(a); if (file) runPreview(file, a) }
 
   async function apply() {
     if (!file) return
     setCommitting(true); setError('')
     try {
-      const res = await cfg.commit(file)
-      setResult(res); setPreview(null); setFile(null)
+      const res = await cfg.commit(file, archive)
+      setResult(res); setPreview(null); setFile(null); setArchive(null)
       if (fileRef.current) fileRef.current.value = ''
+      if (archiveRef.current) archiveRef.current.value = ''
     } catch (e: any) {
       setError(e?.response?.data?.detail ?? 'Gagal menerapkan impor.')
     } finally { setCommitting(false) }
@@ -113,6 +128,16 @@ export default function ImportData() {
             {previewing ? <Loader2 size={15} className="animate-spin" /> : <Upload size={15} />} Pilih File Excel
           </button>
           {file && <p className="mt-2 text-xs text-slate-500 inline-flex items-center gap-1"><FileSpreadsheet size={13} /> {file.name}</p>}
+          {cfg.archive && (
+            <div className="mt-3 pt-3 border-t border-slate-100">
+              <p className="text-xs text-slate-500 mb-2">File scan (opsional) — kumpulkan semua PDF/JPG jadi <b>satu ZIP</b>, nama file harus sama dengan kolom "Nama File" di manifest.</p>
+              <input ref={archiveRef} type="file" accept=".zip" className="hidden" onChange={(e) => onPickArchive(e.target.files?.[0] ?? null)} />
+              <button onClick={() => archiveRef.current?.click()} disabled={previewing} className="btn-secondary text-sm inline-flex items-center gap-2">
+                <Upload size={15} /> Pilih File ZIP
+              </button>
+              {archive && <p className="mt-2 text-xs text-slate-500 inline-flex items-center gap-1"><FileSpreadsheet size={13} /> {archive.name}</p>}
+            </div>
+          )}
         </div>
       </div>
 

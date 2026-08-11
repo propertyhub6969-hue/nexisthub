@@ -5,7 +5,10 @@ Alur: unduh template terisi → klien lengkapi → upload → PRATINJAU (insert/
 Pembeli & Pembayaran menyusul.
 """
 import io
+import os
 import uuid
+import zipfile
+import mimetypes
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Optional
@@ -21,11 +24,15 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core import storage
 from app.core.audit import record_audit
 from app.core.unit_status import unit_status_for_client, set_unit_status
 from app.api.deps import get_current_context, AuthContext
 from app.models.property import Project, Unit, UnitStatus
 from app.models.marketing import Client, ClientStatus, ClientPaymentType
+from app.models.document import Document, DocStatus
+
+_MAX_FILE_BYTES = 10 * 1024 * 1024  # 10 MB / file (samakan dgn modul Dokumen)
 
 router = APIRouter()
 
@@ -706,5 +713,349 @@ def _build_client_template(projects, clients) -> bytes:
     _dv(wp, ["Cash", "KPR"], 8, 2, row + 500)
     _dv(wp, ["Aktif", "Selesai", "Batal"], 13, 2, row + 500)
     _dv(wp, projects, 6, 2, row + 500)
+    bio = io.BytesIO(); wb.save(bio); bio.seek(0)
+    return bio.getvalue()
+
+
+# ═══════════════════════ DOKUMEN LEGALITAS UNIT (manifest + ZIP) ═══════════════════════
+# doc_type kanonik (samakan dgn preset FE LegalDocuments) supaya dokumen impor tampil di UI.
+DOC_CANON = {
+    "shm": "Sertifikat SHM", "sertifikat shm": "Sertifikat SHM",
+    "hgb": "Sertifikat HGB", "sertifikat hgb": "Sertifikat HGB",
+    "slf": "SLF",
+    "pbg": "IMB / PBG", "imb": "IMB / PBG", "imb/pbg": "IMB / PBG", "imb / pbg": "IMB / PBG",
+    "pbb": "PBB",
+}
+LEGAL_DOC_TYPES = ["Sertifikat SHM", "Sertifikat HGB", "SLF", "IMB / PBG", "PBB"]
+LABEL_TO_DOCST = {"belum": DocStatus.BELUM, "proses": DocStatus.PROSES, "terbit": DocStatus.TERBIT}
+DOCST_TO_LABEL = {DocStatus.BELUM: "Belum", DocStatus.PROSES: "Proses", DocStatus.TERBIT: "Terbit"}
+
+
+def _doc_field_of(h: str) -> Optional[str]:
+    n = _norm_header(h)
+    if n.startswith("jenis"): return "doc_type"
+    if n.startswith("proyek"): return "project"
+    if n.startswith("blok"): return "block"
+    if n.startswith("nomor unit") or n.startswith("no unit") or n == "unit": return "unit_number"
+    if "nomor dokumen" in n or n.startswith("no. dok") or n.startswith("no dok"): return "doc_number"
+    if n.startswith("tanggal"): return "doc_date"
+    if n.startswith("status"): return "status"
+    if "nama file" in n or n == "file" or n.startswith("file"): return "file_name"
+    return None
+
+
+def _read_doc_rows(contents: bytes):
+    try:
+        wb = openpyxl.load_workbook(io.BytesIO(contents), read_only=True, data_only=True)
+    except Exception:
+        raise HTTPException(status_code=400, detail="File bukan Excel (.xlsx) yang valid.")
+    ws = None
+    for name in wb.sheetnames:
+        if name.strip().lower().startswith("dokumen"):
+            ws = wb[name]; break
+    if ws is None:
+        raise HTTPException(status_code=400, detail="Sheet 'DOKUMEN' tidak ditemukan di file.")
+    it = ws.iter_rows(values_only=True)
+    try:
+        header = next(it)
+    except StopIteration:
+        return []
+    col_map = {}
+    for i, h in enumerate(header):
+        f = _doc_field_of(h)
+        if f and f not in col_map:
+            col_map[f] = i
+    if "doc_type" not in col_map or "unit_number" not in col_map:
+        raise HTTPException(status_code=400, detail="Header 'Jenis Dokumen' & 'Nomor Unit' wajib ada di sheet DOKUMEN.")
+    fields = ["doc_type", "project", "block", "unit_number", "doc_number", "doc_date", "status", "file_name"]
+    out = []
+    rnum = 1
+    for raw in it:
+        rnum += 1
+        d = {f: (raw[col_map[f]] if (f in col_map and col_map[f] < len(raw)) else None) for f in fields}
+        if all((v is None or str(v).strip() == "") for v in d.values()):
+            continue
+        if str(d.get("doc_type") or "").strip().upper().startswith("CONTOH"):
+            continue
+        out.append((rnum, d))
+    return out
+
+
+async def _load_doc_maps(db: AsyncSession, tenant_id):
+    projs = (await db.execute(select(Project.id, Project.name, Project.id).where(Project.tenant_id == tenant_id))).all()
+    proj_by_name = {name.strip().lower(): pid for pid, name, _ in projs}
+    units = (await db.execute(select(Unit.id, Unit.project_id, Unit.block, Unit.unit_number).where(Unit.tenant_id == tenant_id))).all()
+    unit_by_key = {}   # (pid, block, unum) -> unit_id
+    unit_by_pu = {}    # (pid, unum) -> [unit_id]
+    for uid, pid, block, unum in units:
+        bl = (block or "").strip().lower(); un = (unum or "").strip().lower()
+        unit_by_key[(pid, bl, un)] = uid
+        unit_by_pu.setdefault((pid, un), []).append(uid)
+    docs = (await db.execute(
+        select(Document).where(Document.tenant_id == tenant_id, Document.is_deleted == False,  # noqa: E712
+                               Document.unit_id.isnot(None)))).scalars().all()
+    existing = {}
+    for dc in docs:
+        existing[(dc.unit_id, dc.doc_type)] = dc
+    return proj_by_name, unit_by_key, unit_by_pu, existing
+
+
+def _classify_docs(rows, proj_by_name, unit_by_key, unit_by_pu, existing, zip_names, has_archive):
+    """→ list (row_num, kind, payload, existing_doc, ImportRow). zip_names: basename→fullname."""
+    parsed = []
+    seen = {}  # (unit_id, doc_type) dalam batch → agar dobel di file jadi update
+    for rnum, d in rows:
+        errors = []
+        raw_type = str(d["doc_type"] or "").strip()
+        canon = DOC_CANON.get(raw_type.lower())
+        if not raw_type:
+            errors.append("Jenis Dokumen kosong")
+        elif canon is None:
+            errors.append(f"Jenis Dokumen tak dikenal: '{raw_type}' (SHM/HGB/SLF/PBG/PBB)")
+        pname = str(d["project"] or "").strip()
+        unum = str(d["unit_number"] or "").strip()
+        block = (str(d["block"]).strip() if d["block"] not in (None, "") else None)
+        pid = proj_by_name.get(pname.lower()) if pname else None
+        label = f"{canon or raw_type or '?'} — {pname or '?'}/{unum or '?'}"
+        if not pname:
+            errors.append("Proyek kosong")
+        elif pid is None:
+            errors.append(f"Proyek '{pname}' tidak ada")
+        if not unum:
+            errors.append("Nomor Unit kosong")
+
+        unit_id = None
+        if pid is not None and unum:
+            if block is not None:
+                unit_id = unit_by_key.get((pid, block.lower(), unum.lower()))
+                if unit_id is None:
+                    errors.append(f"Unit {block}/{unum} tak ada di {pname}")
+            else:
+                cand = unit_by_pu.get((pid, unum.lower()), [])
+                if len(cand) == 0:
+                    errors.append(f"Unit '{unum}' tak ada di {pname}")
+                elif len(cand) > 1:
+                    errors.append(f"Unit '{unum}' ambigu (>1 blok) — isi kolom Blok")
+                else:
+                    unit_id = cand[0]
+
+        st = None
+        if d["status"] not in (None, ""):
+            st = LABEL_TO_DOCST.get(str(d["status"]).strip().lower())
+            if st is None:
+                errors.append(f"Status tak dikenal: '{d['status']}'")
+        try:
+            ddate = _to_date(d["doc_date"])
+        except ValueError:
+            errors.append(f"Tanggal tak valid: '{d['doc_date']}'"); ddate = None
+
+        fname = (str(d["file_name"]).strip() if d["file_name"] not in (None, "") else None)
+        zip_full = None
+        if fname:
+            if not has_archive:
+                errors.append("Nama File diisi tapi ZIP belum diunggah")
+            else:
+                hit = zip_names.get(os.path.basename(fname).lower())
+                if hit is None:
+                    errors.append(f"File '{fname}' tak ada di ZIP")
+                elif isinstance(hit, list) and len(hit) > 1:
+                    errors.append(f"Nama file '{fname}' dobel di ZIP")
+                else:
+                    zip_full = hit[0] if isinstance(hit, list) else hit
+
+        if errors:
+            parsed.append((rnum, "error", None, None, ImportRow(row=rnum, action="error", label=label, errors=errors)))
+            continue
+
+        payload = {"unit_id": unit_id, "doc_type": canon, "name": (str(d["doc_number"]).strip() if d["doc_number"] not in (None, "") else None),
+                   "doc_date": ddate, "status": st, "file_name": fname, "zip_full": zip_full}
+        key = (unit_id, canon)
+        ex = existing.get(key) or seen.get(key)
+        note = "Lampirkan file" if fname else "Metadata saja"
+        if ex is not None:
+            parsed.append((rnum, "update", payload, ex, ImportRow(row=rnum, action="update", label=label, note=note)))
+        else:
+            seen[key] = True
+            parsed.append((rnum, "insert", payload, None, ImportRow(row=rnum, action="insert", label=label, note=note)))
+    return parsed
+
+
+def _read_zip_names(archive_bytes: Optional[bytes]):
+    if not archive_bytes:
+        return {}
+    try:
+        zf = zipfile.ZipFile(io.BytesIO(archive_bytes))
+    except Exception:
+        raise HTTPException(status_code=400, detail="Arsip ZIP tidak valid.")
+    names = {}
+    for n in zf.namelist():
+        if n.endswith("/"):
+            continue
+        base = os.path.basename(n).lower()
+        names.setdefault(base, []).append(n)
+    return names
+
+
+@router.post("/documents/preview", response_model=ImportPreview)
+async def preview_documents(
+    manifest: UploadFile = File(...),
+    archive: Optional[UploadFile] = File(None),
+    ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db),
+):
+    contents = await manifest.read()
+    rows = _read_doc_rows(contents)
+    arc = await archive.read() if archive is not None else None
+    zip_names = _read_zip_names(arc)
+    maps = await _load_doc_maps(db, ctx.tenant_id)
+    parsed = _classify_docs(rows, *maps, zip_names, arc is not None)
+    ins = sum(1 for p in parsed if p[1] == "insert")
+    upd = sum(1 for p in parsed if p[1] == "update")
+    err = sum(1 for p in parsed if p[1] == "error")
+    return ImportPreview(sheet="DOKUMEN", total=len(parsed), to_insert=ins, to_update=upd,
+                         error_count=err, rows=[p[4] for p in parsed])
+
+
+@router.post("/documents/commit", response_model=ImportCommitResult)
+async def commit_documents(
+    manifest: UploadFile = File(...),
+    archive: Optional[UploadFile] = File(None),
+    ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db),
+):
+    contents = await manifest.read()
+    rows = _read_doc_rows(contents)
+    arc = await archive.read() if archive is not None else None
+    zf = zipfile.ZipFile(io.BytesIO(arc)) if arc else None
+    zip_names = _read_zip_names(arc)
+    proj_by_name, unit_by_key, unit_by_pu, existing = await _load_doc_maps(db, ctx.tenant_id)
+    # project_id tiap unit (utk isi Document.project_id)
+    unit_pid = {}
+    for (pid, bl, un), uid in unit_by_key.items():
+        unit_pid[uid] = pid
+    parsed = _classify_docs(rows, proj_by_name, unit_by_key, unit_by_pu, existing, zip_names, arc is not None)
+    batch_id = str(uuid.uuid4())
+    inserted = updated = 0
+    created = {}  # (unit_id, doc_type) → Document baru dlm batch ini
+    for rnum, kind, payload, ex, rowres in parsed:
+        if kind == "error":
+            continue
+        key = (payload["unit_id"], payload["doc_type"])
+        doc = ex or created.get(key)
+        if doc is None:
+            doc = Document(tenant_id=ctx.tenant_id, unit_id=payload["unit_id"],
+                           project_id=unit_pid.get(payload["unit_id"]), doc_type=payload["doc_type"],
+                           status=payload["status"] or DocStatus.TERBIT)
+            db.add(doc); await db.flush(); created[key] = doc; inserted += 1
+        else:
+            updated += 1
+        if payload["name"] is not None:
+            doc.name = payload["name"]
+        if payload["doc_date"] is not None:
+            doc.doc_date = payload["doc_date"]
+        if payload["status"] is not None:
+            doc.status = payload["status"]
+        # lampirkan file dari ZIP
+        if payload["zip_full"] and zf is not None:
+            data = zf.read(payload["zip_full"])
+            if len(data) > _MAX_FILE_BYTES:
+                # lewati file kelebihan ukuran tapi metadata tetap tersimpan
+                rowres.note = (rowres.note or "") + " (file >10MB dilewati)"
+            else:
+                fn = os.path.basename(payload["file_name"])
+                key_obj = storage.build_key(ctx.tenant_id, "documents", doc.id, fn)
+                await storage.put(key_obj, data, mimetypes.guess_type(fn)[0])
+                doc.file_key = key_obj
+                doc.file_data = None
+                doc.file_name = fn
+                doc.file_type = mimetypes.guess_type(fn)[0] or "application/octet-stream"
+                doc.file_size = len(data)
+    if inserted or updated:
+        await record_audit(db, ctx.tenant_id, ctx.user_id, "IMPORT", "documents", uuid.UUID(batch_id),
+                           new_data={"batch": batch_id, "inserted": inserted, "updated": updated})
+        await db.commit()
+    err = sum(1 for p in parsed if p[1] == "error")
+    return ImportCommitResult(batch_id=batch_id, inserted=inserted, updated=updated,
+                              error_count=err, rows=[p[4] for p in parsed])
+
+
+@router.get("/documents/template")
+async def download_documents_template(
+    ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db),
+):
+    """Template manifest DOKUMEN legalitas unit — terisi dokumen legalitas yang sudah ada (bila ada)."""
+    projs = (await db.execute(
+        select(Project.id, Project.name).where(Project.tenant_id == ctx.tenant_id).order_by(Project.name))).all()
+    pmap = {pid: name for pid, name in projs}
+    pnames = [name for _, name in projs]
+    docs = (await db.execute(
+        select(Document).where(Document.tenant_id == ctx.tenant_id, Document.is_deleted == False,  # noqa: E712
+                               Document.unit_id.isnot(None), Document.doc_type.in_(LEGAL_DOC_TYPES)))).scalars().all()
+    uids = [dc.unit_id for dc in docs if dc.unit_id]
+    umap = {}
+    if uids:
+        for uid, block, unum, pid in (await db.execute(
+                select(Unit.id, Unit.block, Unit.unit_number, Unit.project_id).where(Unit.id.in_(uids)))).all():
+            umap[uid] = (block or "", unum or "", pmap.get(pid, ""))
+    rows = []
+    for dc in docs:
+        blk, unum, pnm = umap.get(dc.unit_id, ("", "", ""))
+        rows.append({"jenis": dc.doc_type, "proyek": pnm, "blok": blk, "unit": unum,
+                     "nomor": dc.name or "", "tgl": dc.doc_date.strftime("%d/%m/%Y") if dc.doc_date else "",
+                     "status": DOCST_TO_LABEL.get(dc.status, "Terbit"),
+                     "file": dc.file_name or ""})
+    data = _build_doc_template(pnames, rows)
+    return StreamingResponse(
+        io.BytesIO(data),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="Template_Import_Dokumen.xlsx"'})
+
+
+def _build_doc_template(projects, docs) -> bytes:
+    wb = openpyxl.Workbook()
+    ws = wb.active; ws.title = "Petunjuk"; ws.sheet_view.showGridLines = False
+    ws.column_dimensions["A"].width = 3; ws.column_dimensions["B"].width = 26; ws.column_dimensions["C"].width = 94
+    t = ws.cell(row=1, column=2, value="TEMPLATE IMPOR — DOKUMEN LEGALITAS UNIT")
+    t.font = Font(name=_FONT, bold=True, color="FFFFFF", size=13); ws.merge_cells("B1:C1")
+    ws["B1"].fill = _hdr_fill; ws["C1"].fill = _hdr_fill; ws.row_dimensions[1].height = 26
+    tips = [
+        ("Cara kerja", "Isi manifest DOKUMEN (1 baris = 1 dokumen unit). Untuk melampirkan scan: tulis Nama File, kumpulkan semua file jadi 1 ZIP, upload manifest + ZIP. Nomor/tanggal saja tanpa file juga boleh (Nama File dikosongkan)."),
+        ("Jenis Dokumen", "SHM · HGB · SLF · PBG (IMB) · PBB"),
+        ("Kunci pencocokan", "Proyek + (Blok) + Nomor Unit + Jenis → dokumen unit diperbarui bila sudah ada, atau dibuat baru. Isi Blok bila nomor unit dobel antar-blok."),
+        ("Nama File", "Nama persis file di dalam ZIP (mis. Daiyan_036_SHM.pdf). Maks 10MB/file."),
+        ("Status", "Belum · Proses · Terbit (default Terbit)"),
+        ("Format", "Tanggal dd/mm/yyyy."),
+        ("Nama proyek (persis)", " · ".join(projects)),
+    ]
+    r = 3
+    for a, b in tips:
+        ca = ws.cell(row=r, column=2, value=a); ca.font = Font(name=_FONT, bold=True, size=10)
+        ca.alignment = Alignment(vertical="top", wrap_text=True)
+        cb = ws.cell(row=r, column=3, value=b); cb.font = Font(name=_FONT, size=10)
+        cb.alignment = Alignment(vertical="top", wrap_text=True); ws.row_dimensions[r].height = 30
+        r += 1
+    wd = wb.create_sheet("DOKUMEN"); wd.sheet_view.showGridLines = False
+    cols = [("Jenis Dokumen", 16, False, True), ("Proyek", 18, True, True), ("Blok", 8, True, False),
+            ("Nomor Unit", 12, True, True), ("Nomor Dokumen", 20, False, False),
+            ("Tanggal", 14, False, False), ("Status", 12, False, False), ("Nama File", 26, False, False)]
+    _headers(wd, cols)
+    row = 2
+    if not docs:
+        # baris contoh (dihapus otomatis saat impor karena diawali CONTOH)
+        ex = ["SHM", projects[0] if projects else "", "", "036", "12.34.56", "20/05/2025", "Terbit", "Daiyan_036_SHM.pdf"]
+        for i, v in enumerate(ex, start=1):
+            _cell(wd, row, i, v, fill=_ex_fill, italic=True, align="center" if i in (1, 3, 4, 6, 7) else "left")
+        row += 1
+    for dc in docs:
+        _cell(wd, row, 1, dc["jenis"], align="center")
+        _cell(wd, row, 2, dc["proyek"], fill=_key_cell)
+        _cell(wd, row, 3, dc["blok"], fill=_key_cell, align="center")
+        _cell(wd, row, 4, dc["unit"], fill=_key_cell, align="center")
+        _cell(wd, row, 5, dc["nomor"])
+        _cell(wd, row, 6, dc["tgl"], align="center")
+        _cell(wd, row, 7, dc["status"], align="center")
+        _cell(wd, row, 8, dc["file"])
+        row += 1
+    _dv(wd, ["SHM", "HGB", "SLF", "PBG", "PBB"], 1, 2, row + 500)
+    _dv(wd, ["Belum", "Proses", "Terbit"], 7, 2, row + 500)
+    _dv(wd, projects, 2, 2, row + 500)
     bio = io.BytesIO(); wb.save(bio); bio.seek(0)
     return bio.getvalue()
