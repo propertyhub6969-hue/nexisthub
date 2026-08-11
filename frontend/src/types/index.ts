@@ -2036,6 +2036,31 @@ export interface FinanceSummary {
   retention: number
 }
 
+export interface ImportRow {
+  row: number
+  action: 'insert' | 'update' | 'error'
+  label: string
+  errors?: string[]
+  note?: string | null
+}
+
+export interface ImportPreview {
+  sheet: string
+  total: number
+  to_insert: number
+  to_update: number
+  error_count: number
+  rows: ImportRow[]
+}
+
+export interface ImportCommitResult {
+  batch_id: string
+  inserted: number
+  updated: number
+  error_count: number
+  rows: ImportRow[]
+}
+
 export interface FinanceDetailRow {
   name: string
   project_name?: string | null

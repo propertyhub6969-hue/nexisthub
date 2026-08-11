@@ -58,6 +58,7 @@ const PATH_FEATURE: [string, string][] = [
   ['/pemberkasan', 'dokumen'],
   ['/property/legal-docs', 'dokumen'],
   ['/property', 'properti'],
+  ['/import', 'properti'],       // Impor Data unit — gerbang backend feat("properti")
   ['/construction', 'konstruksi'],
   ['/utilitas', 'konstruksi'],   // rekap utilitas = pekerjaan produksi/konstruksi
   ['/procurement', 'procurement'],

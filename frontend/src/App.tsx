@@ -18,6 +18,7 @@ import NotaryMonitor from './pages/marketing/NotaryMonitor'
 import Notaries from './pages/legal/Notaries'
 import Pemberkasan from './pages/legal/Pemberkasan'
 import Projects from './pages/property/Projects'
+import ImportData from './pages/ImportData'
 import ProjectUnits from './pages/property/ProjectUnits'
 import Siteplan from './pages/property/Siteplan'
 import LegalDocuments from './pages/property/LegalDocuments'
@@ -78,6 +79,7 @@ export default function App() {
           <Route path="/marketing/notary-submissions" element={<NotarySubmissions />} />
           <Route path="/marketing/notary-monitor" element={<NotaryMonitor />} />
           <Route path="/property/projects"                 element={<Projects />} />
+          <Route path="/import"                            element={<ImportData />} />
           <Route path="/property/legal-docs"               element={<LegalDocuments />} />
           <Route path="/marketing/booking-requests" element={<BookingRequests />} />
           {/* Pindah ke grup Marketing — alihkan tautan lama (mis. dari notifikasi lampau) */}

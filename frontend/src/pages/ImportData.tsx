@@ -1,0 +1,155 @@
+import { useRef, useState } from 'react'
+import { Download, Upload, Loader2, CheckCircle2, PlusCircle, RefreshCw, AlertTriangle, FileSpreadsheet } from 'lucide-react'
+import { importDataService } from '../services/importData'
+import type { ImportPreview, ImportCommitResult } from '../types'
+
+const actionCfg: Record<string, { label: string; cls: string; icon: typeof PlusCircle }> = {
+  insert: { label: 'Baru', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200', icon: PlusCircle },
+  update: { label: 'Perbarui', cls: 'bg-blue-50 text-blue-700 border-blue-200', icon: RefreshCw },
+  error: { label: 'Error', cls: 'bg-red-50 text-red-700 border-red-200', icon: AlertTriangle },
+}
+
+export default function ImportData() {
+  const fileRef = useRef<HTMLInputElement>(null)
+  const [file, setFile] = useState<File | null>(null)
+  const [preview, setPreview] = useState<ImportPreview | null>(null)
+  const [previewing, setPreviewing] = useState(false)
+  const [committing, setCommitting] = useState(false)
+  const [result, setResult] = useState<ImportCommitResult | null>(null)
+  const [error, setError] = useState('')
+  const [downloading, setDownloading] = useState(false)
+
+  async function download() {
+    setDownloading(true); setError('')
+    try { await importDataService.downloadUnitsTemplate() }
+    catch { setError('Gagal mengunduh template.') }
+    finally { setDownloading(false) }
+  }
+
+  async function onPick(f: File | null) {
+    setFile(f); setPreview(null); setResult(null); setError('')
+    if (!f) return
+    setPreviewing(true)
+    try {
+      setPreview(await importDataService.previewUnits(f))
+    } catch (e: any) {
+      setError(e?.response?.data?.detail ?? 'Gagal membaca file. Pastikan format sesuai template.')
+    } finally { setPreviewing(false) }
+  }
+
+  async function apply() {
+    if (!file) return
+    setCommitting(true); setError('')
+    try {
+      const res = await importDataService.commitUnits(file)
+      setResult(res); setPreview(null); setFile(null)
+      if (fileRef.current) fileRef.current.value = ''
+    } catch (e: any) {
+      setError(e?.response?.data?.detail ?? 'Gagal menerapkan impor.')
+    } finally { setCommitting(false) }
+  }
+
+  const applicable = preview ? preview.to_insert + preview.to_update : 0
+
+  return (
+    <div className="space-y-5 max-w-5xl">
+      <div>
+        <h2 className="text-lg font-semibold text-slate-800">Impor Data — Unit</h2>
+        <p className="text-sm text-slate-500 mt-0.5">Migrasi data unit dari Excel. Unduh template (sudah terisi data Anda) → lengkapi → unggah → pratinjau → terapkan.</p>
+      </div>
+
+      {/* Langkah 1 & 2 */}
+      <div className="grid md:grid-cols-2 gap-4">
+        <div className="card p-5">
+          <div className="flex items-center gap-2 mb-1"><span className="w-6 h-6 rounded-full bg-brand-600 text-white text-xs font-bold flex items-center justify-center">1</span><h3 className="text-sm font-semibold text-slate-800">Unduh Template</h3></div>
+          <p className="text-xs text-slate-500 mb-3">File Excel berisi unit Anda saat ini. Lengkapi kolom kosong (tipe, luas, harga). Kolom <b>Proyek</b> & <b>Nomor Unit</b> jangan diubah.</p>
+          <button onClick={download} disabled={downloading} className="btn-secondary text-sm inline-flex items-center gap-2">
+            {downloading ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />} Unduh Template Unit
+          </button>
+        </div>
+
+        <div className="card p-5">
+          <div className="flex items-center gap-2 mb-1"><span className="w-6 h-6 rounded-full bg-brand-600 text-white text-xs font-bold flex items-center justify-center">2</span><h3 className="text-sm font-semibold text-slate-800">Unggah &amp; Pratinjau</h3></div>
+          <p className="text-xs text-slate-500 mb-3">Pilih file yang sudah dilengkapi. Sistem cek dulu — belum ada yang disimpan sampai Anda klik Terapkan.</p>
+          <input ref={fileRef} type="file" accept=".xlsx" className="hidden" onChange={(e) => onPick(e.target.files?.[0] ?? null)} />
+          <button onClick={() => fileRef.current?.click()} disabled={previewing} className="btn-secondary text-sm inline-flex items-center gap-2">
+            {previewing ? <Loader2 size={15} className="animate-spin" /> : <Upload size={15} />} Pilih File Excel
+          </button>
+          {file && <p className="mt-2 text-xs text-slate-500 inline-flex items-center gap-1"><FileSpreadsheet size={13} /> {file.name}</p>}
+        </div>
+      </div>
+
+      {error && <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-2.5">{error}</div>}
+
+      {result && (
+        <div className="rounded-lg bg-emerald-50 border border-emerald-200 px-4 py-3">
+          <p className="text-sm font-semibold text-emerald-800 flex items-center gap-2"><CheckCircle2 size={16} /> Impor selesai</p>
+          <p className="text-sm text-emerald-700 mt-1">{result.inserted} unit baru ditambahkan · {result.updated} unit diperbarui{result.error_count ? ` · ${result.error_count} baris dilewati (error)` : ''}.</p>
+        </div>
+      )}
+
+      {/* Pratinjau */}
+      {preview && (
+        <div className="card overflow-hidden">
+          <div className="p-4 border-b border-slate-100 flex flex-wrap items-center gap-3 justify-between">
+            <div className="flex flex-wrap gap-2">
+              <Stat n={preview.to_insert} label="Baru" cls="text-emerald-600" />
+              <Stat n={preview.to_update} label="Diperbarui" cls="text-blue-600" />
+              <Stat n={preview.error_count} label="Error" cls={preview.error_count ? 'text-red-600' : 'text-slate-400'} />
+              <Stat n={preview.total} label="Total baris" cls="text-slate-600" />
+            </div>
+            <button onClick={apply} disabled={committing || applicable === 0}
+              className="btn-primary text-sm inline-flex items-center gap-2">
+              {committing ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />}
+              Terapkan {applicable > 0 ? `(${applicable})` : ''}
+            </button>
+          </div>
+          {preview.error_count > 0 && (
+            <p className="px-4 py-2 text-xs text-amber-700 bg-amber-50 border-b border-amber-100">Baris error tidak akan diterapkan — perbaiki lalu unggah ulang bila perlu.</p>
+          )}
+          <div className="overflow-x-auto max-h-[55vh]">
+            <table className="w-full text-sm min-w-[560px]">
+              <thead className="bg-slate-50 border-b border-slate-200 sticky top-0">
+                <tr>
+                  <th className="px-4 py-2 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Baris</th>
+                  <th className="px-4 py-2 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Aksi</th>
+                  <th className="px-4 py-2 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Unit (Proyek / Blok / No.)</th>
+                  <th className="px-4 py-2 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Keterangan</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {preview.rows.map((r) => {
+                  const cfg = actionCfg[r.action]
+                  const Icon = cfg.icon
+                  return (
+                    <tr key={r.row} className="hover:bg-slate-50">
+                      <td className="px-4 py-2 text-slate-400">{r.row}</td>
+                      <td className="px-4 py-2"><span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium ${cfg.cls}`}><Icon size={12} />{cfg.label}</span></td>
+                      <td className="px-4 py-2 font-medium text-slate-800 whitespace-nowrap">{r.label}</td>
+                      <td className="px-4 py-2 text-slate-500">
+                        {r.action === 'error'
+                          ? <span className="text-red-600">{(r.errors ?? []).join('; ')}</span>
+                          : <span>{r.note ?? '—'}</span>}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      <p className="text-xs text-slate-400">Kunci pencocokan: <b>Proyek + Blok + Nomor Unit</b>. Unit yang cocok akan <b>diperbarui</b> (kolom kosong tidak menimpa nilai lama); yang belum ada akan <b>ditambah</b>. Impor Pembeli &amp; Pembayaran menyusul.</p>
+    </div>
+  )
+}
+
+function Stat({ n, label, cls }: { n: number; label: string; cls: string }) {
+  return (
+    <div className="rounded-lg bg-slate-50 border border-slate-100 px-3 py-1.5">
+      <span className={`font-display text-lg font-bold ${cls}`}>{n}</span>
+      <span className="text-xs text-slate-500 ml-1.5">{label}</span>
+    </div>
+  )
+}
