@@ -825,6 +825,22 @@ export interface KprRejectionReport {
   akad_samples: number
 }
 
+export interface BankRetentionRow {
+  bank_id: string | null
+  bank_name: string
+  kpr_count: number
+  plafond: number
+  disbursed: number
+  retention: number
+}
+
+export interface BankRetentionReport {
+  total_plafond: number
+  total_disbursed: number
+  total_retention: number
+  banks: BankRetentionRow[]
+}
+
 export interface SalesMonthly {
   month: string
   count: number

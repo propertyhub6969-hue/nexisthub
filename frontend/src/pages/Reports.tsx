@@ -14,7 +14,7 @@ import { useAuth } from '../context/AuthContext'
 import Modal from '../components/ui/Modal'
 import Badge from '../components/ui/Badge'
 import DateInput from '../components/ui/DateInput'
-import type { KprRejectionReport, CashflowReport, SalesRecapReport, AgingReport, ConstructionProgressReport, MonthlyTaxReport, MonthlyTaxShareLink, Project, TaxChecklistReport, TaxChecklistItem, TaxChecklistStatus, ProjectProfitReport, ProjectProfitDetail } from '../types'
+import type { KprRejectionReport, CashflowReport, SalesRecapReport, AgingReport, ConstructionProgressReport, MonthlyTaxReport, MonthlyTaxShareLink, Project, TaxChecklistReport, TaxChecklistItem, TaxChecklistStatus, ProjectProfitReport, ProjectProfitDetail, BankRetentionReport } from '../types'
 
 const fmtRp = (n?: number | null) =>
   n == null ? '—' : new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(Number(n))
@@ -1135,10 +1135,150 @@ function TaxChecklistTab() {
   )
 }
 
+// ═══════════════════════ RETENSI BANK ═══════════════════════
+const DONUT_COLORS = ['#1e3a5f', '#c9a227', '#2f855a', '#3182ce', '#805ad5', '#dd6b20', '#0d9488', '#d53f8c']
+const R_DONUT = 15.91549430918954  // keliling = 100 → dasharray dlm persen
+
+function RetentionDonut({ segments }: { segments: { label: string; value: number; color: string }[] }) {
+  const total = segments.reduce((s, x) => s + x.value, 0)
+  let cum = 0
+  return (
+    <svg viewBox="0 0 42 42" className="w-44 h-44 shrink-0 -rotate-90">
+      <circle cx="21" cy="21" r={R_DONUT} fill="none" stroke="#f1f5f9" strokeWidth="5" />
+      {total > 0 && segments.map((s, i) => {
+        const pct = (s.value / total) * 100
+        const el = (
+          <circle key={i} cx="21" cy="21" r={R_DONUT} fill="none" stroke={s.color} strokeWidth="5"
+            strokeDasharray={`${pct} ${100 - pct}`} strokeDashoffset={25 - cum} strokeLinecap="butt" />
+        )
+        cum += pct
+        return el
+      })}
+    </svg>
+  )
+}
+
+function BankRetentionTab() {
+  const [report, setReport] = useState<BankRetentionReport | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    reportingService.bankRetention().then(setReport).catch(() => setError('Gagal memuat laporan.')).finally(() => setLoading(false))
+  }, [])
+
+  if (loading) return <div className="card p-12 text-center text-slate-400"><Loader2 size={20} className="inline animate-spin" /></div>
+  if (error) return <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-2">{error}</div>
+  if (!report || report.banks.length === 0) {
+    return (
+      <div className="card p-12 flex flex-col items-center justify-center text-center">
+        <Landmark size={40} className="text-slate-300 mb-4" />
+        <h3 className="text-base font-semibold text-slate-700 mb-1">Belum ada retensi bank</h3>
+        <p className="text-sm text-slate-400 max-w-md">Retensi muncul setelah ada KPR yang sudah <b>Akad Kredit</b> atau <b>Pencairan</b> — yaitu selisih plafon yang belum dicairkan bank.</p>
+      </div>
+    )
+  }
+
+  const pctCair = report.total_plafond > 0 ? (report.total_disbursed / report.total_plafond) * 100 : 0
+  // hanya bank yg masih menahan retensi → segmen donut
+  const withRet = report.banks.filter((b) => b.retention > 0)
+  const segments = withRet.map((b, i) => ({ label: b.bank_name, value: b.retention, color: DONUT_COLORS[i % DONUT_COLORS.length] }))
+  const colorOf = (bank_id: string | null) => {
+    const idx = withRet.findIndex((b) => b.bank_id === bank_id)
+    return idx >= 0 ? DONUT_COLORS[idx % DONUT_COLORS.length] : '#cbd5e1'
+  }
+
+  return (
+    <div className="space-y-5">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <StatCard icon={<Landmark size={15} />} label="Plafon Akad" value={fmtRp(report.total_plafond)} hint="KPR sudah akad kredit" />
+        <StatCard icon={<HandCoins size={15} />} label="Sudah Cair" value={fmtRp(report.total_disbursed)} accent="text-emerald-600" hint={`${pctCair.toFixed(1)}% dari plafon`} />
+        <StatCard icon={<PiggyBank size={15} />} label="Sisa Retensi" value={fmtRp(report.total_retention)} accent="text-amber-600" hint="ditahan bank" />
+        <StatCard icon={<Building2 size={15} />} label="Jumlah Bank" value={String(report.banks.length)} hint={`${report.banks.reduce((s, b) => s + b.kpr_count, 0)} KPR`} />
+      </div>
+
+      <div className="grid lg:grid-cols-2 gap-5">
+        {/* Donut sisa retensi per bank */}
+        <div className="card p-5">
+          <h3 className="text-sm font-semibold text-slate-600 mb-1">Sisa Retensi per Bank</h3>
+          <p className="text-xs text-slate-400 mb-4">Porsi dana yang masih ditahan tiap bank penyalur.</p>
+          {report.total_retention === 0 ? (
+            <div className="py-10 text-center">
+              <CheckCircle2 size={32} className="text-emerald-400 mx-auto mb-2" />
+              <p className="text-sm text-slate-500">Semua plafon sudah cair — tidak ada retensi tertahan.</p>
+            </div>
+          ) : (
+            <div className="flex items-center gap-6">
+              <div className="relative">
+                <RetentionDonut segments={segments} />
+                <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                  <span className="text-[10px] uppercase tracking-wider text-slate-400">Total</span>
+                  <span className="text-sm font-bold text-slate-800">{fmtRp(report.total_retention)}</span>
+                </div>
+              </div>
+              <ul className="flex-1 space-y-2 min-w-0">
+                {segments.map((s) => (
+                  <li key={s.label} className="flex items-center gap-2 text-sm">
+                    <span className="w-3 h-3 rounded-sm shrink-0" style={{ background: s.color }} />
+                    <span className="text-slate-600 flex-1 truncate">{s.label}</span>
+                    <span className="font-semibold text-slate-800 whitespace-nowrap">{fmtRp(s.value)}</span>
+                    <span className="text-xs text-slate-400 w-12 text-right">{((s.value / report.total_retention) * 100).toFixed(0)}%</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+
+        {/* Tabel rinci */}
+        <div className="card overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-slate-50 border-b border-slate-200">
+              <tr>
+                {['Bank', 'KPR', 'Plafon Akad', 'Sudah Cair', 'Sisa Retensi'].map((h, i) => (
+                  <th key={i} className={`px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap ${i === 0 ? 'text-left' : i === 1 ? 'text-center' : 'text-right'}`}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {report.banks.map((b) => (
+                <tr key={b.bank_id ?? 'none'} className="hover:bg-slate-50 transition-colors">
+                  <td className="px-4 py-3 font-medium text-slate-900">
+                    <span className="inline-flex items-center gap-2">
+                      <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ background: colorOf(b.bank_id) }} />
+                      {b.bank_name}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-center text-slate-500">{b.kpr_count}</td>
+                  <td className="px-4 py-3 text-right text-slate-600 whitespace-nowrap">{fmtRp(b.plafond)}</td>
+                  <td className="px-4 py-3 text-right text-emerald-600 whitespace-nowrap">{fmtRp(b.disbursed)}</td>
+                  <td className={`px-4 py-3 text-right font-semibold whitespace-nowrap ${b.retention > 0 ? 'text-amber-600' : 'text-slate-400'}`}>{fmtRp(b.retention)}</td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot className="bg-slate-50 border-t border-slate-200">
+              <tr className="font-semibold text-slate-800">
+                <td className="px-4 py-3">Total</td>
+                <td className="px-4 py-3 text-center text-slate-500">{report.banks.reduce((s, b) => s + b.kpr_count, 0)}</td>
+                <td className="px-4 py-3 text-right whitespace-nowrap">{fmtRp(report.total_plafond)}</td>
+                <td className="px-4 py-3 text-right text-emerald-700 whitespace-nowrap">{fmtRp(report.total_disbursed)}</td>
+                <td className="px-4 py-3 text-right text-amber-700 whitespace-nowrap">{fmtRp(report.total_retention)}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+
+      <p className="text-xs text-slate-400">Retensi = plafon (KPR yang sudah akad kredit) − dana yang sudah dicairkan bank. Nilai ini masih akan cair setelah syarat bank terpenuhi.</p>
+    </div>
+  )
+}
+
 // ═══════════════════════ PAGE ═══════════════════════
 const TABS = [
   { key: 'cashflow', label: 'Arus Kas', desc: 'Kas masuk dari pembeli vs bank, plus piutang & retensi.' },
   { key: 'profit', label: 'Laba/Rugi Proyek', desc: 'Untung-rugi per proyek & margin per unit. Laporan operasional, bukan akuntansi formal.' },
+  { key: 'retention', label: 'Retensi Bank', desc: 'Sisa dana yang masih ditahan tiap bank penyalur (plafon akad − sudah cair).' },
   { key: 'sales', label: 'Rekap Penjualan', desc: 'Penjualan & kas masuk per proyek, status unit.' },
   { key: 'construction', label: 'Progres Konstruksi', desc: 'Progres pembangunan per proyek: tahap, % rata-rata, selesai & keterlambatan.' },
   { key: 'aging', label: 'Tunggakan', desc: 'Termin lewat jatuh tempo, dikelompokkan umur & per pembeli.' },
@@ -1151,7 +1291,7 @@ type TabKey = (typeof TABS)[number]['key']
 // Report dipecah per kategori (menu sidebar) — tiap kategori hanya menampilkan subset tab yang relevan.
 const CATEGORIES: Record<string, { label: string; tabs: TabKey[] }> = {
   pajak: { label: 'Report Pajak', tabs: ['tax', 'tax-checklist'] },
-  keuangan: { label: 'Report Keuangan', tabs: ['cashflow', 'profit'] },
+  keuangan: { label: 'Report Keuangan', tabs: ['cashflow', 'profit', 'retention'] },
   marketing: { label: 'Report Marketing', tabs: ['kpr', 'sales', 'aging'] },
   pembangunan: { label: 'Report Pembangunan', tabs: ['construction'] },
 }
@@ -1194,6 +1334,7 @@ export default function Reports() {
 
       {active.key === 'cashflow' && <CashflowTab />}
       {active.key === 'profit' && <ProjectProfitTab />}
+      {active.key === 'retention' && <BankRetentionTab />}
       {active.key === 'sales' && <SalesRecapTab />}
       {active.key === 'construction' && <ConstructionProgressTab />}
       {active.key === 'aging' && <AgingTab />}

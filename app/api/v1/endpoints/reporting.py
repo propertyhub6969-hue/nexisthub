@@ -16,7 +16,7 @@ from app.api.deps import get_current_context, AuthContext
 from app.models.marketing import Lead, Prospect, Client, ProspectStatus, ClientStatus, ClientPaymentType
 from app.models.property import Project, Unit, UnitStatus
 from app.models.payment import Payment, PaymentSchedule, ScheduleStatus, PaymentSource, PaymentApprovalStatus
-from app.models.kpr import KprApplication, KprStage
+from app.models.kpr import KprApplication, KprStage, Bank
 from app.models.construction import UnitConstruction, ConstructionStage, ConstructionProgressLog
 from app.models.tax import TaxRecord, TaxType, TaxStatus, MonthlyTaxShareLink, NotaryFee
 from app.models.document import Document
@@ -1676,3 +1676,75 @@ async def units_detail(
             cash_in=cash_in, remaining=remaining,
         ))
     return out
+
+
+# ═══════════════════════ RETENSI BANK ═══════════════════════
+class BankRetentionRow(BaseModel):
+    bank_id: Optional[uuid.UUID]
+    bank_name: str
+    kpr_count: int
+    plafond: Decimal    # plafon yang sudah AKAD (komit)
+    disbursed: Decimal  # sudah cair
+    retention: Decimal  # sisa ditahan = plafon − cair (≥ 0)
+
+
+class BankRetentionReport(BaseModel):
+    total_plafond: Decimal
+    total_disbursed: Decimal
+    total_retention: Decimal
+    banks: list[BankRetentionRow]
+
+
+@router.get("/bank-retention", response_model=BankRetentionReport)
+async def bank_retention(
+    ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db),
+):
+    """Sisa retensi (dana ditahan bank penyalur) per bank. Retensi HANYA dihitung untuk
+    KPR yang sudah AKAD KREDIT / PENCAIRAN — sebelum akad, plafon belum komit. Retensi =
+    plafon − total cair (uang masuk Bank approved bertaut KPR ini), konsisten dgn
+    ringkasan pembayaran & halaman KPR."""
+    t = ctx.tenant_id
+    kpr_rows = (await db.execute(
+        select(KprApplication.id, KprApplication.bank_id, Bank.name, KprApplication.plafond)
+        .outerjoin(Bank, Bank.id == KprApplication.bank_id)
+        .where(KprApplication.tenant_id == t, KprApplication.is_deleted == False,  # noqa: E712
+               KprApplication.stage.in_((KprStage.AKAD_KREDIT, KprStage.PENCAIRAN)),
+               KprApplication.plafond.isnot(None), KprApplication.plafond > 0)
+    )).all()
+    if not kpr_rows:
+        return BankRetentionReport(total_plafond=Decimal(0), total_disbursed=Decimal(0),
+                                   total_retention=Decimal(0), banks=[])
+
+    kpr_ids = [r[0] for r in kpr_rows]
+    disb_rows = (await db.execute(
+        select(Payment.kpr_id, func.coalesce(func.sum(Payment.amount), 0)).where(
+            Payment.tenant_id == t, Payment.is_deleted == False,  # noqa: E712
+            Payment.approval_status == PaymentApprovalStatus.APPROVED,
+            Payment.kpr_id.in_(kpr_ids)).group_by(Payment.kpr_id)
+    )).all()
+    disbursed_by_kpr = {kid: Decimal(v) for kid, v in disb_rows}
+
+    banks: dict = {}
+    for kid, bid, bname, plaf in kpr_rows:
+        plaf = Decimal(plaf or 0)
+        disb = disbursed_by_kpr.get(kid, Decimal(0))
+        ret = plaf - disb
+        if ret < 0:
+            ret = Decimal(0)
+        b = banks.get(bid)
+        if b is None:
+            b = banks[bid] = {"bank_id": bid, "bank_name": bname or "Tanpa Bank", "kpr_count": 0,
+                              "plafond": Decimal(0), "disbursed": Decimal(0), "retention": Decimal(0)}
+        b["kpr_count"] += 1
+        b["plafond"] += plaf
+        b["disbursed"] += disb
+        b["retention"] += ret
+
+    rows = sorted((BankRetentionRow(**b) for b in banks.values()),
+                  key=lambda x: x.retention, reverse=True)
+    return BankRetentionReport(
+        total_plafond=sum((r.plafond for r in rows), Decimal(0)),
+        total_disbursed=sum((r.disbursed for r in rows), Decimal(0)),
+        total_retention=sum((r.retention for r in rows), Decimal(0)),
+        banks=rows,
+    )
