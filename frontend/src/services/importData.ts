@@ -32,4 +32,35 @@ export const importDataService = {
     })
     return data
   },
+
+  // ── PEMBELI & KONTRAK ──
+  async downloadClientsTemplate(): Promise<void> {
+    const res = await api.get('/import/clients/template', { responseType: 'blob' })
+    const url = URL.createObjectURL(res.data as Blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'Template_Import_Pembeli.xlsx'
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(url)
+  },
+
+  async previewClients(file: File): Promise<ImportPreview> {
+    const fd = new FormData()
+    fd.append('file', file)
+    const { data } = await api.post<ImportPreview>('/import/clients/preview', fd, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    return data
+  },
+
+  async commitClients(file: File): Promise<ImportCommitResult> {
+    const fd = new FormData()
+    fd.append('file', file)
+    const { data } = await api.post<ImportCommitResult>('/import/clients/commit', fd, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    return data
+  },
 }

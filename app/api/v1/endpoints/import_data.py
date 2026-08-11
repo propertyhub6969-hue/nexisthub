@@ -6,6 +6,7 @@ Pembeli & Pembayaran menyusul.
 """
 import io
 import uuid
+from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Optional
 
@@ -21,8 +22,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.audit import record_audit
+from app.core.unit_status import unit_status_for_client, set_unit_status
 from app.api.deps import get_current_context, AuthContext
 from app.models.property import Project, Unit, UnitStatus
+from app.models.marketing import Client, ClientStatus, ClientPaymentType
 
 router = APIRouter()
 
@@ -65,6 +68,34 @@ def _to_decimal(v) -> Optional[Decimal]:
     else:
         s = s.replace(",", ".") if ("," in s and "." not in s) else s.replace(",", "")
     return Decimal(s)
+
+
+def _to_date(v) -> Optional[date]:
+    if v is None or v == "":
+        return None
+    if isinstance(v, datetime):
+        return v.date()
+    if isinstance(v, date):
+        return v
+    s = str(v).strip()
+    for fmt in ("%d/%m/%Y", "%Y-%m-%d", "%d-%m-%Y", "%d/%m/%y"):
+        try:
+            return datetime.strptime(s, fmt).date()
+        except ValueError:
+            continue
+    raise ValueError(s)
+
+
+# peta label ID pembeli ↔ enum
+PT_TO_LABEL = {ClientPaymentType.CASH: "Cash", ClientPaymentType.KPR: "KPR"}
+LABEL_TO_PT = {"cash": ClientPaymentType.CASH, "kpr": ClientPaymentType.KPR,
+               "tunai": ClientPaymentType.CASH}
+CST_TO_LABEL = {ClientStatus.ACTIVE: "Aktif", ClientStatus.COMPLETED: "Selesai",
+                ClientStatus.INACTIVE: "Batal"}
+LABEL_TO_CST = {"aktif": ClientStatus.ACTIVE, "selesai": ClientStatus.COMPLETED,
+                "batal": ClientStatus.INACTIVE, "active": ClientStatus.ACTIVE,
+                "completed": ClientStatus.COMPLETED, "inactive": ClientStatus.INACTIVE,
+                "nonaktif": ClientStatus.INACTIVE}
 
 
 class ImportRow(BaseModel):
@@ -373,3 +404,307 @@ async def download_units_template(
         io.BytesIO(data),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": 'attachment; filename="Template_Import_Unit.xlsx"'})
+
+
+# ═══════════════════════ PEMBELI & KONTRAK ═══════════════════════
+def _client_field_of(h: str) -> Optional[str]:
+    n = _norm_header(h)
+    if "ppjb" in n: return "ppjb_number"
+    if "ajb" in n: return "ajb_number"
+    if n.startswith("nama"): return "full_name"
+    if n.startswith("nik"): return "nik"
+    if n.startswith("no. hp") or n.startswith("no hp") or n.startswith("hp") or "telepon" in n or n.startswith("telp"): return "phone"
+    if n.startswith("email"): return "email"
+    if n.startswith("alamat"): return "address"
+    if n.startswith("proyek"): return "project"
+    if n.startswith("nomor unit") or n.startswith("no unit") or n == "unit": return "unit_number"
+    if "pembayaran" in n or "cara beli" in n: return "payment_type"
+    if "nilai kontrak" in n or n.startswith("harga") or n.startswith("kontrak"): return "contract_value"
+    if n.startswith("tanggal"): return "contract_date"
+    if n.startswith("status"): return "status"
+    return None
+
+
+def _read_client_rows(contents: bytes):
+    try:
+        wb = openpyxl.load_workbook(io.BytesIO(contents), read_only=True, data_only=True)
+    except Exception:
+        raise HTTPException(status_code=400, detail="File bukan Excel (.xlsx) yang valid.")
+    ws = None
+    for name in wb.sheetnames:
+        if name.strip().lower().startswith("pembeli"):
+            ws = wb[name]; break
+    if ws is None:
+        raise HTTPException(status_code=400, detail="Sheet 'PEMBELI' tidak ditemukan di file.")
+    it = ws.iter_rows(values_only=True)
+    try:
+        header = next(it)
+    except StopIteration:
+        return []
+    col_map = {}
+    for i, h in enumerate(header):
+        f = _client_field_of(h)
+        if f and f not in col_map:
+            col_map[f] = i
+    if "full_name" not in col_map:
+        raise HTTPException(status_code=400, detail="Header 'Nama Pembeli' wajib ada di sheet PEMBELI.")
+    fields = ["full_name", "nik", "phone", "email", "address", "project", "unit_number",
+              "payment_type", "contract_value", "contract_date", "ppjb_number", "ajb_number", "status"]
+    out = []
+    rnum = 1
+    for raw in it:
+        rnum += 1
+        d = {f: (raw[col_map[f]] if (f in col_map and col_map[f] < len(raw)) else None) for f in fields}
+        if all((v is None or str(v).strip() == "") for v in d.values()):
+            continue
+        # lewati baris contoh
+        if str(d.get("full_name") or "").strip().upper().startswith("CONTOH"):
+            continue
+        out.append((rnum, d))
+    return out
+
+
+async def _load_client_maps(db: AsyncSession, tenant_id):
+    projs = (await db.execute(select(Project.id, Project.name).where(Project.tenant_id == tenant_id))).all()
+    proj_by_name = {name.strip().lower(): pid for pid, name in projs}
+    # unit per (project, unit_number) — bisa >1 kalau nomor sama beda blok
+    units = (await db.execute(select(Unit.id, Unit.project_id, Unit.unit_number).where(Unit.tenant_id == tenant_id))).all()
+    unit_by_pu = {}
+    for uid, pid, unum in units:
+        unit_by_pu.setdefault((pid, (unum or "").strip().lower()), []).append(uid)
+    clients = (await db.execute(select(Client).where(Client.tenant_id == tenant_id, Client.is_deleted == False))).scalars().all()  # noqa: E712
+    by_nik = {}
+    by_unit = {}
+    for c in clients:
+        if c.nik:
+            by_nik[c.nik.strip()] = c
+        if c.unit_id and c.status != ClientStatus.INACTIVE:
+            by_unit[c.unit_id] = c
+    return proj_by_name, unit_by_pu, by_nik, by_unit
+
+
+def _classify_clients(rows, proj_by_name, unit_by_pu, by_nik, by_unit):
+    """→ list (row_num, kind, payload, existing_client, resolved_unit_id, ImportRow)."""
+    parsed = []
+    for rnum, d in rows:
+        errors = []
+        name = str(d["full_name"] or "").strip()
+        if not name:
+            errors.append("Nama kosong")
+        nik = (str(d["nik"]).strip() if d["nik"] not in (None, "") else None)
+        pname = str(d["project"] or "").strip()
+        unum = (str(d["unit_number"]).strip() if d["unit_number"] not in (None, "") else None)
+        label = name or "?"
+        pid = proj_by_name.get(pname.lower()) if pname else None
+        if pname and pid is None:
+            errors.append(f"Proyek '{pname}' tidak ada")
+
+        resolved_unit = None
+        if unum:
+            if pid is None:
+                errors.append("Nomor Unit diisi tapi Proyek kosong/salah")
+            else:
+                cand = unit_by_pu.get((pid, unum.lower()), [])
+                if len(cand) == 0:
+                    errors.append(f"Unit '{unum}' tak ada di proyek {pname}")
+                elif len(cand) > 1:
+                    errors.append(f"Unit '{unum}' ambigu (ada di >1 blok) — pakai importir Unit dulu")
+                else:
+                    resolved_unit = cand[0]
+
+        pt = None
+        if d["payment_type"] not in (None, ""):
+            pt = LABEL_TO_PT.get(str(d["payment_type"]).strip().lower())
+            if pt is None:
+                errors.append(f"Tipe Pembayaran tak dikenal: '{d['payment_type']}'")
+        st = None
+        if d["status"] not in (None, ""):
+            st = LABEL_TO_CST.get(str(d["status"]).strip().lower())
+            if st is None:
+                errors.append(f"Status tak dikenal: '{d['status']}'")
+        try:
+            cval = _to_decimal(d["contract_value"])
+        except (InvalidOperation, ValueError):
+            errors.append(f"Nilai Kontrak bukan angka: '{d['contract_value']}'"); cval = None
+        try:
+            cdate = _to_date(d["contract_date"])
+        except ValueError:
+            errors.append(f"Tanggal Kontrak tak valid: '{d['contract_date']}' (pakai dd/mm/yyyy)"); cdate = None
+
+        # cari existing: NIK dulu, lalu unit
+        existing = None
+        if nik and nik in by_nik:
+            existing = by_nik[nik]
+        elif resolved_unit and resolved_unit in by_unit:
+            existing = by_unit[resolved_unit]
+
+        # bentrok unit: unit sudah dipakai pembeli aktif LAIN
+        if resolved_unit and resolved_unit in by_unit and (existing is None or by_unit[resolved_unit].id != existing.id):
+            errors.append(f"Unit '{unum}' sudah dipakai pembeli lain ({by_unit[resolved_unit].full_name})")
+
+        if errors:
+            parsed.append((rnum, "error", None, None, None, ImportRow(row=rnum, action="error", label=label, errors=errors)))
+            continue
+
+        payload = {"full_name": name, "nik": nik,
+                   "phone": (str(d["phone"]).strip() if d["phone"] not in (None, "") else None),
+                   "email": (str(d["email"]).strip() if d["email"] not in (None, "") else None),
+                   "address": (str(d["address"]).strip() if d["address"] not in (None, "") else None),
+                   "project_id": pid, "unit_id": resolved_unit, "unit_number": unum,
+                   "payment_type": pt, "contract_value": cval, "contract_date": cdate,
+                   "ppjb_number": (str(d["ppjb_number"]).strip() if d["ppjb_number"] not in (None, "") else None),
+                   "ajb_number": (str(d["ajb_number"]).strip() if d["ajb_number"] not in (None, "") else None),
+                   "status": st}
+        if existing:
+            parsed.append((rnum, "update", payload, existing, resolved_unit,
+                           ImportRow(row=rnum, action="update", label=label, note="Cocok " + ("NIK" if (nik and nik in by_nik) else "unit"))))
+        else:
+            parsed.append((rnum, "insert", payload, None, resolved_unit,
+                           ImportRow(row=rnum, action="insert", label=label)))
+    return parsed
+
+
+@router.post("/clients/preview", response_model=ImportPreview)
+async def preview_clients(
+    file: UploadFile = File(...),
+    ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db),
+):
+    contents = await file.read()
+    rows = _read_client_rows(contents)
+    maps = await _load_client_maps(db, ctx.tenant_id)
+    parsed = _classify_clients(rows, *maps)
+    ins = sum(1 for p in parsed if p[1] == "insert")
+    upd = sum(1 for p in parsed if p[1] == "update")
+    err = sum(1 for p in parsed if p[1] == "error")
+    return ImportPreview(sheet="PEMBELI", total=len(parsed), to_insert=ins, to_update=upd,
+                         error_count=err, rows=[p[5] for p in parsed])
+
+
+@router.post("/clients/commit", response_model=ImportCommitResult)
+async def commit_clients(
+    file: UploadFile = File(...),
+    ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db),
+):
+    contents = await file.read()
+    rows = _read_client_rows(contents)
+    maps = await _load_client_maps(db, ctx.tenant_id)
+    parsed = _classify_clients(rows, *maps)
+    batch_id = str(uuid.uuid4())
+    inserted = updated = 0
+    upd_fields = ["full_name", "nik", "phone", "email", "address", "project_id", "unit_id",
+                  "unit_number", "payment_type", "contract_value", "contract_date",
+                  "ppjb_number", "ajb_number", "status"]
+    for rnum, kind, payload, existing, unit_id, rowres in parsed:
+        if kind == "insert":
+            c = Client(tenant_id=ctx.tenant_id, marketing_user_id=ctx.user_id,
+                       status=payload["status"] or ClientStatus.ACTIVE,
+                       **{k: payload[k] for k in upd_fields if k != "status"})
+            db.add(c); await db.flush()
+            if c.unit_id:
+                await set_unit_status(db, ctx.tenant_id, c.unit_id, unit_status_for_client(c))
+            inserted += 1
+        elif kind == "update":
+            for f in upd_fields:
+                nv = payload[f]
+                if nv is not None:
+                    setattr(existing, f, nv)
+            await db.flush()
+            if existing.unit_id:
+                await set_unit_status(db, ctx.tenant_id, existing.unit_id, unit_status_for_client(existing))
+            updated += 1
+    if inserted or updated:
+        await record_audit(db, ctx.tenant_id, ctx.user_id, "IMPORT", "clients", uuid.UUID(batch_id),
+                           new_data={"batch": batch_id, "inserted": inserted, "updated": updated})
+        await db.commit()
+    err = sum(1 for p in parsed if p[1] == "error")
+    return ImportCommitResult(batch_id=batch_id, inserted=inserted, updated=updated,
+                              error_count=err, rows=[p[5] for p in parsed])
+
+
+@router.get("/clients/template")
+async def download_clients_template(
+    ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db),
+):
+    """Template PEMBELI & KONTRAK — terisi pembeli tenant saat ini (bila ada)."""
+    projs = (await db.execute(
+        select(Project.id, Project.name).where(Project.tenant_id == ctx.tenant_id).order_by(Project.name))).all()
+    pmap = {pid: name for pid, name in projs}
+    pnames = [name for _, name in projs]
+    # nomor unit dari unit_id
+    clients = (await db.execute(
+        select(Client).where(Client.tenant_id == ctx.tenant_id, Client.is_deleted == False))).scalars().all()  # noqa: E712
+    unit_ids = [c.unit_id for c in clients if c.unit_id]
+    unum_map = {}
+    if unit_ids:
+        for uid, unum in (await db.execute(select(Unit.id, Unit.unit_number).where(Unit.id.in_(unit_ids)))).all():
+            unum_map[uid] = unum
+    rows = []
+    for c in clients:
+        rows.append({
+            "nama": c.full_name or "", "nik": c.nik or "", "hp": c.phone or "", "email": c.email or "",
+            "alamat": c.address or "", "proyek": pmap.get(c.project_id, ""),
+            "unit": unum_map.get(c.unit_id) or (c.unit_number or ""),
+            "bayar": PT_TO_LABEL.get(c.payment_type, "") if c.payment_type else "",
+            "kontrak": float(c.contract_value) if c.contract_value is not None else None,
+            "tgl": c.contract_date.strftime("%d/%m/%Y") if c.contract_date else "",
+            "ppjb": c.ppjb_number or "", "ajb": c.ajb_number or "",
+            "status": CST_TO_LABEL.get(c.status, "Aktif"),
+        })
+    data = _build_client_template(pnames, rows)
+    return StreamingResponse(
+        io.BytesIO(data),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="Template_Import_Pembeli.xlsx"'})
+
+
+def _build_client_template(projects, clients) -> bytes:
+    wb = openpyxl.Workbook()
+    ws = wb.active; ws.title = "Petunjuk"; ws.sheet_view.showGridLines = False
+    ws.column_dimensions["A"].width = 3; ws.column_dimensions["B"].width = 26; ws.column_dimensions["C"].width = 92
+    t = ws.cell(row=1, column=2, value="TEMPLATE IMPOR — PEMBELI & KONTRAK")
+    t.font = Font(name=_FONT, bold=True, color="FFFFFF", size=13); ws.merge_cells("B1:C1")
+    ws["B1"].fill = _hdr_fill; ws["C1"].fill = _hdr_fill; ws.row_dimensions[1].height = 26
+    tips = [
+        ("Cara kerja", "Lengkapi sheet PEMBELI. Upload → pratinjau (baru/perbarui/error) → Terapkan."),
+        ("Pencocokan (anti-dobel)", "Sistem cocokkan lewat NIK; kalau NIK kosong, lewat Proyek+Nomor Unit. Cocok = diperbarui; tidak = ditambah."),
+        ("Nomor Unit", "Harus sudah ada (impor Unit dulu). Menautkan pembeli ke unit → status unit otomatis (Dipesan/Terjual)."),
+        ("Tipe Pembayaran", "Cash · KPR"),
+        ("Status", "Aktif · Selesai · Batal"),
+        ("Format", "Tanggal dd/mm/yyyy · angka polos tanpa 'Rp'/titik."),
+        ("Nama proyek (persis)", " · ".join(projects)),
+    ]
+    r = 3
+    for a, b in tips:
+        ca = ws.cell(row=r, column=2, value=a); ca.font = Font(name=_FONT, bold=True, size=10)
+        ca.alignment = Alignment(vertical="top", wrap_text=True)
+        cb = ws.cell(row=r, column=3, value=b); cb.font = Font(name=_FONT, size=10)
+        cb.alignment = Alignment(vertical="top", wrap_text=True); ws.row_dimensions[r].height = 28
+        r += 1
+    wp = wb.create_sheet("PEMBELI"); wp.sheet_view.showGridLines = False
+    cols = [("Nama Pembeli", 22, False, True), ("NIK (KTP)", 20, False, False), ("No. HP", 15, False, False),
+            ("Email", 20, False, False), ("Alamat", 24, False, False), ("Proyek", 18, True, False),
+            ("Nomor Unit", 12, True, False), ("Tipe Pembayaran", 15, False, False),
+            ("Nilai Kontrak (Rp)", 16, False, False), ("Tanggal Kontrak", 15, False, False),
+            ("No. PPJB", 14, False, False), ("No. AJB", 14, False, False), ("Status", 12, False, False)]
+    _headers(wp, cols)
+    row = 2
+    for c in clients:
+        _cell(wp, row, 1, c["nama"])
+        _cell(wp, row, 2, c["nik"])
+        _cell(wp, row, 3, c["hp"])
+        _cell(wp, row, 4, c["email"])
+        _cell(wp, row, 5, c["alamat"])
+        _cell(wp, row, 6, c["proyek"], fill=_key_cell)
+        _cell(wp, row, 7, c["unit"], fill=_key_cell, align="center")
+        _cell(wp, row, 8, c["bayar"], align="center")
+        _cell(wp, row, 9, c["kontrak"], align="right", numfmt="#,##0")
+        _cell(wp, row, 10, c["tgl"], align="center")
+        _cell(wp, row, 11, c["ppjb"])
+        _cell(wp, row, 12, c["ajb"])
+        _cell(wp, row, 13, c["status"], align="center")
+        row += 1
+    _dv(wp, ["Cash", "KPR"], 8, 2, row + 500)
+    _dv(wp, ["Aktif", "Selesai", "Batal"], 13, 2, row + 500)
+    _dv(wp, projects, 6, 2, row + 500)
+    bio = io.BytesIO(); wb.save(bio); bio.seek(0)
+    return bio.getvalue()

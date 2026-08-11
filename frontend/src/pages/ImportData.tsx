@@ -9,7 +9,29 @@ const actionCfg: Record<string, { label: string; cls: string; icon: typeof PlusC
   error: { label: 'Error', cls: 'bg-red-50 text-red-700 border-red-200', icon: AlertTriangle },
 }
 
+type Entity = 'units' | 'clients'
+const ENTITY: Record<Entity, {
+  tab: string; noun: string; unitCol: string; keyHint: string
+  download: () => Promise<void>; preview: (f: File) => Promise<ImportPreview>; commit: (f: File) => Promise<ImportCommitResult>
+}> = {
+  units: {
+    tab: 'Unit', noun: 'unit', unitCol: 'Unit (Proyek / Blok / No.)',
+    keyHint: 'Proyek + Blok + Nomor Unit',
+    download: () => importDataService.downloadUnitsTemplate(),
+    preview: (f) => importDataService.previewUnits(f),
+    commit: (f) => importDataService.commitUnits(f),
+  },
+  clients: {
+    tab: 'Pembeli & Kontrak', noun: 'pembeli', unitCol: 'Pembeli',
+    keyHint: 'NIK (bila ada), atau Proyek + Nomor Unit',
+    download: () => importDataService.downloadClientsTemplate(),
+    preview: (f) => importDataService.previewClients(f),
+    commit: (f) => importDataService.commitClients(f),
+  },
+}
+
 export default function ImportData() {
+  const [entity, setEntity] = useState<Entity>('units')
   const fileRef = useRef<HTMLInputElement>(null)
   const [file, setFile] = useState<File | null>(null)
   const [preview, setPreview] = useState<ImportPreview | null>(null)
@@ -18,10 +40,17 @@ export default function ImportData() {
   const [result, setResult] = useState<ImportCommitResult | null>(null)
   const [error, setError] = useState('')
   const [downloading, setDownloading] = useState(false)
+  const cfg = ENTITY[entity]
+
+  function reset() {
+    setFile(null); setPreview(null); setResult(null); setError('')
+    if (fileRef.current) fileRef.current.value = ''
+  }
+  function switchEntity(e: Entity) { if (e !== entity) { setEntity(e); reset() } }
 
   async function download() {
     setDownloading(true); setError('')
-    try { await importDataService.downloadUnitsTemplate() }
+    try { await cfg.download() }
     catch { setError('Gagal mengunduh template.') }
     finally { setDownloading(false) }
   }
@@ -30,18 +59,16 @@ export default function ImportData() {
     setFile(f); setPreview(null); setResult(null); setError('')
     if (!f) return
     setPreviewing(true)
-    try {
-      setPreview(await importDataService.previewUnits(f))
-    } catch (e: any) {
-      setError(e?.response?.data?.detail ?? 'Gagal membaca file. Pastikan format sesuai template.')
-    } finally { setPreviewing(false) }
+    try { setPreview(await cfg.preview(f)) }
+    catch (e: any) { setError(e?.response?.data?.detail ?? 'Gagal membaca file. Pastikan format sesuai template.') }
+    finally { setPreviewing(false) }
   }
 
   async function apply() {
     if (!file) return
     setCommitting(true); setError('')
     try {
-      const res = await importDataService.commitUnits(file)
+      const res = await cfg.commit(file)
       setResult(res); setPreview(null); setFile(null)
       if (fileRef.current) fileRef.current.value = ''
     } catch (e: any) {
@@ -54,17 +81,27 @@ export default function ImportData() {
   return (
     <div className="space-y-5 max-w-5xl">
       <div>
-        <h2 className="text-lg font-semibold text-slate-800">Impor Data — Unit</h2>
-        <p className="text-sm text-slate-500 mt-0.5">Migrasi data unit dari Excel. Unduh template (sudah terisi data Anda) → lengkapi → unggah → pratinjau → terapkan.</p>
+        <h2 className="text-lg font-semibold text-slate-800">Impor Data</h2>
+        <p className="text-sm text-slate-500 mt-0.5">Migrasi data dari Excel. Unduh template (sudah terisi data Anda) → lengkapi → unggah → pratinjau → terapkan.</p>
+      </div>
+
+      {/* Tab entitas */}
+      <div className="flex gap-1 border-b border-slate-200">
+        {(Object.keys(ENTITY) as Entity[]).map((e) => (
+          <button key={e} onClick={() => switchEntity(e)}
+            className={`px-4 py-2 text-sm font-medium -mb-px border-b-2 transition-colors ${entity === e ? 'border-brand-600 text-brand-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
+            {ENTITY[e].tab}
+          </button>
+        ))}
       </div>
 
       {/* Langkah 1 & 2 */}
       <div className="grid md:grid-cols-2 gap-4">
         <div className="card p-5">
           <div className="flex items-center gap-2 mb-1"><span className="w-6 h-6 rounded-full bg-brand-600 text-white text-xs font-bold flex items-center justify-center">1</span><h3 className="text-sm font-semibold text-slate-800">Unduh Template</h3></div>
-          <p className="text-xs text-slate-500 mb-3">File Excel berisi unit Anda saat ini. Lengkapi kolom kosong (tipe, luas, harga). Kolom <b>Proyek</b> & <b>Nomor Unit</b> jangan diubah.</p>
+          <p className="text-xs text-slate-500 mb-3">File Excel berisi data {cfg.noun} Anda saat ini. Lengkapi kolom kosong. Kolom kunci jangan diubah.</p>
           <button onClick={download} disabled={downloading} className="btn-secondary text-sm inline-flex items-center gap-2">
-            {downloading ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />} Unduh Template Unit
+            {downloading ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />} Unduh Template {cfg.tab}
           </button>
         </div>
 
@@ -84,7 +121,7 @@ export default function ImportData() {
       {result && (
         <div className="rounded-lg bg-emerald-50 border border-emerald-200 px-4 py-3">
           <p className="text-sm font-semibold text-emerald-800 flex items-center gap-2"><CheckCircle2 size={16} /> Impor selesai</p>
-          <p className="text-sm text-emerald-700 mt-1">{result.inserted} unit baru ditambahkan · {result.updated} unit diperbarui{result.error_count ? ` · ${result.error_count} baris dilewati (error)` : ''}.</p>
+          <p className="text-sm text-emerald-700 mt-1">{result.inserted} {cfg.noun} baru ditambahkan · {result.updated} diperbarui{result.error_count ? ` · ${result.error_count} baris dilewati (error)` : ''}.</p>
         </div>
       )}
 
@@ -98,8 +135,7 @@ export default function ImportData() {
               <Stat n={preview.error_count} label="Error" cls={preview.error_count ? 'text-red-600' : 'text-slate-400'} />
               <Stat n={preview.total} label="Total baris" cls="text-slate-600" />
             </div>
-            <button onClick={apply} disabled={committing || applicable === 0}
-              className="btn-primary text-sm inline-flex items-center gap-2">
+            <button onClick={apply} disabled={committing || applicable === 0} className="btn-primary text-sm inline-flex items-center gap-2">
               {committing ? <Loader2 size={15} className="animate-spin" /> : <CheckCircle2 size={15} />}
               Terapkan {applicable > 0 ? `(${applicable})` : ''}
             </button>
@@ -113,18 +149,18 @@ export default function ImportData() {
                 <tr>
                   <th className="px-4 py-2 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Baris</th>
                   <th className="px-4 py-2 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Aksi</th>
-                  <th className="px-4 py-2 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Unit (Proyek / Blok / No.)</th>
+                  <th className="px-4 py-2 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">{cfg.unitCol}</th>
                   <th className="px-4 py-2 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Keterangan</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {preview.rows.map((r) => {
-                  const cfg = actionCfg[r.action]
-                  const Icon = cfg.icon
+                  const c = actionCfg[r.action]
+                  const Icon = c.icon
                   return (
                     <tr key={r.row} className="hover:bg-slate-50">
                       <td className="px-4 py-2 text-slate-400">{r.row}</td>
-                      <td className="px-4 py-2"><span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium ${cfg.cls}`}><Icon size={12} />{cfg.label}</span></td>
+                      <td className="px-4 py-2"><span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium ${c.cls}`}><Icon size={12} />{c.label}</span></td>
                       <td className="px-4 py-2 font-medium text-slate-800 whitespace-nowrap">{r.label}</td>
                       <td className="px-4 py-2 text-slate-500">
                         {r.action === 'error'
@@ -140,7 +176,7 @@ export default function ImportData() {
         </div>
       )}
 
-      <p className="text-xs text-slate-400">Kunci pencocokan: <b>Proyek + Blok + Nomor Unit</b>. Unit yang cocok akan <b>diperbarui</b> (kolom kosong tidak menimpa nilai lama); yang belum ada akan <b>ditambah</b>. Impor Pembeli &amp; Pembayaran menyusul.</p>
+      <p className="text-xs text-slate-400">Kunci pencocokan: <b>{cfg.keyHint}</b>. Yang cocok akan <b>diperbarui</b> (kolom kosong tidak menimpa nilai lama); yang belum ada akan <b>ditambah</b>. {entity === 'clients' && 'Menautkan pembeli ke unit otomatis mengubah status unit (Dipesan/Terjual). '}Impor Pembayaran menyusul.</p>
     </div>
   )
 }
