@@ -129,7 +129,7 @@ function SalesSection({ report }: { report: SalesRecapReport | null }) {
             </div>
           </div>
 
-          <Modal open={bucket != null} onClose={() => setBucket(null)} title={bucket ? `${UNIT_BUCKET_TITLE[bucket]} — ${projLabel}` : ''} size="lg">
+          <Modal open={bucket != null} onClose={() => setBucket(null)} title={bucket ? `${UNIT_BUCKET_TITLE[bucket]} — ${projLabel}` : ''} size="xl">
             {loadingRows ? (
               <div className="py-10 text-center text-slate-400"><Loader2 size={18} className="inline animate-spin" /></div>
             ) : shownRows.length === 0 ? (
@@ -268,7 +268,7 @@ function KprSection({ report }: { report: KprSummaryReport | null }) {
             <ClickMetric label="SPPR Ditolak" value={view.rejected} accent={view.rejected > 0 ? 'text-red-600' : undefined} onClick={() => openDialog('rejected')} disabled={view.rejected === 0} />
           </div>
 
-          <Modal open={bucket != null} onClose={() => setBucket(null)} title={bucket ? `${BUCKET_TITLE[bucket]} — ${projLabel}` : ''} size="lg">
+          <Modal open={bucket != null} onClose={() => setBucket(null)} title={bucket ? `${BUCKET_TITLE[bucket]} — ${projLabel}` : ''} size="xl">
             {loadingRows ? (
               <div className="py-10 text-center text-slate-400"><Loader2 size={18} className="inline animate-spin" /></div>
             ) : shownRows.length === 0 ? (
@@ -587,7 +587,7 @@ function FinanceStrip() {
       </div>
 
       <Modal open={kind != null} onClose={() => setKind(null)}
-        title={cfg ? `${cfg.title} — ${locLabel}${kind === 'cash_in' ? ` · ${monthLabel}` : ''}` : ''} size="lg">
+        title={cfg ? `${cfg.title} — ${locLabel}${kind === 'cash_in' ? ` · ${monthLabel}` : ''}` : ''} size="xl">
         {rowsLoading ? (
           <div className="py-10 text-center text-slate-400"><Loader2 size={18} className="inline animate-spin" /></div>
         ) : !cfg || rows.length === 0 ? (

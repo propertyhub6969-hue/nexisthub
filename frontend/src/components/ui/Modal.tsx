@@ -6,10 +6,11 @@ interface ModalProps {
   onClose: () => void
   title: string
   children: ReactNode
-  size?: 'md' | 'lg'
+  size?: 'md' | 'lg' | 'xl'
 }
 
-const sizeClass = { md: 'max-w-lg', lg: 'max-w-2xl' }
+// xl = dialog data lebar (tabel banyak kolom) → cukup lebar agar tak perlu scroll ke samping
+const sizeClass = { md: 'max-w-lg', lg: 'max-w-2xl', xl: 'max-w-6xl' }
 
 export default function Modal({ open, onClose, title, children, size = 'md' }: ModalProps) {
   if (!open) return null
