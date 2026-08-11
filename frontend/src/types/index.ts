@@ -2036,6 +2036,19 @@ export interface FinanceSummary {
   retention: number
 }
 
+export interface FinanceDetailRow {
+  name: string
+  project_name?: string | null
+  unit_label?: string | null
+  bank_name?: string | null
+  date?: string | null
+  source_label?: string | null
+  amount?: number | null
+  secondary?: number | null
+  tertiary?: number | null
+  note?: string | null
+}
+
 // ── Rincian pengajuan KPR (dialog klik angka SPPR di dashboard) ──
 export interface KprDetailRow {
   client_id: string

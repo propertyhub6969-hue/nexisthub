@@ -11,7 +11,7 @@ import Modal from '../components/ui/Modal'
 import type {
   DashboardStats, SalesMonthly, Project,
   SalesRecapReport, SalesProject, KprSummaryReport, ProjectKprRow,
-  ConstructionProgressReport, ConstructionProject, FinanceSummary, KprDetailRow, UnitDetailRow,
+  ConstructionProgressReport, ConstructionProject, FinanceSummary, KprDetailRow, UnitDetailRow, FinanceDetailRow,
 } from '../types'
 
 const fmt = (n?: number) =>
@@ -453,16 +453,87 @@ function monthOptions(): { value: string; label: string }[] {
   })
 }
 
-function FinanceCol({ icon: Icon, color, bg, label, value }: { icon: LucideIcon; color: string; bg: string; label: string; value: string }) {
-  return (
-    <div className="flex items-center gap-3">
+function FinanceCol({ icon: Icon, color, bg, label, value, onClick, disabled }: {
+  icon: LucideIcon; color: string; bg: string; label: string; value: string
+  onClick?: () => void; disabled?: boolean
+}) {
+  const inner = (
+    <>
       <div className={`w-10 h-10 rounded-lg ${bg} flex items-center justify-center shrink-0`}><Icon size={16} className={color} /></div>
-      <div className="min-w-0">
+      <div className="min-w-0 text-left">
         <p className="font-display text-lg font-bold text-slate-900 truncate tracking-tight">{value}</p>
-        <p className="text-xs text-slate-500">{label}</p>
+        <p className="text-xs text-slate-500 flex items-center gap-0.5">{label}{onClick && !disabled && <ChevronRight size={12} className="text-slate-300" />}</p>
       </div>
-    </div>
+    </>
   )
+  if (onClick && !disabled) {
+    return (
+      <button onClick={onClick} className="flex items-center gap-3 rounded-lg -m-1 p-1 hover:bg-slate-50 transition-colors text-left w-full group">
+        {inner}
+      </button>
+    )
+  }
+  return <div className="flex items-center gap-3 p-1 -m-1">{inner}</div>
+}
+
+const fmtDateID = (s?: string | null) => {
+  if (!s) return '—'
+  const [y, m, d] = s.split('-')
+  return d && m && y ? `${d}/${m}/${y}` : s
+}
+
+type DetailCol = { head: string; align?: 'left' | 'right' | 'center'; cell: (r: FinanceDetailRow) => React.ReactNode }
+const FIN_DETAIL: Record<string, { title: string; empty: string; noun: string; cols: DetailCol[] }> = {
+  cash_in: {
+    title: 'Uang Masuk', empty: 'Belum ada uang masuk pada bulan & lokasi ini.', noun: 'pembayaran',
+    cols: [
+      { head: 'Tanggal', cell: (r) => fmtDateID(r.date) },
+      { head: 'Pembeli', cell: (r) => <span className="font-medium text-slate-900">{r.name}</span> },
+      { head: 'Proyek', cell: (r) => r.project_name ?? '—' },
+      { head: 'Sumber', cell: (r) => <span className={`inline-flex items-center gap-1 text-xs ${r.source_label === 'Bank' ? 'text-blue-600' : 'text-emerald-600'}`}><span className={`w-1.5 h-1.5 rounded-full ${r.source_label === 'Bank' ? 'bg-blue-500' : 'bg-emerald-500'}`} />{r.source_label}</span> },
+      { head: 'Jumlah', align: 'right', cell: (r) => <span className="text-emerald-600 font-medium">{fmt(r.amount ?? 0)}</span> },
+    ],
+  },
+  paid: {
+    title: 'Total Terbayar', empty: 'Belum ada pembayaran pada lokasi ini.', noun: 'pembeli',
+    cols: [
+      { head: 'Pembeli', cell: (r) => <span className="font-medium text-slate-900">{r.name}</span> },
+      { head: 'Proyek', cell: (r) => r.project_name ?? '—' },
+      { head: 'Total Terbayar', align: 'right', cell: (r) => <span className="text-blue-600 font-medium">{fmt(r.amount ?? 0)}</span> },
+    ],
+  },
+  outstanding: {
+    title: 'Sisa Piutang', empty: 'Tidak ada piutang pada lokasi ini.', noun: 'pembeli',
+    cols: [
+      { head: 'Pembeli', cell: (r) => <span className="font-medium text-slate-900">{r.name}</span> },
+      { head: 'Proyek', cell: (r) => r.project_name ?? '—' },
+      { head: 'Unit', cell: (r) => r.unit_label ?? '—' },
+      { head: 'Kontrak', align: 'right', cell: (r) => <span className="text-slate-500">{fmt(r.secondary ?? 0)}</span> },
+      { head: 'Terbayar', align: 'right', cell: (r) => <span className="text-emerald-600">{fmt(r.tertiary ?? 0)}</span> },
+      { head: 'Sisa', align: 'right', cell: (r) => <span className="text-amber-600 font-medium">{fmt(r.amount ?? 0)}</span> },
+    ],
+  },
+  retention: {
+    title: 'Retensi Bank', empty: 'Tidak ada retensi tertahan pada lokasi ini.', noun: 'KPR',
+    cols: [
+      { head: 'Pembeli', cell: (r) => <span className="font-medium text-slate-900">{r.name}</span> },
+      { head: 'Bank', cell: (r) => r.bank_name ?? '—' },
+      { head: 'Plafon Akad', align: 'right', cell: (r) => <span className="text-slate-500">{fmt(r.secondary ?? 0)}</span> },
+      { head: 'Sudah Cair', align: 'right', cell: (r) => <span className="text-emerald-600">{fmt(r.tertiary ?? 0)}</span> },
+      { head: 'Sisa Retensi', align: 'right', cell: (r) => <span className="text-amber-600 font-medium">{fmt(r.amount ?? 0)}</span> },
+    ],
+  },
+  overdue: {
+    title: 'Termin Terlambat', empty: 'Tidak ada termin terlambat pada lokasi ini.', noun: 'termin',
+    cols: [
+      { head: 'Pembeli', cell: (r) => <span className="font-medium text-slate-900">{r.name}</span> },
+      { head: 'Proyek', cell: (r) => r.project_name ?? '—' },
+      { head: 'Termin', cell: (r) => r.source_label ?? '—' },
+      { head: 'Jatuh Tempo', cell: (r) => fmtDateID(r.date) },
+      { head: 'Terlambat', cell: (r) => <span className="text-red-600 font-medium">{r.note}</span> },
+      { head: 'Jumlah', align: 'right', cell: (r) => <span className="text-slate-700 font-medium">{fmt(r.amount ?? 0)}</span> },
+    ],
+  },
 }
 
 function FinanceStrip() {
@@ -472,6 +543,9 @@ function FinanceStrip() {
   const [month, setMonth] = useState(months[0].value)
   const [data, setData] = useState<FinanceSummary | null>(null)
   const [busy, setBusy] = useState(false)
+  const [kind, setKind] = useState<string | null>(null)
+  const [rows, setRows] = useState<FinanceDetailRow[]>([])
+  const [rowsLoading, setRowsLoading] = useState(false)
 
   useEffect(() => { propertyService.listProjects({ size: 500 }).then((r) => setProjects(r.items)).catch(() => {}) }, [])
   useEffect(() => {
@@ -480,7 +554,15 @@ function FinanceStrip() {
       .then(setData).catch(() => {}).finally(() => setBusy(false))
   }, [projectId, month])
 
+  function openDetail(k: string) {
+    setKind(k); setRows([]); setRowsLoading(true)
+    reportingService.financeDetail(k, { project_id: projectId || undefined, month })
+      .then(setRows).catch(() => {}).finally(() => setRowsLoading(false))
+  }
+
   const monthLabel = months.find((m) => m.value === month)?.label ?? month
+  const locLabel = projectId ? (projects.find((p) => p.id === projectId)?.name ?? 'Lokasi') : 'Semua lokasi'
+  const cfg = kind ? FIN_DETAIL[kind] : null
   return (
     <div className="card p-4 sm:p-5">
       <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
@@ -497,12 +579,43 @@ function FinanceStrip() {
         </div>
       </div>
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-        <FinanceCol icon={Wallet} color="text-emerald-500" bg="bg-emerald-50" label={`Uang Masuk · ${monthLabel}`} value={fmt(data?.cash_in)} />
-        <FinanceCol icon={TrendingUp} color="text-amber-500" bg="bg-amber-50" label="Sisa Piutang · seluruh" value={fmt(data?.outstanding)} />
-        <FinanceCol icon={PiggyBank} color="text-orange-500" bg="bg-orange-50" label="Retensi Bank · seluruh" value={fmt(data?.retention)} />
-        <FinanceCol icon={CheckCircle2} color="text-blue-500" bg="bg-blue-50" label="Total Terbayar · seluruh" value={fmt(data?.total_paid)} />
-        <FinanceCol icon={AlertTriangle} color="text-red-500" bg="bg-red-50" label="Termin Terlambat" value={String(data?.overdue_count ?? 0)} />
+        <FinanceCol icon={Wallet} color="text-emerald-500" bg="bg-emerald-50" label={`Uang Masuk · ${monthLabel}`} value={fmt(data?.cash_in)} onClick={() => openDetail('cash_in')} disabled={!data?.cash_in} />
+        <FinanceCol icon={TrendingUp} color="text-amber-500" bg="bg-amber-50" label="Sisa Piutang · seluruh" value={fmt(data?.outstanding)} onClick={() => openDetail('outstanding')} disabled={!data?.outstanding} />
+        <FinanceCol icon={PiggyBank} color="text-orange-500" bg="bg-orange-50" label="Retensi Bank · seluruh" value={fmt(data?.retention)} onClick={() => openDetail('retention')} disabled={!data?.retention} />
+        <FinanceCol icon={CheckCircle2} color="text-blue-500" bg="bg-blue-50" label="Total Terbayar · seluruh" value={fmt(data?.total_paid)} onClick={() => openDetail('paid')} disabled={!data?.total_paid} />
+        <FinanceCol icon={AlertTriangle} color="text-red-500" bg="bg-red-50" label="Termin Terlambat" value={String(data?.overdue_count ?? 0)} onClick={() => openDetail('overdue')} disabled={!data?.overdue_count} />
       </div>
+
+      <Modal open={kind != null} onClose={() => setKind(null)}
+        title={cfg ? `${cfg.title} — ${locLabel}${kind === 'cash_in' ? ` · ${monthLabel}` : ''}` : ''} size="lg">
+        {rowsLoading ? (
+          <div className="py-10 text-center text-slate-400"><Loader2 size={18} className="inline animate-spin" /></div>
+        ) : !cfg || rows.length === 0 ? (
+          <p className="py-8 text-center text-sm text-slate-400">{cfg?.empty ?? 'Tidak ada data.'}</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <p className="text-xs text-slate-400 mb-2">{rows.length} {cfg.noun}</p>
+            <table className="w-full text-sm min-w-[640px]">
+              <thead className="bg-slate-50 border-b border-slate-200">
+                <tr>
+                  {cfg.cols.map((c, i) => (
+                    <th key={i} className={`px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap ${c.align === 'right' ? 'text-right' : c.align === 'center' ? 'text-center' : 'text-left'}`}>{c.head}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {rows.map((r, ri) => (
+                  <tr key={ri} className="hover:bg-slate-50">
+                    {cfg.cols.map((c, ci) => (
+                      <td key={ci} className={`px-3 py-2 whitespace-nowrap ${c.align === 'right' ? 'text-right' : c.align === 'center' ? 'text-center' : 'text-left text-slate-600'}`}>{c.cell(r)}</td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Modal>
     </div>
   )
 }

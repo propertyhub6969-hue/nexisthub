@@ -1540,6 +1540,149 @@ async def finance_summary(
                           total_paid=total_paid, overdue_count=overdue_count, retention=retention)
 
 
+# ── Rincian tiap tile strip Keuangan (dialog saat angka diklik) ──
+class FinanceDetailRow(BaseModel):
+    name: str                             # pembeli / (untuk cash_in) pembeli
+    project_name: Optional[str] = None
+    unit_label: Optional[str] = None
+    bank_name: Optional[str] = None
+    date: Optional[date] = None
+    source_label: Optional[str] = None    # Pembeli/Bank (cash_in) atau nama termin (overdue)
+    amount: Optional[Decimal] = None      # angka utama baris
+    secondary: Optional[Decimal] = None   # kontrak (outstanding) / plafon (retention)
+    tertiary: Optional[Decimal] = None    # terbayar (outstanding) / cair (retention)
+    note: Optional[str] = None            # "N hari" (overdue)
+
+
+@router.get("/finance-detail", response_model=list[FinanceDetailRow])
+async def finance_detail(
+    kind: str = Query(..., description="cash_in|paid|outstanding|retention|overdue"),
+    project_id: Optional[uuid.UUID] = Query(None),
+    month: Optional[str] = Query(None, description="YYYY-MM; hanya utk cash_in"),
+    ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db),
+):
+    """Daftar data di balik tiap tile strip Keuangan. Filter lokasi & bulan sama dgn
+    finance-summary (cash_in ikut bulan; sisanya akumulatif, hanya lokasi)."""
+    t = ctx.tenant_id
+    today = date.today()
+    _notdel_p = Payment.is_deleted == False  # noqa: E712
+    _approved = Payment.approval_status == PaymentApprovalStatus.APPROVED
+    client_conds = [Client.tenant_id == t, Client.is_deleted == False]  # noqa: E712
+    if project_id is not None:
+        client_conds.append(Client.project_id == project_id)
+    client_ids_sq = select(Client.id).where(*client_conds)
+    proj_name = dict((await db.execute(
+        select(Project.id, Project.name).where(Project.tenant_id == t))).all())
+
+    if kind == "cash_in":
+        try:
+            y, m = (int(x) for x in month.split("-")) if month else (today.year, today.month)
+            mstart = date(y, m, 1)
+        except (ValueError, AttributeError):
+            mstart = today.replace(day=1); y, m = mstart.year, mstart.month
+        mend = date(y + 1, 1, 1) if m == 12 else date(y, m + 1, 1)
+        rows = (await db.execute(
+            select(Payment.payment_date, Payment.amount, Payment.source, Client.full_name, Client.project_id)
+            .join(Client, Client.id == Payment.client_id)
+            .where(Payment.tenant_id == t, _notdel_p, _approved,
+                   Payment.payment_date >= mstart, Payment.payment_date < mend,
+                   Payment.client_id.in_(client_ids_sq))
+            .order_by(Payment.payment_date.desc())
+        )).all()
+        return [FinanceDetailRow(
+            name=fn or "—", project_name=proj_name.get(pid), date=pdate,
+            source_label="Bank" if src == PaymentSource.BANK else "Pembeli",
+            amount=Decimal(amt or 0)) for pdate, amt, src, fn, pid in rows]
+
+    if kind == "paid":
+        rows = (await db.execute(
+            select(Client.full_name, Client.project_id, func.coalesce(func.sum(Payment.amount), 0))
+            .join(Payment, Payment.client_id == Client.id)
+            .where(*client_conds, _notdel_p, _approved)
+            .group_by(Client.id, Client.full_name, Client.project_id)
+            .order_by(func.coalesce(func.sum(Payment.amount), 0).desc())
+        )).all()
+        return [FinanceDetailRow(name=fn or "—", project_name=proj_name.get(pid), amount=Decimal(tot or 0))
+                for fn, pid, tot in rows if Decimal(tot or 0) > 0]
+
+    if kind == "outstanding":
+        oc = [*client_conds, Client.status != ClientStatus.INACTIVE]
+        crows = (await db.execute(
+            select(Client.id, Client.full_name, Client.project_id, Client.unit_id, Client.contract_value).where(*oc)
+        )).all()
+        cids = [r[0] for r in crows]
+        paid_map = {}
+        if cids:
+            prows = (await db.execute(
+                select(Payment.client_id, func.coalesce(func.sum(Payment.amount), 0)).where(
+                    Payment.tenant_id == t, _notdel_p, _approved, Payment.client_id.in_(cids)
+                ).group_by(Payment.client_id)
+            )).all()
+            paid_map = {cid: Decimal(v) for cid, v in prows}
+        unit_ids = [r[3] for r in crows if r[3]]
+        unit_map = {}
+        if unit_ids:
+            urows = (await db.execute(
+                select(Unit.id, Unit.block, Unit.unit_number).where(Unit.id.in_(unit_ids)))).all()
+            unit_map = {uid: "-".join(x for x in [b, n] if x) or None for uid, b, n in urows}
+        out = []
+        for cid, fn, pid, uid, contract in crows:
+            paid = paid_map.get(cid, Decimal(0))
+            rem = Decimal(contract or 0) - paid
+            if rem > 0:
+                out.append(FinanceDetailRow(
+                    name=fn or "—", project_name=proj_name.get(pid), unit_label=unit_map.get(uid),
+                    amount=rem, secondary=Decimal(contract or 0), tertiary=paid))
+        out.sort(key=lambda r: r.amount or Decimal(0), reverse=True)
+        return out
+
+    if kind == "retention":
+        kpr_rows = (await db.execute(
+            select(KprApplication.id, KprApplication.plafond, Client.full_name, Bank.name)
+            .join(Client, Client.id == KprApplication.client_id)
+            .outerjoin(Bank, Bank.id == KprApplication.bank_id)
+            .where(KprApplication.tenant_id == t, KprApplication.is_deleted == False,  # noqa: E712
+                   KprApplication.stage.in_((KprStage.AKAD_KREDIT, KprStage.PENCAIRAN)),
+                   KprApplication.plafond.isnot(None), KprApplication.plafond > 0,
+                   KprApplication.client_id.in_(client_ids_sq))
+        )).all()
+        disbursed_by_kpr = {}
+        if kpr_rows:
+            kpr_ids = [r[0] for r in kpr_rows]
+            drows = (await db.execute(
+                select(Payment.kpr_id, func.coalesce(func.sum(Payment.amount), 0)).where(
+                    Payment.tenant_id == t, _notdel_p, _approved, Payment.kpr_id.in_(kpr_ids)
+                ).group_by(Payment.kpr_id)
+            )).all()
+            disbursed_by_kpr = {kid: Decimal(v) for kid, v in drows}
+        out = []
+        for kid, plaf, fn, bname in kpr_rows:
+            disb = disbursed_by_kpr.get(kid, Decimal(0))
+            ret = Decimal(plaf or 0) - disb
+            if ret > 0:
+                out.append(FinanceDetailRow(name=fn or "—", bank_name=bname or "Tanpa Bank",
+                                            amount=ret, secondary=Decimal(plaf or 0), tertiary=disb))
+        out.sort(key=lambda r: r.amount or Decimal(0), reverse=True)
+        return out
+
+    if kind == "overdue":
+        rows = (await db.execute(
+            select(PaymentSchedule.due_date, PaymentSchedule.amount, PaymentSchedule.label,
+                   Client.full_name, Client.project_id)
+            .join(Client, Client.id == PaymentSchedule.client_id)
+            .where(PaymentSchedule.tenant_id == t, PaymentSchedule.is_deleted == False,  # noqa: E712
+                   PaymentSchedule.status == ScheduleStatus.PENDING,
+                   PaymentSchedule.due_date < today,
+                   PaymentSchedule.client_id.in_(client_ids_sq))
+            .order_by(PaymentSchedule.due_date.asc())
+        )).all()
+        return [FinanceDetailRow(
+            name=fn or "—", project_name=proj_name.get(pid), date=due, source_label=label,
+            amount=Decimal(amt or 0), note=f"{(today - due).days} hari") for due, amt, label, fn, pid in rows]
+
+    raise HTTPException(status_code=400, detail="kind tidak dikenal")
+
+
 # ── Rincian pengajuan KPR per proyek (utk dialog klik angka SPPR di dashboard) ──
 _KPR_STAGE_LABEL = {
     KprStage.COLLECT_BERKAS: "Collect Berkas",
