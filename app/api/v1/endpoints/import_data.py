@@ -6,6 +6,7 @@ Pembeli & Pembayaran menyusul.
 """
 import io
 import os
+import re
 import uuid
 import zipfile
 import mimetypes
@@ -869,17 +870,56 @@ def _classify_docs(rows, proj_by_name, unit_by_key, unit_by_pu, existing):
             parsed.append((rnum, "error", None, None, ImportRow(row=rnum, action="error", label=label, errors=errors)))
             continue
 
-        payload = {"unit_id": unit_id, "doc_type": canon, "name": (str(d["doc_number"]).strip() if d["doc_number"] not in (None, "") else None),
+        payload = {"unit_id": unit_id, "unit_number": unum, "doc_type": canon,
+                   "name": (str(d["doc_number"]).strip() if d["doc_number"] not in (None, "") else None),
                    "doc_date": ddate, "status": st, "land_area": la, "address": addr, "expiry_date": edate, "file_name": fname}
         key = (unit_id, canon)
         ex = existing.get(key) or seen.get(key)
-        note = (f"Lampirkan: {fname}" if fname else "Metadata saja")
+        note = (f"Lampirkan: {fname}" if fname else "Metadata (file dicocokkan dari ZIP via nomor unit)")
         if ex is not None:
             parsed.append((rnum, "update", payload, ex, ImportRow(row=rnum, action="update", label=label, note=note)))
         else:
             seen[key] = True
             parsed.append((rnum, "insert", payload, None, ImportRow(row=rnum, action="insert", label=label, note=note)))
     return parsed
+
+
+def _build_automatch_index(zip_names):
+    """Dari basename→[fullname] bikin indeks utk auto-match by nomor unit.
+    stem_index: stem-nama-file (persis) → set(fullname); token_index: token dlm nama → set(fullname).
+    Angka dinormalkan (001 ↔ 1) supaya '001.pdf' cocok ke unit '1' dan sebaliknya."""
+    stem_index, token_index = {}, {}
+    for base, fulls in zip_names.items():
+        stem = os.path.splitext(base)[0]
+        stem_keys = {stem}
+        if stem.isdigit():
+            stem_keys.add(str(int(stem)))
+        for k in stem_keys:
+            stem_index.setdefault(k, set()).update(fulls)
+        for tok in re.split(r"[^a-z0-9]+", stem):
+            if not tok:
+                continue
+            token_index.setdefault(tok, set()).update(fulls)
+            if tok.isdigit():
+                token_index.setdefault(str(int(tok)), set()).update(fulls)
+    return stem_index, token_index
+
+
+def _match_files_for_unit(unum: str, stem_index, token_index):
+    """Cari fullname file utk nomor unit ini. Prioritas: stem = nomor unit; fallback: token."""
+    if not unum:
+        return []
+    cands = {unum.lower()}
+    if unum.isdigit():
+        cands.add(str(int(unum)))
+    hits = set()
+    for c in cands:
+        hits |= stem_index.get(c, set())
+    if hits:
+        return list(hits)
+    for c in cands:
+        hits |= token_index.get(c, set())
+    return list(hits)
 
 
 def _read_zip_names(archive_bytes: Optional[bytes]):
@@ -926,6 +966,7 @@ async def commit_documents(
     arc = await archive.read() if archive is not None else None
     zf = zipfile.ZipFile(io.BytesIO(arc)) if arc else None
     zip_names = _read_zip_names(arc)
+    stem_index, token_index = _build_automatch_index(zip_names) if zf else ({}, {})
     proj_by_name, unit_by_key, unit_by_pu, existing = await _load_doc_maps(db, ctx.tenant_id)
     # project_id tiap unit (utk isi Document.project_id)
     unit_pid = {}
@@ -965,31 +1006,50 @@ async def commit_documents(
                 Unit.id == doc.unit_id, Unit.tenant_id == ctx.tenant_id))).scalar_one_or_none()
             if u is not None:
                 u.land_area = payload["land_area"]
-        # lampirkan file dari ZIP (dicek di sini — pratinjau tak perlu ZIP). Metadata tetap tersimpan
-        # walau file tak ada; masalah file jadi CATATAN per-baris, bukan menggagalkan baris.
+        # ── lampirkan file dari ZIP ──
+        # Nama File diisi → pakai itu. Kosong → AUTO-MATCH via nomor unit (nama file = nomor unit).
+        # Metadata tetap tersimpan walau file tak ada; masalah file = CATATAN per-baris (tak menggagalkan).
+        async def _attach(full, suffix):
+            data = zf.read(full)
+            if len(data) > _MAX_FILE_BYTES:
+                rowres.note = (rowres.note or "") + " — file >10MB dilewati"
+                return False
+            fn = os.path.basename(full)
+            key_obj = storage.build_key(ctx.tenant_id, "documents", doc.id, fn)
+            await storage.put(key_obj, data, mimetypes.guess_type(fn)[0])
+            doc.file_key = key_obj
+            doc.file_data = None
+            doc.file_name = fn
+            doc.file_type = mimetypes.guess_type(fn)[0] or "application/octet-stream"
+            doc.file_size = len(data)
+            rowres.note = (rowres.note or "") + suffix
+            return True
+
         fname = payload["file_name"]
         if fname:
-            hit = zip_names.get(os.path.basename(fname).lower())
             if not zf:
                 rowres.note = (rowres.note or "") + " — ZIP tak diunggah, file dilewati"
-            elif hit is None:
-                rowres.note = (rowres.note or "") + f" — file '{fname}' tak ada di ZIP"; missing += 1
-            elif len(hit) > 1:
-                rowres.note = (rowres.note or "") + f" — nama file '{fname}' dobel di ZIP"; missing += 1
             else:
-                data = zf.read(hit[0])
-                if len(data) > _MAX_FILE_BYTES:
-                    rowres.note = (rowres.note or "") + " — file >10MB dilewati"; missing += 1
-                else:
-                    fn = os.path.basename(fname)
-                    key_obj = storage.build_key(ctx.tenant_id, "documents", doc.id, fn)
-                    await storage.put(key_obj, data, mimetypes.guess_type(fn)[0])
-                    doc.file_key = key_obj
-                    doc.file_data = None
-                    doc.file_name = fn
-                    doc.file_type = mimetypes.guess_type(fn)[0] or "application/octet-stream"
-                    doc.file_size = len(data)
+                hit = zip_names.get(os.path.basename(fname).lower())
+                if hit is None:
+                    rowres.note = (rowres.note or "") + f" — file '{fname}' tak ada di ZIP"; missing += 1
+                elif len(hit) > 1:
+                    rowres.note = (rowres.note or "") + f" — nama file '{fname}' dobel di ZIP"; missing += 1
+                elif await _attach(hit[0], f" — file {os.path.basename(fname)} terlampir"):
                     attached += 1
+                else:
+                    missing += 1
+        elif zf is not None:
+            m = _match_files_for_unit(payload["unit_number"], stem_index, token_index)
+            if len(m) == 1:
+                if await _attach(m[0], f" — auto: {os.path.basename(m[0])}"):
+                    attached += 1
+                else:
+                    missing += 1
+            elif len(m) == 0:
+                rowres.note = (rowres.note or "") + f" — tak ada file utk unit {payload['unit_number']}"; missing += 1
+            else:
+                rowres.note = (rowres.note or "") + f" — {len(m)} file cocok utk unit {payload['unit_number']} (isi Nama File utk pastikan)"; missing += 1
     if inserted or updated:
         await record_audit(db, ctx.tenant_id, ctx.user_id, "IMPORT", "documents", uuid.UUID(batch_id),
                            new_data={"batch": batch_id, "inserted": inserted, "updated": updated})
@@ -1045,7 +1105,7 @@ def _build_doc_template(projects, docs) -> bytes:
         ("Cara kerja", "Isi manifest DOKUMEN (1 baris = 1 dokumen unit). Untuk melampirkan scan: tulis Nama File, kumpulkan semua file jadi 1 ZIP, upload manifest + ZIP. Nomor/tanggal saja tanpa file juga boleh (Nama File dikosongkan)."),
         ("Jenis Dokumen", "SHM · HGB · SLF · PBG (IMB) · PBB"),
         ("Kunci pencocokan", "Proyek + (Blok) + Nomor Unit + Jenis → dokumen unit diperbarui bila sudah ada, atau dibuat baru. Isi Blok bila nomor unit dobel antar-blok."),
-        ("Nama File", "Nama persis file di dalam ZIP (mis. Daiyan_036_SHM.pdf). Maks 10MB/file."),
+        ("Lampirkan scan (2 cara)", "OTOMATIS: beri nama file scan = NOMOR UNIT (mis. 001.pdf, 036.pdf), zip semua, kosongkan kolom 'Nama File' → sistem mencocokkan sendiri. MANUAL: isi kolom 'Nama File' dengan nama file persis di ZIP. Maks 10MB/file."),
         ("Kolom per jenis (isi yang relevan, sisanya kosong)",
          "Luas Tanah → SHM/HGB (ikut memperbarui LT unit) · Alamat Objek (NOP) → PBB · Masa Berlaku → SLF/PBG."),
         ("Status", "Belum · Proses · Terbit (default Terbit)"),

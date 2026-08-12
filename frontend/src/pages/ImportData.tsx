@@ -130,7 +130,7 @@ export default function ImportData() {
           {file && <p className="mt-2 text-xs text-slate-500 inline-flex items-center gap-1"><FileSpreadsheet size={13} /> {file.name}</p>}
           {cfg.archive && (
             <div className="mt-3 pt-3 border-t border-slate-100">
-              <p className="text-xs text-slate-500 mb-2">File scan (opsional) — kumpulkan semua PDF/JPG jadi <b>satu ZIP</b>, nama file harus sama dengan kolom "Nama File" di manifest.</p>
+              <p className="text-xs text-slate-500 mb-2">File scan (opsional) — kumpulkan semua PDF/JPG jadi <b>satu ZIP</b>. Cara mudah: beri nama file = <b>nomor unit</b> (mis. <code>001.pdf</code>) &amp; kosongkan kolom "Nama File" → dicocokkan otomatis. Atau isi kolom "Nama File" manual.</p>
               <input ref={archiveRef} type="file" accept=".zip" className="hidden" onChange={(e) => onPickArchive(e.target.files?.[0] ?? null)} />
               <button onClick={() => archiveRef.current?.click()} disabled={previewing} className="btn-secondary text-sm inline-flex items-center gap-2">
                 <Upload size={15} /> Pilih File ZIP
