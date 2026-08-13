@@ -1,5 +1,5 @@
 import api from './api'
-import type { DashboardStats, KprRejectionReport, CashflowReport, SalesRecapReport, AgingReport, SalesMonthly, ConstructionProgressReport, MonthlyTaxReport, MonthlyTaxShareLink, ShareLinkCreate, TaxChecklistReport, ProjectProfitReport, ProjectProfitDetail, KprSummaryReport, FinanceSummary, KprDetailRow, UnitDetailRow, BankRetentionReport, FinanceDetailRow } from '../types'
+import type { DashboardStats, KprRejectionReport, CashflowReport, SalesRecapReport, AgingReport, SalesMonthly, ConstructionProgressReport, MonthlyTaxReport, MonthlyTaxShareLink, ShareLinkCreate, TaxChecklistReport, ProjectProfitReport, ProjectProfitDetail, KprSummaryReport, FinanceSummary, KprDetailRow, UnitDetailRow, BankRetentionReport, FinanceDetailRow, CashProjection } from '../types'
 
 export const reportingService = {
   async dashboard(): Promise<DashboardStats> {
@@ -49,6 +49,11 @@ export const reportingService = {
 
   async bankRetention(): Promise<BankRetentionReport> {
     const { data } = await api.get<BankRetentionReport>('/reporting/bank-retention')
+    return data
+  },
+
+  async cashProjection(months = 6): Promise<CashProjection> {
+    const { data } = await api.get<CashProjection>('/reporting/cash-projection', { params: { months } })
     return data
   },
 

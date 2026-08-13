@@ -20,8 +20,9 @@ from app.models.kpr import KprApplication, KprStage, Bank
 from app.models.construction import UnitConstruction, ConstructionStage, ConstructionProgressLog
 from app.models.tax import TaxRecord, TaxType, TaxStatus, MonthlyTaxShareLink, NotaryFee
 from app.models.document import Document
-from app.models.cashbook import CashBookEntry, AccountCategory, CashDirection
+from app.models.cashbook import CashBookEntry, AccountCategory, CashDirection, CashAccount
 from app.models.expense import Expense, ExpenseCategory
+from app.models.contractor import ContractorContract
 
 _EXPENSE_LABEL = {
     ExpenseCategory.MATERIAL: "Material", ExpenseCategory.UPAH: "Upah",
@@ -1914,4 +1915,125 @@ async def bank_retention(
         total_disbursed=sum((r.disbursed for r in rows), Decimal(0)),
         total_retention=sum((r.retention for r in rows), Decimal(0)),
         banks=rows,
+    )
+
+
+# ═══════════════════════ PROYEKSI KAS (cash forecast) ═══════════════════════
+class CashProjMonth(BaseModel):
+    month: str            # "YYYY-MM"
+    termin_in: Decimal    # perkiraan termin pembeli jatuh tempo bulan ini (sisa)
+    count: int
+
+
+class CashProjection(BaseModel):
+    current_cash: Decimal          # saldo semua rekening sekarang
+    overdue_termin: Decimal        # termin sudah lewat jatuh tempo, belum lunas (masih ditagih)
+    months: list[CashProjMonth]    # perkiraan masuk N bulan ke depan
+    beyond_termin: Decimal         # termin jatuh tempo setelah horizon
+    unscheduled_termin: Decimal    # termin tanpa tanggal jatuh tempo
+    retention_expected: Decimal    # retensi bank belum cair (akan masuk, tak terjadwal)
+    expenses_unpaid: Decimal       # biaya menunggu bayar (kewajiban keluar)
+    contractor_remaining: Decimal  # sisa nilai kontrak borongan (komitmen, informasi)
+    projected_liquidity: Decimal   # saldo + semua akan-masuk − biaya menunggu bayar
+
+
+def _month_key(d: date) -> str:
+    return f"{d.year:04d}-{d.month:02d}"
+
+
+@router.get("/cash-projection", response_model=CashProjection)
+async def cash_projection(
+    months: int = Query(6, ge=1, le=24),
+    ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db),
+):
+    """Proyeksi likuiditas: saldo kas sekarang + perkiraan masuk (termin pembeli per bulan +
+    retensi bank) − kewajiban (biaya menunggu bayar). Menjawab 'kas cukup nggak bulan depan?'."""
+    t = ctx.tenant_id
+    today = date.today()
+    _approved = Payment.approval_status == PaymentApprovalStatus.APPROVED
+
+    # ── saldo kas sekarang (total semua rekening; transfer antar-rekening saling meniadakan) ──
+    opening = Decimal(await db.scalar(select(func.coalesce(func.sum(CashAccount.opening_balance), 0)).where(
+        CashAccount.tenant_id == t, CashAccount.is_deleted == False)) or 0)  # noqa: E712
+    cash_in = Decimal(await db.scalar(select(func.coalesce(func.sum(CashBookEntry.amount), 0)).where(
+        CashBookEntry.tenant_id == t, CashBookEntry.direction == CashDirection.IN)) or 0)
+    cash_out = Decimal(await db.scalar(select(func.coalesce(func.sum(CashBookEntry.amount), 0)).where(
+        CashBookEntry.tenant_id == t, CashBookEntry.direction == CashDirection.OUT)) or 0)
+    current_cash = opening + cash_in - cash_out
+
+    # ── termin pembeli yang belum lunas (sisa = nominal − sudah dibayar approved) ──
+    sched_rows = (await db.execute(
+        select(PaymentSchedule.id, PaymentSchedule.due_date, PaymentSchedule.amount).where(
+            PaymentSchedule.tenant_id == t, PaymentSchedule.is_deleted == False,  # noqa: E712
+            PaymentSchedule.status == ScheduleStatus.PENDING))).all()
+    paid_rows = (await db.execute(
+        select(Payment.schedule_id, func.coalesce(func.sum(Payment.amount), 0)).where(
+            Payment.tenant_id == t, Payment.is_deleted == False, _approved,  # noqa: E712
+            Payment.schedule_id.isnot(None)).group_by(Payment.schedule_id))).all()
+    paid_map = {sid: Decimal(v) for sid, v in paid_rows}
+
+    # horizon: N bulan kalender ke depan (mulai bulan berjalan)
+    horizon_keys = []
+    y, m = today.year, today.month
+    for _ in range(months):
+        horizon_keys.append(f"{y:04d}-{m:02d}")
+        m += 1
+        if m > 12:
+            m = 1; y += 1
+    bucket = {k: [Decimal(0), 0] for k in horizon_keys}
+    overdue = Decimal(0); beyond = Decimal(0); unscheduled = Decimal(0)
+    for sid, due, amt in sched_rows:
+        remaining = Decimal(amt or 0) - paid_map.get(sid, Decimal(0))
+        if remaining <= 0:
+            continue
+        if due is None:
+            unscheduled += remaining
+        elif due < today:
+            overdue += remaining
+        else:
+            k = _month_key(due)
+            if k in bucket:
+                bucket[k][0] += remaining; bucket[k][1] += 1
+            else:
+                beyond += remaining
+    months_out = [CashProjMonth(month=k, termin_in=bucket[k][0], count=bucket[k][1]) for k in horizon_keys]
+
+    # ── retensi bank belum cair (akan masuk, tak terjadwal) ──
+    kpr_rows = (await db.execute(
+        select(KprApplication.id, KprApplication.plafond).where(
+            KprApplication.tenant_id == t, KprApplication.is_deleted == False,  # noqa: E712
+            KprApplication.stage.in_((KprStage.AKAD_KREDIT, KprStage.PENCAIRAN)),
+            KprApplication.plafond.isnot(None), KprApplication.plafond > 0))).all()
+    retention_expected = Decimal(0)
+    if kpr_rows:
+        kids = [r[0] for r in kpr_rows]
+        disb = {kid: Decimal(v) for kid, v in (await db.execute(
+            select(Payment.kpr_id, func.coalesce(func.sum(Payment.amount), 0)).where(
+                Payment.tenant_id == t, Payment.is_deleted == False, _approved,  # noqa: E712
+                Payment.kpr_id.in_(kids)).group_by(Payment.kpr_id))).all()}
+        for kid, plaf in kpr_rows:
+            r = Decimal(plaf or 0) - disb.get(kid, Decimal(0))
+            if r > 0:
+                retention_expected += r
+
+    # ── kewajiban keluar ──
+    expenses_unpaid = Decimal(await db.scalar(select(func.coalesce(func.sum(Expense.amount), 0)).where(
+        Expense.tenant_id == t, Expense.is_deleted == False, Expense.is_paid == False)) or 0)  # noqa: E712
+    # komitmen kontraktor: Σ nilai kontrak − Σ biaya bertaut kontrak (informasi; tak masuk net krn timing tak pasti)
+    contract_total = Decimal(await db.scalar(select(func.coalesce(func.sum(ContractorContract.total_value), 0)).where(
+        ContractorContract.tenant_id == t, ContractorContract.is_deleted == False)) or 0)  # noqa: E712
+    contract_paid = Decimal(await db.scalar(select(func.coalesce(func.sum(Expense.amount), 0)).where(
+        Expense.tenant_id == t, Expense.is_deleted == False, Expense.contract_id.isnot(None))) or 0)  # noqa: E712
+    contractor_remaining = contract_total - contract_paid
+    if contractor_remaining < 0:
+        contractor_remaining = Decimal(0)
+
+    total_in = overdue + sum((mm.termin_in for mm in months_out), Decimal(0)) + retention_expected
+    projected = current_cash + total_in - expenses_unpaid
+
+    return CashProjection(
+        current_cash=current_cash, overdue_termin=overdue, months=months_out, beyond_termin=beyond,
+        unscheduled_termin=unscheduled, retention_expected=retention_expected,
+        expenses_unpaid=expenses_unpaid, contractor_remaining=contractor_remaining,
+        projected_liquidity=projected,
     )

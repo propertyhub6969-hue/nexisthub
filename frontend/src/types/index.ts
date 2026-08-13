@@ -941,6 +941,24 @@ export interface CashflowBreakdownItem {
   label: string
   total: number
 }
+export interface CashProjMonth {
+  month: string
+  termin_in: number
+  count: number
+}
+
+export interface CashProjection {
+  current_cash: number
+  overdue_termin: number
+  months: CashProjMonth[]
+  beyond_termin: number
+  unscheduled_termin: number
+  retention_expected: number
+  expenses_unpaid: number
+  contractor_remaining: number
+  projected_liquidity: number
+}
+
 export interface CashflowReport {
   total_contract: number
   from_buyer: number

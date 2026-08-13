@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import {
-  Loader2, Landmark, TrendingDown, CheckCircle2, XCircle, FileStack,
+  Loader2, Landmark, TrendingDown, TrendingUp, Scale, CheckCircle2, XCircle, FileStack,
   Wallet, Users, Building2, PiggyBank, HandCoins, Home, AlertTriangle, Clock, HardHat, CalendarClock, Receipt,
   Printer, FileDown, Share2, Copy, Trash2, Check, ExternalLink, Package, ChevronDown, ChevronRight,
 } from 'lucide-react'
@@ -14,7 +14,7 @@ import { useAuth } from '../context/AuthContext'
 import Modal from '../components/ui/Modal'
 import Badge from '../components/ui/Badge'
 import DateInput from '../components/ui/DateInput'
-import type { KprRejectionReport, CashflowReport, SalesRecapReport, AgingReport, ConstructionProgressReport, MonthlyTaxReport, MonthlyTaxShareLink, Project, TaxChecklistReport, TaxChecklistItem, TaxChecklistStatus, ProjectProfitReport, ProjectProfitDetail, BankRetentionReport } from '../types'
+import type { KprRejectionReport, CashflowReport, SalesRecapReport, AgingReport, ConstructionProgressReport, MonthlyTaxReport, MonthlyTaxShareLink, Project, TaxChecklistReport, TaxChecklistItem, TaxChecklistStatus, ProjectProfitReport, ProjectProfitDetail, BankRetentionReport, CashProjection } from '../types'
 
 const fmtRp = (n?: number | null) =>
   n == null ? '—' : new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(Number(n))
@@ -1274,11 +1274,96 @@ function BankRetentionTab() {
   )
 }
 
+// ═══════════════════════ PROYEKSI KAS ═══════════════════════
+function CashProjectionTab() {
+  const [d, setD] = useState<CashProjection | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  useEffect(() => {
+    reportingService.cashProjection(6).then(setD).catch(() => setError('Gagal memuat proyeksi kas.')).finally(() => setLoading(false))
+  }, [])
+
+  if (loading) return <div className="card p-12 text-center text-slate-400"><Loader2 size={20} className="inline animate-spin" /></div>
+  if (error) return <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-2">{error}</div>
+  if (!d) return null
+
+  const totalIn = Number(d.overdue_termin) + d.months.reduce((a, m) => a + Number(m.termin_in), 0) + Number(d.retention_expected)
+  // saldo proyeksi berjalan: mulai dari (kas − biaya menunggu bayar + termin terlambat + retensi), lalu +termin tiap bulan
+  let running = Number(d.current_cash) - Number(d.expenses_unpaid) + Number(d.overdue_termin) + Number(d.retention_expected)
+  const rows = d.months.map((m) => { running += Number(m.termin_in); return { ...m, saldo: running } })
+
+  return (
+    <div className="space-y-5">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <StatCard icon={<Wallet size={15} />} label="Saldo Kas Sekarang" value={fmtRp(d.current_cash)} />
+        <StatCard icon={<TrendingUp size={15} />} label="Akan Masuk (6 bln)" value={fmtRp(totalIn)} accent="text-emerald-600" hint="termin + retensi bank" />
+        <StatCard icon={<Receipt size={15} />} label="Biaya Menunggu Bayar" value={fmtRp(d.expenses_unpaid)} accent="text-red-600" />
+        <StatCard icon={<Scale size={15} />} label="Proyeksi Likuiditas" value={fmtRp(d.projected_liquidity)} accent={d.projected_liquidity >= 0 ? 'text-brand-700' : 'text-red-600'} hint="saldo + masuk − kewajiban" />
+      </div>
+
+      <div className="grid lg:grid-cols-2 gap-5">
+        {/* Rincian proyeksi */}
+        <div className="card p-5">
+          <h3 className="text-sm font-semibold text-slate-600 mb-3">Rincian Proyeksi Likuiditas</h3>
+          <div className="space-y-1.5 text-sm">
+            <Row label="Saldo kas sekarang" value={fmtRp(d.current_cash)} />
+            <Row label="+ Termin terlambat (masih ditagih)" value={fmtRp(d.overdue_termin)} pos />
+            <Row label="+ Termin jatuh tempo 6 bln" value={fmtRp(d.months.reduce((a, m) => a + Number(m.termin_in), 0))} pos />
+            <Row label="+ Retensi bank akan cair" value={fmtRp(d.retention_expected)} pos />
+            <Row label="− Biaya menunggu bayar" value={fmtRp(d.expenses_unpaid)} neg />
+            <div className="border-t border-slate-200 mt-1 pt-1.5">
+              <Row label="= Proyeksi likuiditas" value={fmtRp(d.projected_liquidity)} bold />
+            </div>
+          </div>
+          <div className="mt-3 text-[11px] text-slate-400 space-y-0.5">
+            {Number(d.beyond_termin) > 0 && <p>Termin jatuh tempo &gt; 6 bln: {fmtRp(d.beyond_termin)} (belum masuk hitungan).</p>}
+            {Number(d.unscheduled_termin) > 0 && <p>Termin tanpa tanggal: {fmtRp(d.unscheduled_termin)}.</p>}
+            {Number(d.contractor_remaining) > 0 && <p>Komitmen kontraktor (sisa nilai kontrak): {fmtRp(d.contractor_remaining)} — timing tak pasti, tak masuk net.</p>}
+          </div>
+        </div>
+
+        {/* Timeline bulanan */}
+        <div className="card overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-slate-50 border-b border-slate-200">
+              <tr>
+                {['Bulan', 'Termin Masuk', 'Jml', 'Saldo Kas Proyeksi'].map((h, i) => (
+                  <th key={i} className={`px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap ${i === 0 ? 'text-left' : i === 2 ? 'text-center' : 'text-right'}`}>{h}</th>))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {rows.map((m) => (
+                <tr key={m.month} className="hover:bg-slate-50">
+                  <td className="px-4 py-2.5 font-medium text-slate-800 whitespace-nowrap">{fmtMonth(m.month)}</td>
+                  <td className="px-4 py-2.5 text-right text-emerald-600">{Number(m.termin_in) ? fmtRp(m.termin_in) : '—'}</td>
+                  <td className="px-4 py-2.5 text-center text-slate-400">{m.count || '—'}</td>
+                  <td className={`px-4 py-2.5 text-right font-medium ${m.saldo >= 0 ? 'text-slate-800' : 'text-red-600'}`}>{fmtRp(m.saldo)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <p className="text-xs text-slate-400">Perkiraan masuk = sisa termin pembeli (jatuh tempo) + retensi bank belum cair. Kewajiban = biaya yang sudah divalidasi tapi menunggu dibayar. Ini indikator likuiditas, bukan angka pasti.</p>
+    </div>
+  )
+}
+
+function Row({ label, value, pos, neg, bold }: { label: string; value: string; pos?: boolean; neg?: boolean; bold?: boolean }) {
+  return (
+    <div className="flex items-center justify-between">
+      <span className={bold ? 'font-semibold text-slate-800' : 'text-slate-600'}>{label}</span>
+      <span className={`${bold ? 'font-bold text-brand-700' : pos ? 'text-emerald-600' : neg ? 'text-red-600' : 'text-slate-800'} font-medium whitespace-nowrap`}>{value}</span>
+    </div>
+  )
+}
+
 // ═══════════════════════ PAGE ═══════════════════════
 const TABS = [
   { key: 'cashflow', label: 'Arus Kas', desc: 'Kas masuk dari pembeli vs bank, plus piutang & retensi.' },
   { key: 'profit', label: 'Laba/Rugi Proyek', desc: 'Untung-rugi per proyek & margin per unit. Laporan operasional, bukan akuntansi formal.' },
   { key: 'retention', label: 'Retensi Bank', desc: 'Sisa dana yang masih ditahan tiap bank penyalur (plafon akad − sudah cair).' },
+  { key: 'projection', label: 'Proyeksi Kas', desc: 'Perkiraan likuiditas: saldo kas + termin & retensi yang akan masuk − biaya menunggu bayar.' },
   { key: 'sales', label: 'Rekap Penjualan', desc: 'Penjualan & kas masuk per proyek, status unit.' },
   { key: 'construction', label: 'Progres Konstruksi', desc: 'Progres pembangunan per proyek: tahap, % rata-rata, selesai & keterlambatan.' },
   { key: 'aging', label: 'Tunggakan', desc: 'Termin lewat jatuh tempo, dikelompokkan umur & per pembeli.' },
@@ -1291,7 +1376,7 @@ type TabKey = (typeof TABS)[number]['key']
 // Report dipecah per kategori (menu sidebar) — tiap kategori hanya menampilkan subset tab yang relevan.
 const CATEGORIES: Record<string, { label: string; tabs: TabKey[] }> = {
   pajak: { label: 'Report Pajak', tabs: ['tax', 'tax-checklist'] },
-  keuangan: { label: 'Report Keuangan', tabs: ['cashflow', 'profit', 'retention'] },
+  keuangan: { label: 'Report Keuangan', tabs: ['cashflow', 'profit', 'retention', 'projection'] },
   marketing: { label: 'Report Marketing', tabs: ['kpr', 'sales', 'aging'] },
   pembangunan: { label: 'Report Pembangunan', tabs: ['construction'] },
 }
@@ -1335,6 +1420,7 @@ export default function Reports() {
       {active.key === 'cashflow' && <CashflowTab />}
       {active.key === 'profit' && <ProjectProfitTab />}
       {active.key === 'retention' && <BankRetentionTab />}
+      {active.key === 'projection' && <CashProjectionTab />}
       {active.key === 'sales' && <SalesRecapTab />}
       {active.key === 'construction' && <ConstructionProgressTab />}
       {active.key === 'aging' && <AgingTab />}
