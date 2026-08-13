@@ -7,6 +7,7 @@ import {
 } from 'lucide-react'
 import { reportingService } from '../services/reporting'
 import { propertyService } from '../services/property'
+import { taxService } from '../services/tax'
 import { printMonthlyTax, downloadMonthlyTaxCsv } from '../utils/monthlyTax'
 import { printCashflow } from '../utils/cashflow'
 import { printProjectProfit } from '../utils/profit'
@@ -14,7 +15,7 @@ import { useAuth } from '../context/AuthContext'
 import Modal from '../components/ui/Modal'
 import Badge from '../components/ui/Badge'
 import DateInput from '../components/ui/DateInput'
-import type { KprRejectionReport, CashflowReport, SalesRecapReport, AgingReport, ConstructionProgressReport, MonthlyTaxReport, MonthlyTaxShareLink, Project, TaxChecklistReport, TaxChecklistItem, TaxChecklistStatus, ProjectProfitReport, ProjectProfitDetail, BankRetentionReport, CashProjection, TaxEqReport } from '../types'
+import type { KprRejectionReport, CashflowReport, SalesRecapReport, AgingReport, ConstructionProgressReport, MonthlyTaxReport, MonthlyTaxShareLink, Project, TaxChecklistReport, TaxChecklistItem, TaxChecklistStatus, ProjectProfitReport, ProjectProfitDetail, BankRetentionReport, CashProjection, TaxEqReport, TaxDraftItem } from '../types'
 
 const fmtRp = (n?: number | null) =>
   n == null ? '—' : new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(Number(n))
@@ -1147,6 +1148,137 @@ function TaxStatusPill({ status }: { status?: string | null }) {
   return <span className={`inline-block rounded px-1.5 py-0.5 text-[11px] font-medium ${map[status] || 'bg-slate-100 text-slate-600'}`}>{status}</span>
 }
 
+type DraftRowState = TaxDraftItem & { selected: boolean; category: 'subsidi' | 'komersial' }
+
+function TaxDraftModal({ year, month, onClose, onDone }: { year: number; month: number; onClose: () => void; onDone: (r: { created: number; skipped: number }) => void }) {
+  const [ceiling, setCeiling] = useState(300000000)
+  const [rows, setRows] = useState<DraftRowState[]>([])
+  const [loading, setLoading] = useState(true)
+  const [includeBphtb, setIncludeBphtb] = useState(false)
+  const [committing, setCommitting] = useState(false)
+
+  const load = (cl: number) => {
+    setLoading(true)
+    taxService.taxDraftPreview(year, month || undefined, cl)
+      .then((p) => setRows(p.rows.map((r) => ({ ...r, selected: true, category: r.category_guess }))))
+      .catch(() => setRows([]))
+      .finally(() => setLoading(false))
+  }
+  useEffect(() => { load(ceiling) }, [])   // eslint-disable-line react-hooks/exhaustive-deps
+
+  // jenis yg akan dibuat utk 1 baris = yg belum ada (pph/ppn selalu; bphtb hanya bila dicentang global)
+  const typesFor = (r: DraftRowState): ('pph' | 'ppn' | 'bphtb')[] => {
+    const t: ('pph' | 'ppn' | 'bphtb')[] = []
+    if (!r.has_pph) t.push('pph')
+    if (!r.has_ppn) t.push('ppn')
+    if (includeBphtb && !r.has_bphtb) t.push('bphtb')
+    return t
+  }
+  const selected = rows.filter((r) => r.selected && typesFor(r).length > 0)
+  const totalRecords = selected.reduce((s, r) => s + typesFor(r).length, 0)
+
+  const commit = async () => {
+    setCommitting(true)
+    try {
+      const res = await taxService.taxDraftCommit(selected.map((r) => ({ client_id: r.client_id, category: r.category, types: typesFor(r) })))
+      onDone(res)
+    } catch { /* toast handled */ } finally { setCommitting(false) }
+  }
+
+  const setRow = (id: string, patch: Partial<DraftRowState>) => setRows((rs) => rs.map((r) => r.client_id === id ? { ...r, ...patch } : r))
+  const allChecked = rows.length > 0 && rows.every((r) => r.selected)
+
+  return (
+    <Modal open onClose={onClose} title="Buat draft catatan pajak otomatis" size="xl">
+      <div className="space-y-4">
+        <div className="rounded-lg bg-indigo-50 border border-indigo-100 text-indigo-900 text-xs px-3 py-2.5 leading-relaxed">
+          Membuat <b>kerangka</b> catatan pajak dari nilai AJB untuk pembeli yang belum lengkap: <b>PPh Final</b> (subsidi 1% / komersial 2,5%, status <i>Belum</i>),
+          <b> PPN</b> (subsidi <i>Bebas</i> / komersial <i>DTP</i>), opsional <b>BPHTB</b>. Nominal PPh dihitung otomatis; ID Billing & NTPN kamu lengkapi belakangan.
+          Yang sudah ada tidak diubah.
+        </div>
+
+        <div className="flex flex-wrap items-end gap-4">
+          <div>
+            <label className="block text-xs text-slate-500 mb-1">Plafon harga subsidi (tebakan kategori)</label>
+            <div className="flex items-center gap-2">
+              <input type="number" className="input w-44" value={ceiling} onChange={(e) => setCeiling(Number(e.target.value))} step={10000000} />
+              <button className="btn-secondary text-xs" onClick={() => load(ceiling)} disabled={loading}>Terapkan</button>
+            </div>
+            <p className="text-[11px] text-slate-400 mt-1">Harga ≤ plafon ditandai <b>subsidi</b>. Bisa diubah per baris.</p>
+          </div>
+          <label className="flex items-center gap-1.5 text-sm text-slate-600 cursor-pointer select-none pb-1">
+            <input type="checkbox" checked={includeBphtb} onChange={(e) => setIncludeBphtb(e.target.checked)} />
+            Sertakan draft BPHTB
+          </label>
+        </div>
+
+        {loading ? (
+          <div className="p-10 text-center text-slate-400"><Loader2 size={20} className="inline animate-spin" /></div>
+        ) : rows.length === 0 ? (
+          <div className="p-8 text-center text-slate-400 text-sm">Tidak ada pembeli yang perlu draft pada periode ini. 🎉</div>
+        ) : (
+          <div className="border border-slate-200 rounded-lg overflow-x-auto max-h-[46vh] overflow-y-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 border-b border-slate-200 sticky top-0">
+                <tr>
+                  <th className="px-3 py-2.5 w-10 text-center">
+                    <input type="checkbox" checked={allChecked} onChange={(e) => setRows((rs) => rs.map((r) => ({ ...r, selected: e.target.checked })))} />
+                  </th>
+                  {['Pembeli', 'Unit / Proyek', 'Nilai AJB', 'Kategori', 'Akan dibuat'].map((h, i) => (
+                    <th key={i} className={`px-3 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap ${i === 2 ? 'text-right' : 'text-left'}`}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {rows.map((r) => {
+                  const types = typesFor(r)
+                  return (
+                    <tr key={r.client_id} className={r.selected ? '' : 'opacity-50'}>
+                      <td className="px-3 py-2.5 text-center">
+                        <input type="checkbox" checked={r.selected} onChange={(e) => setRow(r.client_id, { selected: e.target.checked })} />
+                      </td>
+                      <td className="px-3 py-2.5 font-medium text-slate-900 whitespace-nowrap">{r.pembeli}</td>
+                      <td className="px-3 py-2.5 text-slate-500 whitespace-nowrap">{[r.unit_label, r.proyek].filter(Boolean).join(' · ') || '—'}</td>
+                      <td className="px-3 py-2.5 text-right tabular-nums text-slate-800">{fmtRp(r.nilai_ajb)}</td>
+                      <td className="px-3 py-2.5">
+                        <select className="input py-1 w-32" value={r.category} onChange={(e) => setRow(r.client_id, { category: e.target.value as 'subsidi' | 'komersial' })}>
+                          <option value="subsidi">Subsidi</option>
+                          <option value="komersial">Komersial</option>
+                        </select>
+                      </td>
+                      <td className="px-3 py-2.5">
+                        {types.length === 0 ? <span className="text-xs text-emerald-600">sudah lengkap</span> : (
+                          <div className="flex flex-wrap gap-1">
+                            {types.map((t) => (
+                              <span key={t} className="inline-block rounded bg-slate-100 text-slate-600 text-[11px] px-1.5 py-0.5 uppercase">
+                                {t}{t === 'pph' && r.nilai_ajb > 0 ? ` ${fmtRp(r.nilai_ajb * (r.category === 'subsidi' ? 0.01 : 0.025))}` : ''}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        <div className="flex items-center justify-between pt-1">
+          <span className="text-sm text-slate-500"><b className="text-slate-800">{selected.length}</b> pembeli · <b className="text-slate-800">{totalRecords}</b> catatan akan dibuat</span>
+          <div className="flex gap-2">
+            <button className="btn-secondary" onClick={onClose} disabled={committing}>Batal</button>
+            <button className="btn-primary" onClick={commit} disabled={committing || totalRecords === 0}>
+              {committing ? <Loader2 size={15} className="animate-spin" /> : <Check size={15} />} Buat Draft
+            </button>
+          </div>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
 function TaxEqualizationTab() {
   const now = new Date()
   const [year, setYear] = useState(now.getFullYear())
@@ -1155,14 +1287,17 @@ function TaxEqualizationTab() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [exporting, setExporting] = useState(false)
+  const [showDraft, setShowDraft] = useState(false)
+  const [notice, setNotice] = useState('')
 
-  useEffect(() => {
+  const reload = () => {
     setLoading(true); setError('')
     reportingService.taxEqualization(year, month || undefined)
       .then(setRep)
       .catch(() => setError('Gagal memuat ekualisasi pajak.'))
       .finally(() => setLoading(false))
-  }, [year, month])
+  }
+  useEffect(reload, [year, month])
 
   const doExport = async () => {
     setExporting(true)
@@ -1185,10 +1320,33 @@ function TaxEqualizationTab() {
             {MONTHS_ID.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
           </select>
         </div>
-        <button className="btn-secondary" onClick={doExport} disabled={exporting || !rep}>
-          {exporting ? <Loader2 size={15} className="animate-spin" /> : <FileDown size={15} />} Ekspor Excel
-        </button>
+        <div className="flex items-center gap-2">
+          <button className="btn-secondary" onClick={() => setShowDraft(true)}>
+            <FileStack size={15} /> Buat Draft Otomatis
+          </button>
+          <button className="btn-secondary" onClick={doExport} disabled={exporting || !rep}>
+            {exporting ? <Loader2 size={15} className="animate-spin" /> : <FileDown size={15} />} Ekspor Excel
+          </button>
+        </div>
       </div>
+
+      {notice && (
+        <div className="rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm px-4 py-2 flex items-center gap-2">
+          <CheckCircle2 size={16} /> {notice}
+        </div>
+      )}
+
+      {showDraft && (
+        <TaxDraftModal
+          year={year} month={month}
+          onClose={() => setShowDraft(false)}
+          onDone={(r) => {
+            setShowDraft(false)
+            setNotice(`${r.created} draft catatan pajak dibuat${r.skipped ? `, ${r.skipped} dilewati (sudah ada)` : ''}. Lengkapi ID Billing & NTPN di halaman pajak pembeli.`)
+            reload()
+          }}
+        />
+      )}
 
       <p className="text-xs text-slate-500 -mt-2">
         Pemeriksa pajak menyandingkan <b>Penjualan</b> (nilai AJB) dengan <b>DPP PPh Final</b> dan <b>DPP PPN</b> — ketiganya harus sama.

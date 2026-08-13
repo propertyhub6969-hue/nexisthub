@@ -17,7 +17,7 @@ from app.core.security import create_file_token
 from app.core.cashbook import sync_notary_fee_cashbook
 from app.api.deps import get_current_context, AuthContext
 from app.models.tax import (
-    Notary, TaxRecord, NotaryFee, NotaryShareLink, NotarySubmission,
+    Notary, TaxRecord, TaxType, TaxStatus, NotaryFee, NotaryShareLink, NotarySubmission,
     NotarySubmissionKind, NotarySubmissionStatus,
 )
 from app.models.marketing import Client, BalikNamaStatus
@@ -32,6 +32,7 @@ from app.schemas.tax import (
     NotarySubmissionResponse, NotarySubmissionRejectRequest,
     NotaryDebtFeeRow, NotaryDebtGroup, NotaryDebtResponse,
     NotaryWorklistRow, NotaryWorklistResponse, BalikNamaUpdate,
+    TaxDraftItem, TaxDraftPreview, TaxDraftCommit, TaxDraftResult,
 )
 
 router = APIRouter()
@@ -143,6 +144,106 @@ async def bulk_upsert_tax(payload: TaxBulkCreate, ctx: AuthContext = Depends(get
     order = {tid: i for i, tid in enumerate(ids)}
     rows.sort(key=lambda r: order[r.id])
     return rows
+
+
+# ── Draft generator pajak: scaffolding otomatis dari nilai AJB (backfill) ──
+# Hanya membuat KERANGKA (status BELUM/DTP/BEBAS) — bukan lapor/bayar. User lengkapi ID Billing/NTPN.
+_PPH_RATE = {"subsidi": Decimal("0.01"), "komersial": Decimal("0.025")}
+_DEFAULT_CEILING = Decimal("300000000")   # tebakan awal: harga ≤ plafon → subsidi (bisa dioverride user)
+
+
+async def _tax_draft_candidates(db, tenant_id, year: int, month, ceiling: Decimal):
+    from calendar import monthrange
+    if month:
+        start = date(year, month, 1); end = date(year, month, monthrange(year, month)[1])
+    else:
+        start = date(year, 1, 1); end = date(year, 12, 31)
+    from app.models.marketing import ClientStatus
+    clients = (await db.execute(select(Client).where(
+        Client.tenant_id == tenant_id, NOTDEL(Client), Client.status != ClientStatus.INACTIVE,
+        Client.contract_date >= start, Client.contract_date <= end,
+    ).order_by(Client.contract_date))).scalars().all()
+    proj_names = dict((await db.execute(select(Project.id, Project.name).where(Project.tenant_id == tenant_id))).all())
+    unit_ids = {c.unit_id for c in clients if c.unit_id}
+    units = {u.id: u for u in (await db.execute(select(Unit).where(Unit.id.in_(unit_ids)))).scalars().all()} if unit_ids else {}
+    cids = [c.id for c in clients]
+    tax_rows = (await db.execute(select(TaxRecord).where(
+        TaxRecord.tenant_id == tenant_id, TaxRecord.client_id.in_(cids), NOTDEL(TaxRecord)))).scalars().all() if cids else []
+    by = {}
+    for r in tax_rows:
+        by.setdefault(r.client_id, {})[r.tax_type] = r
+    return clients, proj_names, units, by
+
+
+@router.get("/tax-draft/preview", response_model=TaxDraftPreview)
+async def tax_draft_preview(
+    year: int = Query(...), month: int = Query(None, ge=1, le=12),
+    ceiling: Decimal = Query(_DEFAULT_CEILING, ge=0),
+    ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db),
+):
+    clients, proj_names, units, by = await _tax_draft_candidates(db, ctx.tenant_id, year, month, ceiling)
+    rows = []
+    for c in clients:
+        recs = by.get(c.id, {})
+        has_pph = TaxType.PPH in recs; has_ppn = TaxType.PPN in recs; has_bphtb = TaxType.BPHTB in recs
+        if has_pph and has_ppn:
+            continue   # PPh & PPN sudah ada → bukan kandidat
+        nilai_ajb = Decimal(c.contract_value or 0)
+        # tebak kategori: pakai kategori catatan yg sudah ada, else harga ≤ plafon → subsidi
+        existing_cat = next((r.category for r in recs.values() if r.category), None)
+        cat = existing_cat if existing_cat in ("subsidi", "komersial") else ("subsidi" if (ceiling > 0 and 0 < nilai_ajb <= ceiling) else "komersial")
+        u = units.get(c.unit_id)
+        unit_label = ("-".join(x for x in [u.block, u.unit_number] if x) or None) if u else (c.unit_number or None)
+        rows.append(TaxDraftItem(
+            client_id=c.id, pembeli=c.full_name, unit_label=unit_label, proyek=proj_names.get(c.project_id),
+            tgl_ajb=c.contract_date, nilai_ajb=nilai_ajb, category_guess=cat,
+            has_pph=has_pph, has_ppn=has_ppn, has_bphtb=has_bphtb,
+            pph_estimasi=(nilai_ajb * _PPH_RATE[cat]) if nilai_ajb > 0 else None,
+        ))
+    return TaxDraftPreview(ceiling=ceiling, total_kandidat=len(rows), rows=rows)
+
+
+@router.post("/tax-draft/commit", response_model=TaxDraftResult)
+async def tax_draft_commit(payload: TaxDraftCommit, ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db)):
+    """Buat kerangka catatan pajak (draft) utk klien terpilih. Idempoten: jenis yg sudah ada dilewati."""
+    cids = [it.client_id for it in payload.items]
+    clients = {c.id: c for c in (await db.execute(select(Client).where(
+        Client.tenant_id == ctx.tenant_id, Client.id.in_(cids), NOTDEL(Client)))).scalars().all()} if cids else {}
+    existing = (await db.execute(select(TaxRecord).where(
+        TaxRecord.tenant_id == ctx.tenant_id, TaxRecord.client_id.in_(cids), NOTDEL(TaxRecord)))).scalars().all() if cids else []
+    have = set()
+    for r in existing:
+        have.add((r.client_id, r.tax_type))
+
+    created = 0; skipped = 0; by_type = {"pph": 0, "ppn": 0, "bphtb": 0}
+    for it in payload.items:
+        c = clients.get(it.client_id)
+        if not c:
+            continue
+        nilai_ajb = Decimal(c.contract_value or 0)
+        tdate = it.tax_date or c.contract_date
+        for tkey in it.types:
+            ttype = {"pph": TaxType.PPH, "ppn": TaxType.PPN, "bphtb": TaxType.BPHTB}[tkey]
+            if (c.id, ttype) in have:
+                skipped += 1; continue
+            if tkey == "pph":
+                amount = (nilai_ajb * _PPH_RATE[it.category]) if nilai_ajb > 0 else None
+                st = TaxStatus.BELUM
+            elif tkey == "ppn":
+                amount = None   # DTP/BEBAS → tak ada yg dibayar; DPP tetap = nilai AJB
+                st = TaxStatus.BEBAS if it.category == "subsidi" else TaxStatus.DTP
+            else:  # bphtb — pajak pembeli, nominal diisi manual (NPOPTKP beda per daerah)
+                amount = None; st = TaxStatus.BELUM
+            rec = TaxRecord(
+                tenant_id=ctx.tenant_id, client_id=c.id, tax_type=ttype, category=it.category,
+                base_amount=nilai_ajb or None, amount=amount, tax_date=tdate, status=st,
+                notes="Draft otomatis dari nilai AJB",
+            )
+            db.add(rec); await db.flush()
+            have.add((c.id, ttype)); created += 1; by_type[tkey] += 1
+            await record_audit(db, ctx.tenant_id, ctx.user_id, "CREATE", "tax_records", rec.id,
+                               new_data={"tax_type": ttype.value, "draft": True})
+    return TaxDraftResult(created=created, skipped=skipped, by_type=by_type)
 
 
 @router.patch("/tax-records/{tax_id}", response_model=TaxResponse)

@@ -994,6 +994,39 @@ export interface TaxEqReport {
   rows: TaxEqRow[]
 }
 
+export interface TaxDraftItem {
+  client_id: string
+  pembeli: string
+  unit_label?: string | null
+  proyek?: string | null
+  tgl_ajb?: string | null
+  nilai_ajb: number
+  category_guess: 'subsidi' | 'komersial'
+  has_pph: boolean
+  has_ppn: boolean
+  has_bphtb: boolean
+  pph_estimasi?: number | null
+}
+
+export interface TaxDraftPreview {
+  ceiling: number
+  total_kandidat: number
+  rows: TaxDraftItem[]
+}
+
+export interface TaxDraftCommitItem {
+  client_id: string
+  category: 'subsidi' | 'komersial'
+  types: ('pph' | 'ppn' | 'bphtb')[]
+  tax_date?: string
+}
+
+export interface TaxDraftResult {
+  created: number
+  skipped: number
+  by_type: Record<string, number>
+}
+
 export interface CashflowReport {
   total_contract: number
   from_buyer: number

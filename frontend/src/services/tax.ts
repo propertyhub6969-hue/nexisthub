@@ -4,6 +4,7 @@ import type {
   Notary, NotaryCreate, TaxRecord, TaxCreate, TaxBulkCreate, NotaryFee, NotaryFeeCreate, FeeBulkCreate,
   NotaryShareLink, NotaryShareLinkCreate, NotarySubmission, PublicNotaryPage,
   NotaryDebtResponse, NotaryWorklistResponse, BalikNamaStatus,
+  TaxDraftPreview, TaxDraftCommitItem, TaxDraftResult,
 } from '../types'
 
 export const taxService = {
@@ -192,5 +193,15 @@ export const taxService = {
     if (payload.file) fd.append('file', payload.file)
     if (payload.notes) fd.append('notes', payload.notes)
     await api.post(`/public/notary/${token}/submissions`, fd, { headers: { 'Content-Type': 'multipart/form-data' } })
+  },
+
+  // ── Draft generator pajak (backfill dari nilai AJB) ──
+  async taxDraftPreview(year: number, month?: number, ceiling?: number): Promise<TaxDraftPreview> {
+    const { data } = await api.get<TaxDraftPreview>('/legal/tax-draft/preview', { params: { year, month: month || undefined, ceiling } })
+    return data
+  },
+  async taxDraftCommit(items: TaxDraftCommitItem[]): Promise<TaxDraftResult> {
+    const { data } = await api.post<TaxDraftResult>('/legal/tax-draft/commit', { items })
+    return data
   },
 }

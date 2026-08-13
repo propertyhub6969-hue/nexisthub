@@ -316,3 +316,41 @@ class NotaryWorklistResponse(BaseModel):
 class BalikNamaUpdate(BaseModel):
     status: BalikNamaStatus
     date: Optional[date] = None
+
+
+# ── Draft generator pajak (scaffolding otomatis dari nilai AJB) ──
+class TaxDraftItem(BaseModel):
+    client_id: uuid.UUID
+    pembeli: str
+    unit_label: Optional[str] = None
+    proyek: Optional[str] = None
+    tgl_ajb: Optional[date] = None
+    nilai_ajb: Decimal
+    category_guess: Literal['subsidi', 'komersial']
+    has_pph: bool
+    has_ppn: bool
+    has_bphtb: bool
+    pph_estimasi: Optional[Decimal] = None   # nilai_ajb × tarif kategori
+
+
+class TaxDraftPreview(BaseModel):
+    ceiling: Decimal
+    total_kandidat: int      # klien yg masih kurang PPh/PPN
+    rows: list[TaxDraftItem]
+
+
+class TaxDraftCommitItem(BaseModel):
+    client_id: uuid.UUID
+    category: Literal['subsidi', 'komersial']
+    types: list[Literal['pph', 'ppn', 'bphtb']]
+    tax_date: Optional[date] = None
+
+
+class TaxDraftCommit(BaseModel):
+    items: list[TaxDraftCommitItem]
+
+
+class TaxDraftResult(BaseModel):
+    created: int
+    skipped: int             # jenis yg sudah ada, dilewati
+    by_type: dict[str, int]  # {"pph": n, "ppn": n, "bphtb": n}
