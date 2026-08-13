@@ -222,13 +222,15 @@ export default function ImportData() {
       )}
 
       {/* Riwayat impor + undo */}
-      {batches.length > 0 && (
-        <div className="card overflow-hidden">
+      <div className="card overflow-hidden">
           <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-2">
             <History size={15} className="text-slate-400" />
             <h3 className="text-sm font-semibold text-slate-800">Riwayat Impor</h3>
             <span className="text-xs text-slate-400">— batalkan bila salah (menghapus data yang ditambah)</span>
           </div>
+          {batches.length === 0 ? (
+            <p className="px-4 py-6 text-center text-sm text-slate-400">Belum ada impor yang tercatat. Impor yang Anda Terapkan mulai sekarang akan muncul di sini dan bisa dibatalkan.</p>
+          ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-slate-50 border-b border-slate-200">
@@ -259,8 +261,8 @@ export default function ImportData() {
               </tbody>
             </table>
           </div>
-        </div>
-      )}
+          )}
+      </div>
 
       <p className="text-xs text-slate-400">Kunci pencocokan: <b>{cfg.keyHint}</b>. Yang cocok akan <b>diperbarui</b> (kolom kosong tidak menimpa nilai lama); yang belum ada akan <b>ditambah</b>. {entity === 'clients' && 'Menautkan pembeli ke unit otomatis mengubah status unit (Dipesan/Terjual). '}Impor Pembayaran menyusul.</p>
     </div>
