@@ -1,8 +1,16 @@
 # NexistHub — Summary Handoff
 
-_Diperbarui: 2026-08-08_
+_Diperbarui: 2026-08-13_
 
 ERP multi-tenant untuk **developer properti** (rumah **subsidi + komersial**, bangun sendiri) — Kalimantan & Sulawesi. Dikembangkan bertahap per "Session/Fase" via cowork.
+
+---
+
+## 0. Session terbaru (10–13 Agu 2026) — ringkas, detail di memori
+- **★ Importir migrasi data (LIVE)** — menu **Setting → Impor Data** (`/import`, guard Owner/Admin/Manager). 4 entitas: **Unit · Pembeli & Kontrak · Dokumen Legalitas · Pembayaran** — semua: unduh template terisi → upload → **pratinjau** (insert/update/skip/error) → **Terapkan** (upsert). Dokumen: manifest Excel + ZIP scan, **auto-match file via nomor unit** (`001.pdf`→unit 001), kolom LT/Alamat-PBB/Masa-Berlaku per jenis. Pembayaran: dari pembeli, langsung APPROVED + sync Buku Kas, anti-dobel (No.Referensi / pembeli+tgl+jumlah). **Undo Batch (Level 1)**: panel "Riwayat Impor", batalkan = hapus record yang ditambah + file MinIO-nya. Kode: `app/api/v1/endpoints/import_data.py`, `frontend/src/pages/ImportData.tsx`. **openpyxl** ditambah ke requirements. Batas upload nginx 12M→**200M** (`frontend/nginx-spa.conf`). Lihat memori [[nexisthub-import-feature]].
+- **Dashboard & Report** — tab **Retensi Bank** (Report Keuangan, donut per bank); strip Keuangan tiap tile **bisa diklik** (dialog data) + tile **Retensi Bank**; opsi **"Semua Proyek"** di 3 seksi; dialog data dilebarkan (`Modal size="xl"`).
+- **★ Roadmap AI — Fase 0 SELESAI**: worklist **follow-up Lead** (`GET /marketing/leads/followup(+/count)`; def=status NEW/CONTACTED & `updated_at`≥3hr; badge amber di menu Leads + toggle di halaman). Tanpa AI/scheduler. **Fase 0.5 (kanal WhatsApp notifikasi keluar) = BERIKUTNYA** — nunggu rizal dapat **Meta Cloud API** (akun Meta baru sempat ditolak buat Business Account = wajar; hangatkan akun / pakai akun FB lama). Rencana: pakai Meta Cloud API langsung utk uji, adapter = 1 file `app/channels/whatsapp.py`, ganti BSP (360dialog/Qiscus) saat produksi. Lihat memori [[nexisthub-ai-wa-bot-roadmap]].
+- **★ KOREKSI ID tenant (penting):** `2cf2aabf-…` = **PT. Awang Sejahtera Permai (ASP)** = KLIEN NYATA (read-only saja!). Tenant AMAN uji-tulis = **PT. Nexist Indonesia `c7ebe362-…`** (owner `b7a711e5`, dinda@gmail.com). Insiden 11 Agu: uji dokumen sempat hard-delete 2 Document asli di tenant Nexist → dipulihkan dari backup harian. ★ Uji-tulis destruktif: pakai unit/proyek buang, JANGAN hard-delete by name. Lihat [[nexisthub-tenant-ids]].
 
 ---
 
