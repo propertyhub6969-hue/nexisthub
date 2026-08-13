@@ -32,6 +32,7 @@ from app.api.deps import get_current_context, AuthContext
 from app.models.property import Project, Unit, UnitStatus
 from app.models.marketing import Client, ClientStatus, ClientPaymentType
 from app.models.document import Document, DocStatus
+from app.models.import_batch import ImportBatch, ImportBatchItem
 
 _MAX_FILE_BYTES = 10 * 1024 * 1024  # 10 MB / file (samakan dgn modul Dokumen)
 
@@ -129,6 +130,20 @@ class ImportCommitResult(BaseModel):
     updated: int
     error_count: int
     rows: list[ImportRow]
+
+
+async def _save_batch(db, ctx, entity, inserted_items, updated, note=None):
+    """Catat 1 batch impor + record yang DITAMBAH (untuk undo). inserted_items: list (resource_id, file_key)."""
+    batch = ImportBatch(tenant_id=ctx.tenant_id, user_id=ctx.user_id, entity=entity,
+                        inserted=len(inserted_items), updated=updated, note=note)
+    db.add(batch)
+    await db.flush()
+    for rid, fkey in inserted_items:
+        db.add(ImportBatchItem(batch_id=batch.id, resource=entity, resource_id=rid, file_key=fkey))
+    await db.flush()
+    await record_audit(db, ctx.tenant_id, ctx.user_id, "IMPORT", entity, batch.id,
+                       new_data={"inserted": len(inserted_items), "updated": updated})
+    return batch
 
 
 async def _load_maps(db: AsyncSession, tenant_id):
@@ -269,7 +284,6 @@ async def commit_units(
     rows = _read_unit_rows(contents)
     proj_by_name, unit_by_key = await _load_maps(db, ctx.tenant_id)
     parsed = _classify(rows, proj_by_name, unit_by_key)
-    batch_id = str(uuid.uuid4())
     inserted = updated = 0
     new_units = []
     for rnum, kind, payload, existing, rowres in parsed:
@@ -287,10 +301,11 @@ async def commit_units(
                 if nv is not None:
                     setattr(existing, f, nv)
             updated += 1
+    batch_id = ""
     if inserted or updated:
         await db.flush()
-        await record_audit(db, ctx.tenant_id, ctx.user_id, "IMPORT", "units", uuid.UUID(batch_id),
-                           new_data={"batch": batch_id, "inserted": inserted, "updated": updated})
+        batch = await _save_batch(db, ctx, "units", [(u.id, None) for u in new_units], updated)
+        batch_id = str(batch.id)
         await db.commit()
     err = sum(1 for p in parsed if p[1] == "error")
     return ImportCommitResult(batch_id=batch_id, inserted=inserted, updated=updated,
@@ -597,8 +612,8 @@ async def commit_clients(
     rows = _read_client_rows(contents)
     maps = await _load_client_maps(db, ctx.tenant_id)
     parsed = _classify_clients(rows, *maps)
-    batch_id = str(uuid.uuid4())
     inserted = updated = 0
+    new_clients = []
     upd_fields = ["full_name", "nik", "phone", "email", "address", "project_id", "unit_id",
                   "unit_number", "payment_type", "contract_value", "contract_date",
                   "ppjb_number", "ajb_number", "status"]
@@ -610,7 +625,7 @@ async def commit_clients(
             db.add(c); await db.flush()
             if c.unit_id:
                 await set_unit_status(db, ctx.tenant_id, c.unit_id, unit_status_for_client(c))
-            inserted += 1
+            new_clients.append(c); inserted += 1
         elif kind == "update":
             for f in upd_fields:
                 nv = payload[f]
@@ -620,9 +635,10 @@ async def commit_clients(
             if existing.unit_id:
                 await set_unit_status(db, ctx.tenant_id, existing.unit_id, unit_status_for_client(existing))
             updated += 1
+    batch_id = ""
     if inserted or updated:
-        await record_audit(db, ctx.tenant_id, ctx.user_id, "IMPORT", "clients", uuid.UUID(batch_id),
-                           new_data={"batch": batch_id, "inserted": inserted, "updated": updated})
+        batch = await _save_batch(db, ctx, "clients", [(c.id, None) for c in new_clients], updated)
+        batch_id = str(batch.id)
         await db.commit()
     err = sum(1 for p in parsed if p[1] == "error")
     return ImportCommitResult(batch_id=batch_id, inserted=inserted, updated=updated,
@@ -973,7 +989,6 @@ async def commit_documents(
     for (pid, bl, un), uid in unit_by_key.items():
         unit_pid[uid] = pid
     parsed = _classify_docs(rows, proj_by_name, unit_by_key, unit_by_pu, existing)
-    batch_id = str(uuid.uuid4())
     inserted = updated = 0
     attached = missing = 0
     created = {}  # (unit_id, doc_type) → Document baru dlm batch ini
@@ -1050,9 +1065,11 @@ async def commit_documents(
                 rowres.note = (rowres.note or "") + f" — tak ada file utk unit {payload['unit_number']}"; missing += 1
             else:
                 rowres.note = (rowres.note or "") + f" — {len(m)} file cocok utk unit {payload['unit_number']} (isi Nama File utk pastikan)"; missing += 1
+    batch_id = ""
     if inserted or updated:
-        await record_audit(db, ctx.tenant_id, ctx.user_id, "IMPORT", "documents", uuid.UUID(batch_id),
-                           new_data={"batch": batch_id, "inserted": inserted, "updated": updated})
+        batch = await _save_batch(db, ctx, "documents",
+                                  [(doc.id, doc.file_key) for doc in created.values()], updated)
+        batch_id = str(batch.id)
         await db.commit()
     err = sum(1 for p in parsed if p[1] == "error")
     return ImportCommitResult(batch_id=batch_id, inserted=inserted, updated=updated,
@@ -1151,3 +1168,101 @@ def _build_doc_template(projects, docs) -> bytes:
     _dv(wd, projects, 2, 2, row + 500)
     bio = io.BytesIO(); wb.save(bio); bio.seek(0)
     return bio.getvalue()
+
+
+# ═══════════════════════ RIWAYAT & UNDO BATCH IMPOR ═══════════════════════
+class ImportBatchRow(BaseModel):
+    id: uuid.UUID
+    entity: str
+    inserted: int
+    updated: int
+    created_at: datetime
+    undone_at: Optional[datetime] = None
+    can_undo: bool
+
+
+class UndoResult(BaseModel):
+    deleted: int
+    files_removed: int
+    entity: str
+
+
+@router.get("/batches", response_model=list[ImportBatchRow])
+async def list_batches(
+    ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db),
+):
+    rows = (await db.execute(
+        select(ImportBatch).where(ImportBatch.tenant_id == ctx.tenant_id)
+        .order_by(ImportBatch.created_at.desc()).limit(50))).scalars().all()
+    return [ImportBatchRow(
+        id=b.id, entity=b.entity, inserted=b.inserted, updated=b.updated,
+        created_at=b.created_at, undone_at=b.undone_at,
+        can_undo=(b.inserted > 0 and b.undone_at is None)) for b in rows]
+
+
+@router.post("/batches/{batch_id}/undo", response_model=UndoResult)
+async def undo_batch(
+    batch_id: uuid.UUID,
+    ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db),
+):
+    """Batalkan satu batch impor (Level 1): HAPUS record yang DITAMBAH batch itu + file MinIO-nya.
+    Yang di-UPDATE tidak dikembalikan (butuh Level 2). Aman utuh (atomik) — gagal = tak ada yang berubah."""
+    from datetime import timezone
+    from sqlalchemy.exc import IntegrityError
+
+    b = (await db.execute(select(ImportBatch).where(
+        ImportBatch.id == batch_id, ImportBatch.tenant_id == ctx.tenant_id))).scalar_one_or_none()
+    if b is None:
+        raise HTTPException(status_code=404, detail="Batch tidak ditemukan")
+    if b.undone_at is not None:
+        raise HTTPException(status_code=400, detail="Batch ini sudah dibatalkan.")
+
+    items = (await db.execute(select(ImportBatchItem).where(ImportBatchItem.batch_id == b.id))).scalars().all()
+    deleted = 0
+    file_keys = []
+    try:
+        for it in items:
+            if it.resource == "units":
+                obj = (await db.execute(select(Unit).where(
+                    Unit.id == it.resource_id, Unit.tenant_id == ctx.tenant_id))).scalar_one_or_none()
+                if obj is not None:
+                    await db.delete(obj); deleted += 1
+            elif it.resource == "clients":
+                obj = (await db.execute(select(Client).where(
+                    Client.id == it.resource_id, Client.tenant_id == ctx.tenant_id))).scalar_one_or_none()
+                if obj is not None:
+                    uid = obj.unit_id
+                    await db.delete(obj); await db.flush(); deleted += 1
+                    # kembalikan unit ke Tersedia bila tak ada pembeli aktif lain di unit itu
+                    if uid:
+                        other = (await db.execute(select(Client.id).where(
+                            Client.tenant_id == ctx.tenant_id, Client.unit_id == uid,
+                            Client.status != ClientStatus.INACTIVE, Client.is_deleted == False))).first()  # noqa: E712
+                        if other is None:
+                            await set_unit_status(db, ctx.tenant_id, uid, UnitStatus.AVAILABLE)
+            elif it.resource == "documents":
+                obj = (await db.execute(select(Document).where(
+                    Document.id == it.resource_id, Document.tenant_id == ctx.tenant_id))).scalar_one_or_none()
+                if obj is not None:
+                    await db.delete(obj); deleted += 1
+                if it.file_key:
+                    file_keys.append(it.file_key)
+        b.undone_at = datetime.now(timezone.utc)
+        b.undone_by_id = ctx.user_id
+        await record_audit(db, ctx.tenant_id, ctx.user_id, "UNDO_IMPORT", b.entity, b.id,
+                           new_data={"deleted": deleted})
+        await db.flush()
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(status_code=400,
+                            detail="Tak bisa membatalkan: sebagian data sudah dipakai/direferensikan data lain.")
+
+    # hapus objek MinIO setelah commit DB berhasil (best-effort)
+    removed = 0
+    for k in file_keys:
+        try:
+            await storage.delete(k); removed += 1
+        except Exception:
+            pass
+    return UndoResult(deleted=deleted, files_removed=removed, entity=b.entity)

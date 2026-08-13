@@ -1,7 +1,9 @@
-import { useRef, useState } from 'react'
-import { Download, Upload, Loader2, CheckCircle2, PlusCircle, RefreshCw, AlertTriangle, FileSpreadsheet } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { Download, Upload, Loader2, CheckCircle2, PlusCircle, RefreshCw, AlertTriangle, FileSpreadsheet, History, RotateCcw } from 'lucide-react'
 import { importDataService } from '../services/importData'
-import type { ImportPreview, ImportCommitResult } from '../types'
+import type { ImportPreview, ImportCommitResult, ImportBatch } from '../types'
+
+const ENTITY_LABEL: Record<string, string> = { units: 'Unit', clients: 'Pembeli & Kontrak', documents: 'Dokumen Legalitas' }
 
 const actionCfg: Record<string, { label: string; cls: string; icon: typeof PlusCircle }> = {
   insert: { label: 'Baru', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200', icon: PlusCircle },
@@ -51,7 +53,24 @@ export default function ImportData() {
   const [downloading, setDownloading] = useState(false)
   const [archive, setArchive] = useState<File | null>(null)
   const archiveRef = useRef<HTMLInputElement>(null)
+  const [batches, setBatches] = useState<ImportBatch[]>([])
+  const [undoingId, setUndoingId] = useState<string | null>(null)
   const cfg = ENTITY[entity]
+
+  function loadBatches() { importDataService.listBatches().then(setBatches).catch(() => {}) }
+  useEffect(() => { loadBatches() }, [])
+
+  async function undo(b: ImportBatch) {
+    if (!window.confirm(`Batalkan impor ${ENTITY_LABEL[b.entity]} ini? ${b.inserted} data yang DITAMBAH akan dihapus (yang diperbarui tidak dikembalikan).`)) return
+    setUndoingId(b.id); setError('')
+    try {
+      const r = await importDataService.undoBatch(b.id)
+      loadBatches()
+      alert(`Dibatalkan: ${r.deleted} data dihapus${r.files_removed ? `, ${r.files_removed} file dihapus` : ''}.`)
+    } catch (e: any) {
+      setError(e?.response?.data?.detail ?? 'Gagal membatalkan batch.')
+    } finally { setUndoingId(null) }
+  }
 
   function reset() {
     setFile(null); setArchive(null); setPreview(null); setResult(null); setError('')
@@ -86,6 +105,7 @@ export default function ImportData() {
       setResult(res); setPreview(null); setFile(null); setArchive(null)
       if (fileRef.current) fileRef.current.value = ''
       if (archiveRef.current) archiveRef.current.value = ''
+      loadBatches()
     } catch (e: any) {
       setError(e?.response?.data?.detail ?? 'Gagal menerapkan impor.')
     } finally { setCommitting(false) }
@@ -195,6 +215,47 @@ export default function ImportData() {
                     </tr>
                   )
                 })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Riwayat impor + undo */}
+      {batches.length > 0 && (
+        <div className="card overflow-hidden">
+          <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-2">
+            <History size={15} className="text-slate-400" />
+            <h3 className="text-sm font-semibold text-slate-800">Riwayat Impor</h3>
+            <span className="text-xs text-slate-400">— batalkan bila salah (menghapus data yang ditambah)</span>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 border-b border-slate-200">
+                <tr>
+                  {['Waktu', 'Jenis', 'Ditambah', 'Diperbarui', ''].map((h, i) => (
+                    <th key={i} className={`px-4 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wider ${i > 1 && i < 4 ? 'text-center' : 'text-left'}`}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {batches.map((b) => (
+                  <tr key={b.id} className={`hover:bg-slate-50 ${b.undone_at ? 'opacity-50' : ''}`}>
+                    <td className="px-4 py-2 text-slate-500 whitespace-nowrap">{new Date(b.created_at).toLocaleString('id-ID', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</td>
+                    <td className="px-4 py-2 text-slate-800">{ENTITY_LABEL[b.entity] ?? b.entity}</td>
+                    <td className="px-4 py-2 text-center text-emerald-600 font-medium">{b.inserted}</td>
+                    <td className="px-4 py-2 text-center text-blue-600">{b.updated}</td>
+                    <td className="px-4 py-2 text-right">
+                      {b.undone_at
+                        ? <span className="text-xs text-slate-400">dibatalkan</span>
+                        : b.can_undo
+                          ? <button onClick={() => undo(b)} disabled={undoingId === b.id} className="text-xs inline-flex items-center gap-1 text-red-600 hover:text-red-700 disabled:opacity-50">
+                              {undoingId === b.id ? <Loader2 size={12} className="animate-spin" /> : <RotateCcw size={12} />} Batalkan
+                            </button>
+                          : <span className="text-xs text-slate-300">—</span>}
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>

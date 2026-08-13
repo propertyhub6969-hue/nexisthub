@@ -2044,6 +2044,16 @@ export interface ImportRow {
   note?: string | null
 }
 
+export interface ImportBatch {
+  id: string
+  entity: 'units' | 'clients' | 'documents'
+  inserted: number
+  updated: number
+  created_at: string
+  undone_at?: string | null
+  can_undo: boolean
+}
+
 export interface ImportPreview {
   sheet: string
   total: number

@@ -1,5 +1,5 @@
 import api from './api'
-import type { ImportPreview, ImportCommitResult } from '../types'
+import type { ImportPreview, ImportCommitResult, ImportBatch } from '../types'
 
 export const importDataService = {
   // Unduh template UNIT (sudah terisi data unit tenant saat ini)
@@ -94,6 +94,17 @@ export const importDataService = {
     const { data } = await api.post<ImportCommitResult>('/import/documents/commit', fd, {
       headers: { 'Content-Type': 'multipart/form-data' },
     })
+    return data
+  },
+
+  // ── Riwayat & undo batch ──
+  async listBatches(): Promise<ImportBatch[]> {
+    const { data } = await api.get<ImportBatch[]>('/import/batches')
+    return data
+  },
+
+  async undoBatch(id: string): Promise<{ deleted: number; files_removed: number; entity: string }> {
+    const { data } = await api.post(`/import/batches/${id}/undo`)
     return data
   },
 }
