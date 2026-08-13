@@ -2037,3 +2037,193 @@ async def cash_projection(
         expenses_unpaid=expenses_unpaid, contractor_remaining=contractor_remaining,
         projected_liquidity=projected,
     )
+
+
+# ═══════════════════════ EKUALISASI PAJAK (register + cross-check) ═══════════════════════
+# Cross-check pemeriksa pajak: Penjualan (nilai AJB) = DPP PPh Final = DPP PPN.
+# Developer: PPh Final subsidi 1% / komersial 2,5%; PPN subsidi BEBAS, komersial DTP (bayar 0, DPP tetap dilaporkan).
+_TAX_STATUS_LABEL = {"belum": "Belum", "dibayar": "Dibayar", "validasi": "Validasi", "dtp": "DTP", "bebas": "Bebas"}
+_PPN_RATE = Decimal("0.11")
+
+
+class TaxEqRow(BaseModel):
+    client_id: uuid.UUID
+    pembeli: str
+    nik: Optional[str] = None
+    proyek: Optional[str] = None
+    unit_label: Optional[str] = None
+    kategori: str                       # subsidi | komersial
+    tgl_ajb: Optional[date] = None
+    nilai_ajb: Decimal                  # DPP (dari PPh, fallback kontrak)
+    pph_amount: Optional[Decimal] = None
+    pph_status: Optional[str] = None
+    pph_ntpn: Optional[str] = None
+    ppn_status: Optional[str] = None    # DTP (komersial) / Bebas (subsidi) / dll
+    ppn_dpp: Optional[Decimal] = None
+    ppn_dtp: Optional[Decimal] = None   # PPN terutang DTP = 11% × DPP (komersial)
+    bphtb_amount: Optional[Decimal] = None
+    bphtb_status: Optional[str] = None
+    lengkap: bool = False               # punya catatan PPh + PPN + BPHTB
+
+
+class TaxEqReport(BaseModel):
+    period: str
+    penjualan: Decimal          # Σ nilai AJB (peredaran usaha)
+    dpp_pph: Decimal
+    dpp_ppn: Decimal
+    selisih_pph: Decimal        # penjualan − DPP PPh
+    selisih_ppn: Decimal        # penjualan − DPP PPN
+    pph_terutang: Decimal
+    ppn_dtp_total: Decimal      # PPN ditanggung pemerintah (komersial)
+    ppn_bebas_count: int        # jumlah unit PPN dibebaskan (subsidi)
+    bphtb_total: Decimal
+    incomplete: int
+    rows: list[TaxEqRow]
+
+
+async def _tax_eq_data(db, tenant_id, year: int, month: Optional[int]) -> TaxEqReport:
+    from calendar import monthrange
+    t = tenant_id
+    if month:
+        start = date(year, month, 1)
+        end = date(year, month, monthrange(year, month)[1])
+    else:
+        start = date(year, 1, 1); end = date(year, 12, 31)
+    # pembeli dgn tgl kontrak dalam periode (transaksi penjualan), bukan batal
+    cconds = [Client.tenant_id == t, Client.is_deleted == False,  # noqa: E712
+              Client.status != ClientStatus.INACTIVE,
+              Client.contract_date >= start, Client.contract_date <= end]
+    clients = (await db.execute(select(Client).where(*cconds).order_by(Client.contract_date))).scalars().all()
+    proj_names = dict((await db.execute(select(Project.id, Project.name).where(Project.tenant_id == t))).all())
+    unit_ids = {c.unit_id for c in clients if c.unit_id}
+    units = {u.id: u for u in (await db.execute(select(Unit).where(Unit.id.in_(unit_ids)))).scalars().all()} if unit_ids else {}
+    cids = [c.id for c in clients]
+    tax_rows = (await db.execute(select(TaxRecord).where(
+        TaxRecord.tenant_id == t, TaxRecord.client_id.in_(cids), TaxRecord.is_deleted == False))).scalars().all() if cids else []  # noqa: E712
+    by = {}
+    for r in tax_rows:
+        by[(r.client_id, r.tax_type)] = r
+
+    rows = []
+    penjualan = dpp_pph = dpp_ppn = pph_terutang = ppn_dtp_total = bphtb_total = Decimal(0)
+    ppn_bebas_count = 0; incomplete = 0
+    for c in clients:
+        pph = by.get((c.id, TaxType.PPH)); ppn = by.get((c.id, TaxType.PPN)); bphtb = by.get((c.id, TaxType.BPHTB))
+        kategori = (pph.category if pph else (ppn.category if ppn else "komersial"))
+        nilai_ajb = Decimal((pph.base_amount if pph and pph.base_amount is not None else
+                             (ppn.base_amount if ppn and ppn.base_amount is not None else (c.contract_value or 0))) or 0)
+        u = units.get(c.unit_id)
+        unit_label = ("-".join(x for x in [u.block, u.unit_number] if x) or None) if u else None
+        ppn_dpp = Decimal(ppn.base_amount or 0) if ppn else None
+        ppn_dtp = (ppn_dpp * _PPN_RATE) if (ppn and kategori == "komersial" and (ppn.status.value if ppn.status else "") == "dtp") else None
+        row = TaxEqRow(
+            client_id=c.id, pembeli=c.full_name, nik=c.nik, proyek=proj_names.get(c.project_id),
+            unit_label=unit_label, kategori=kategori,
+            tgl_ajb=(pph.tax_date if pph else None) or c.contract_date, nilai_ajb=nilai_ajb,
+            pph_amount=Decimal(pph.amount or 0) if pph else None,
+            pph_status=_TAX_STATUS_LABEL.get(pph.status.value) if (pph and pph.status) else None,
+            pph_ntpn=pph.ntpn if pph else None,
+            ppn_status=_TAX_STATUS_LABEL.get(ppn.status.value) if (ppn and ppn.status) else None,
+            ppn_dpp=ppn_dpp, ppn_dtp=ppn_dtp,
+            bphtb_amount=Decimal(bphtb.amount or 0) if bphtb else None,
+            bphtb_status=_TAX_STATUS_LABEL.get(bphtb.status.value) if (bphtb and bphtb.status) else None,
+            lengkap=bool(pph and ppn and bphtb),
+        )
+        rows.append(row)
+        penjualan += nilai_ajb
+        if pph and pph.base_amount is not None:
+            dpp_pph += Decimal(pph.base_amount)
+        if pph and pph.amount is not None:
+            pph_terutang += Decimal(pph.amount)
+        if ppn and ppn.base_amount is not None:
+            dpp_ppn += Decimal(ppn.base_amount)
+        if ppn_dtp:
+            ppn_dtp_total += ppn_dtp
+        if ppn and kategori == "subsidi":
+            ppn_bebas_count += 1
+        if bphtb and bphtb.amount is not None:
+            bphtb_total += Decimal(bphtb.amount)
+        if not (pph and ppn and bphtb):
+            incomplete += 1
+
+    period = f"{year}" if not month else f"{year}-{month:02d}"
+    return TaxEqReport(
+        period=period, penjualan=penjualan, dpp_pph=dpp_pph, dpp_ppn=dpp_ppn,
+        selisih_pph=penjualan - dpp_pph, selisih_ppn=penjualan - dpp_ppn,
+        pph_terutang=pph_terutang, ppn_dtp_total=ppn_dtp_total, ppn_bebas_count=ppn_bebas_count,
+        bphtb_total=bphtb_total, incomplete=incomplete, rows=rows)
+
+
+@router.get("/tax-equalization", response_model=TaxEqReport)
+async def tax_equalization(
+    year: int = Query(...), month: Optional[int] = Query(None, ge=1, le=12),
+    ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db),
+):
+    return await _tax_eq_data(db, ctx.tenant_id, year, month)
+
+
+@router.get("/tax-equalization/export")
+async def tax_equalization_export(
+    year: int = Query(...), month: Optional[int] = Query(None, ge=1, le=12),
+    ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db),
+):
+    import io as _io
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill, Alignment
+    from fastapi.responses import StreamingResponse
+    rep = await _tax_eq_data(db, ctx.tenant_id, year, month)
+    wb = openpyxl.Workbook()
+    hf = Font(name="Arial", bold=True, color="FFFFFF", size=10)
+    hfill = PatternFill("solid", fgColor="1E3A5F")
+
+    def money(v):
+        return float(v) if v is not None else None
+
+    # Sheet Register
+    ws = wb.active; ws.title = "Register"
+    cols = ["Tgl AJB", "Pembeli", "NIK", "Proyek", "Unit", "Kategori", "Nilai AJB (DPP)",
+            "PPh Jumlah", "PPh Status", "NTPN PPh", "PPN Status", "PPN DPP", "PPN Terutang DTP",
+            "BPHTB Jumlah", "BPHTB Status"]
+    for i, h in enumerate(cols, start=1):
+        c = ws.cell(row=1, column=i, value=h); c.font = hf; c.fill = hfill; c.alignment = Alignment(horizontal="center", wrap_text=True)
+        ws.column_dimensions[chr(64 + i) if i <= 26 else "A"].width = 15
+    r = 2
+    for x in rep.rows:
+        vals = [x.tgl_ajb.strftime("%d/%m/%Y") if x.tgl_ajb else "", x.pembeli, x.nik or "", x.proyek or "",
+                x.unit_label or "", x.kategori, money(x.nilai_ajb), money(x.pph_amount), x.pph_status or "",
+                x.pph_ntpn or "", x.ppn_status or "", money(x.ppn_dpp), money(x.ppn_dtp),
+                money(x.bphtb_amount), x.bphtb_status or ""]
+        for i, v in enumerate(vals, start=1):
+            cc = ws.cell(row=r, column=i, value=v)
+            if i in (7, 8, 12, 13, 14):
+                cc.number_format = "#,##0"
+        r += 1
+    ws.freeze_panes = "A2"
+
+    # Sheet Ekualisasi
+    we = wb.create_sheet("Ekualisasi")
+    we.column_dimensions["A"].width = 34; we.column_dimensions["B"].width = 22
+    rows_eq = [
+        ("EKUALISASI PAJAK — PERIODE", rep.period),
+        ("", ""),
+        ("Penjualan (Σ Nilai AJB)", money(rep.penjualan)),
+        ("DPP PPh Final", money(rep.dpp_pph)),
+        ("Selisih (Penjualan − DPP PPh)", money(rep.selisih_pph)),
+        ("DPP PPN", money(rep.dpp_ppn)),
+        ("Selisih (Penjualan − DPP PPN)", money(rep.selisih_ppn)),
+        ("", ""),
+        ("PPh Final terutang", money(rep.pph_terutang)),
+        ("PPN terutang DTP (komersial)", money(rep.ppn_dtp_total)),
+        ("Unit PPN dibebaskan (subsidi)", rep.ppn_bebas_count),
+        ("BPHTB", money(rep.bphtb_total)),
+        ("Baris belum lengkap catatan pajak", rep.incomplete),
+    ]
+    for i, (k, v) in enumerate(rows_eq, start=1):
+        a = we.cell(row=i, column=1, value=k); a.font = Font(name="Arial", bold=(i == 1 or "Selisih" in k), size=10)
+        b = we.cell(row=i, column=2, value=v)
+        if isinstance(v, (int, float)) and "dibebaskan" not in k and "belum lengkap" not in k:
+            b.number_format = "#,##0"
+    bio = _io.BytesIO(); wb.save(bio); bio.seek(0)
+    fn = f"Ekualisasi_Pajak_{rep.period}.xlsx"
+    return StreamingResponse(bio, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                             headers={"Content-Disposition": f'attachment; filename="{fn}"'})

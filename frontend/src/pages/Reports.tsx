@@ -14,7 +14,7 @@ import { useAuth } from '../context/AuthContext'
 import Modal from '../components/ui/Modal'
 import Badge from '../components/ui/Badge'
 import DateInput from '../components/ui/DateInput'
-import type { KprRejectionReport, CashflowReport, SalesRecapReport, AgingReport, ConstructionProgressReport, MonthlyTaxReport, MonthlyTaxShareLink, Project, TaxChecklistReport, TaxChecklistItem, TaxChecklistStatus, ProjectProfitReport, ProjectProfitDetail, BankRetentionReport, CashProjection } from '../types'
+import type { KprRejectionReport, CashflowReport, SalesRecapReport, AgingReport, ConstructionProgressReport, MonthlyTaxReport, MonthlyTaxShareLink, Project, TaxChecklistReport, TaxChecklistItem, TaxChecklistStatus, ProjectProfitReport, ProjectProfitDetail, BankRetentionReport, CashProjection, TaxEqReport } from '../types'
 
 const fmtRp = (n?: number | null) =>
   n == null ? '—' : new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(Number(n))
@@ -1135,6 +1135,170 @@ function TaxChecklistTab() {
   )
 }
 
+// ═══════════════════════ EKUALISASI PAJAK ═══════════════════════
+const MONTHS_ID = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember']
+
+function TaxStatusPill({ status }: { status?: string | null }) {
+  if (!status) return <span className="text-slate-300">—</span>
+  const map: Record<string, string> = {
+    Dibayar: 'bg-emerald-50 text-emerald-700', Validasi: 'bg-amber-50 text-amber-700',
+    DTP: 'bg-indigo-50 text-indigo-700', Bebas: 'bg-slate-100 text-slate-600', Belum: 'bg-red-50 text-red-600',
+  }
+  return <span className={`inline-block rounded px-1.5 py-0.5 text-[11px] font-medium ${map[status] || 'bg-slate-100 text-slate-600'}`}>{status}</span>
+}
+
+function TaxEqualizationTab() {
+  const now = new Date()
+  const [year, setYear] = useState(now.getFullYear())
+  const [month, setMonth] = useState(0)   // 0 = semua bulan
+  const [rep, setRep] = useState<TaxEqReport | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [exporting, setExporting] = useState(false)
+
+  useEffect(() => {
+    setLoading(true); setError('')
+    reportingService.taxEqualization(year, month || undefined)
+      .then(setRep)
+      .catch(() => setError('Gagal memuat ekualisasi pajak.'))
+      .finally(() => setLoading(false))
+  }, [year, month])
+
+  const doExport = async () => {
+    setExporting(true)
+    try { await reportingService.taxEqualizationExport(year, month || undefined) } catch { /* toast handled */ }
+    setExporting(false)
+  }
+
+  const years = Array.from({ length: 5 }, (_, i) => now.getFullYear() - i)
+  const selisihWarn = rep && (Math.abs(rep.selisih_pph) > 1 || Math.abs(rep.selisih_ppn) > 1)
+
+  return (
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-3">
+          <select className="input w-28" value={year} onChange={(e) => setYear(Number(e.target.value))}>
+            {years.map((y) => <option key={y} value={y}>{y}</option>)}
+          </select>
+          <select className="input w-40" value={month} onChange={(e) => setMonth(Number(e.target.value))}>
+            <option value={0}>Semua bulan</option>
+            {MONTHS_ID.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
+          </select>
+        </div>
+        <button className="btn-secondary" onClick={doExport} disabled={exporting || !rep}>
+          {exporting ? <Loader2 size={15} className="animate-spin" /> : <FileDown size={15} />} Ekspor Excel
+        </button>
+      </div>
+
+      <p className="text-xs text-slate-500 -mt-2">
+        Pemeriksa pajak menyandingkan <b>Penjualan</b> (nilai AJB) dengan <b>DPP PPh Final</b> dan <b>DPP PPN</b> — ketiganya harus sama.
+        Selisih menandakan transaksi yang belum tercatat pajaknya.
+      </p>
+
+      {loading ? (
+        <div className="card p-12 text-center text-slate-400"><Loader2 size={20} className="inline animate-spin" /></div>
+      ) : error ? (
+        <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-2">{error}</div>
+      ) : !rep ? null : (
+        <>
+          {/* Ringkasan ekualisasi */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="card p-4">
+              <div className="text-xs text-slate-500">Penjualan (Σ Nilai AJB)</div>
+              <div className="text-lg font-bold text-slate-900 mt-1">{fmtRp(rep.penjualan)}</div>
+            </div>
+            <div className="card p-4">
+              <div className="text-xs text-slate-500">DPP PPh Final</div>
+              <div className="text-lg font-bold text-slate-900 mt-1">{fmtRp(rep.dpp_pph)}</div>
+              <div className={`text-[11px] mt-0.5 ${Math.abs(rep.selisih_pph) > 1 ? 'text-red-600 font-semibold' : 'text-emerald-600'}`}>
+                selisih {fmtRp(rep.selisih_pph)}
+              </div>
+            </div>
+            <div className="card p-4">
+              <div className="text-xs text-slate-500">DPP PPN</div>
+              <div className="text-lg font-bold text-slate-900 mt-1">{fmtRp(rep.dpp_ppn)}</div>
+              <div className={`text-[11px] mt-0.5 ${Math.abs(rep.selisih_ppn) > 1 ? 'text-red-600 font-semibold' : 'text-emerald-600'}`}>
+                selisih {fmtRp(rep.selisih_ppn)}
+              </div>
+            </div>
+            <div className="card p-4">
+              <div className="text-xs text-slate-500">PPh Final terutang</div>
+              <div className="text-lg font-bold text-slate-900 mt-1">{fmtRp(rep.pph_terutang)}</div>
+            </div>
+            <div className="card p-4">
+              <div className="text-xs text-slate-500">PPN terutang DTP <span className="text-slate-400">(komersial)</span></div>
+              <div className="text-lg font-bold text-indigo-700 mt-1">{fmtRp(rep.ppn_dtp_total)}</div>
+              <div className="text-[11px] text-slate-400 mt-0.5">ditanggung pemerintah</div>
+            </div>
+            <div className="card p-4">
+              <div className="text-xs text-slate-500">PPN dibebaskan <span className="text-slate-400">(subsidi)</span></div>
+              <div className="text-lg font-bold text-slate-700 mt-1">{rep.ppn_bebas_count} unit</div>
+            </div>
+            <div className="card p-4">
+              <div className="text-xs text-slate-500">BPHTB</div>
+              <div className="text-lg font-bold text-slate-900 mt-1">{fmtRp(rep.bphtb_total)}</div>
+            </div>
+            <div className="card p-4">
+              <div className="text-xs text-slate-500">Belum lengkap catatan</div>
+              <div className={`text-lg font-bold mt-1 ${rep.incomplete > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>{rep.incomplete} baris</div>
+            </div>
+          </div>
+
+          {selisihWarn && (
+            <div className="rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-sm px-4 py-2.5 flex items-start gap-2">
+              <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+              <span>Penjualan belum sama dengan DPP PPh/PPN. Biasanya karena ada AJB yang belum dibuatkan catatan pajaknya, atau nilai DPP berbeda dari nilai AJB. Periksa baris bertanda pada tabel di bawah.</span>
+            </div>
+          )}
+
+          {/* Register */}
+          <div className="card overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 border-b border-slate-200">
+                <tr>
+                  {['Tgl AJB', 'Pembeli', 'Unit / Proyek', 'Kategori', 'Nilai AJB (DPP)', 'PPh', 'PPN', 'PPN DTP', 'BPHTB', ''].map((h, i) => (
+                    <th key={i} className={`px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap ${i >= 4 && i <= 7 ? 'text-right' : 'text-left'}`}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {rep.rows.length === 0 ? (
+                  <tr><td colSpan={10} className="px-4 py-8 text-center text-slate-400 text-sm">Belum ada transaksi penjualan pada periode ini.</td></tr>
+                ) : rep.rows.map((r) => (
+                  <tr key={r.client_id} className={`hover:bg-slate-50 transition-colors ${!r.lengkap ? 'bg-amber-50/40' : ''}`}>
+                    <td className="px-3 py-2.5 text-slate-500 whitespace-nowrap">{r.tgl_ajb ? new Date(r.tgl_ajb).toLocaleDateString('id-ID') : '—'}</td>
+                    <td className="px-3 py-2.5 font-medium text-slate-900 whitespace-nowrap">{r.pembeli}</td>
+                    <td className="px-3 py-2.5 text-slate-500 whitespace-nowrap">{[r.unit_label, r.proyek].filter(Boolean).join(' · ') || '—'}</td>
+                    <td className="px-3 py-2.5 whitespace-nowrap">
+                      <span className={`text-[11px] font-medium ${r.kategori === 'subsidi' ? 'text-emerald-700' : 'text-slate-600'}`}>{r.kategori === 'subsidi' ? 'Subsidi' : 'Komersial'}</span>
+                    </td>
+                    <td className="px-3 py-2.5 text-right tabular-nums text-slate-900">{fmtRp(r.nilai_ajb)}</td>
+                    <td className="px-3 py-2.5 text-right tabular-nums whitespace-nowrap">
+                      <div className="text-slate-700">{r.pph_amount != null ? fmtRp(r.pph_amount) : <span className="text-red-500">belum</span>}</div>
+                      <TaxStatusPill status={r.pph_status} />
+                    </td>
+                    <td className="px-3 py-2.5 text-right whitespace-nowrap"><TaxStatusPill status={r.ppn_status} /></td>
+                    <td className="px-3 py-2.5 text-right tabular-nums text-indigo-700">{r.ppn_dtp != null ? fmtRp(r.ppn_dtp) : '—'}</td>
+                    <td className="px-3 py-2.5 text-right tabular-nums whitespace-nowrap">
+                      <div className="text-slate-700">{r.bphtb_amount != null ? fmtRp(r.bphtb_amount) : '—'}</div>
+                      <TaxStatusPill status={r.bphtb_status} />
+                    </td>
+                    <td className="px-3 py-2.5 text-right">
+                      <Link to={`/marketing/clients/${r.client_id}/tax`} className="inline-flex items-center gap-1 text-xs text-brand-600 hover:underline whitespace-nowrap">
+                        Urus <ExternalLink size={12} />
+                      </Link>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
 // ═══════════════════════ RETENSI BANK ═══════════════════════
 const DONUT_COLORS = ['#1e3a5f', '#c9a227', '#2f855a', '#3182ce', '#805ad5', '#dd6b20', '#0d9488', '#d53f8c']
 const R_DONUT = 15.91549430918954  // keliling = 100 → dasharray dlm persen
@@ -1370,12 +1534,13 @@ const TABS = [
   { key: 'kpr', label: 'Rejection-Rate KPR', desc: 'Persentase pengajuan KPR ditolak per bank penyalur.' },
   { key: 'tax', label: 'Pajak Bulanan', desc: 'Rekap PPh per pembeli per bulan — nama, NIK, lokasi, AJB, jumlah, NTPN, notaris.' },
   { key: 'tax-checklist', label: 'Checklist Pajak', desc: 'Pembeli yang perpajakannya (PPh/BPHTB/PPN) belum tuntas — belum ada data, belum bayar, atau menunggu validasi.' },
+  { key: 'tax-equalization', label: 'Ekualisasi Pajak', desc: 'Sandingan Penjualan (AJB) ↔ DPP PPh ↔ DPP PPN untuk pemeriksa/konsultan pajak, plus realisasi PPN DTP. Bisa diekspor ke Excel.' },
 ] as const
 type TabKey = (typeof TABS)[number]['key']
 
 // Report dipecah per kategori (menu sidebar) — tiap kategori hanya menampilkan subset tab yang relevan.
 const CATEGORIES: Record<string, { label: string; tabs: TabKey[] }> = {
-  pajak: { label: 'Report Pajak', tabs: ['tax', 'tax-checklist'] },
+  pajak: { label: 'Report Pajak', tabs: ['tax', 'tax-checklist', 'tax-equalization'] },
   keuangan: { label: 'Report Keuangan', tabs: ['cashflow', 'profit', 'retention', 'projection'] },
   marketing: { label: 'Report Marketing', tabs: ['kpr', 'sales', 'aging'] },
   pembangunan: { label: 'Report Pembangunan', tabs: ['construction'] },
@@ -1427,6 +1592,7 @@ export default function Reports() {
       {active.key === 'kpr' && <KprRejectionTab />}
       {active.key === 'tax' && <MonthlyTaxTab />}
       {active.key === 'tax-checklist' && <TaxChecklistTab />}
+      {active.key === 'tax-equalization' && <TaxEqualizationTab />}
     </div>
   )
 }

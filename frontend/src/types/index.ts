@@ -959,6 +959,41 @@ export interface CashProjection {
   projected_liquidity: number
 }
 
+export interface TaxEqRow {
+  client_id: string
+  pembeli: string
+  nik?: string | null
+  proyek?: string | null
+  unit_label?: string | null
+  kategori: string
+  tgl_ajb?: string | null
+  nilai_ajb: number
+  pph_amount?: number | null
+  pph_status?: string | null
+  pph_ntpn?: string | null
+  ppn_status?: string | null
+  ppn_dpp?: number | null
+  ppn_dtp?: number | null
+  bphtb_amount?: number | null
+  bphtb_status?: string | null
+  lengkap: boolean
+}
+
+export interface TaxEqReport {
+  period: string
+  penjualan: number
+  dpp_pph: number
+  dpp_ppn: number
+  selisih_pph: number
+  selisih_ppn: number
+  pph_terutang: number
+  ppn_dtp_total: number
+  ppn_bebas_count: number
+  bphtb_total: number
+  incomplete: number
+  rows: TaxEqRow[]
+}
+
 export interface CashflowReport {
   total_contract: number
   from_buyer: number

@@ -1,5 +1,5 @@
 import api from './api'
-import type { DashboardStats, KprRejectionReport, CashflowReport, SalesRecapReport, AgingReport, SalesMonthly, ConstructionProgressReport, MonthlyTaxReport, MonthlyTaxShareLink, ShareLinkCreate, TaxChecklistReport, ProjectProfitReport, ProjectProfitDetail, KprSummaryReport, FinanceSummary, KprDetailRow, UnitDetailRow, BankRetentionReport, FinanceDetailRow, CashProjection } from '../types'
+import type { DashboardStats, KprRejectionReport, CashflowReport, SalesRecapReport, AgingReport, SalesMonthly, ConstructionProgressReport, MonthlyTaxReport, MonthlyTaxShareLink, ShareLinkCreate, TaxChecklistReport, ProjectProfitReport, ProjectProfitDetail, KprSummaryReport, FinanceSummary, KprDetailRow, UnitDetailRow, BankRetentionReport, FinanceDetailRow, CashProjection, TaxEqReport } from '../types'
 
 export const reportingService = {
   async dashboard(): Promise<DashboardStats> {
@@ -55,6 +55,19 @@ export const reportingService = {
   async cashProjection(months = 6): Promise<CashProjection> {
     const { data } = await api.get<CashProjection>('/reporting/cash-projection', { params: { months } })
     return data
+  },
+
+  async taxEqualization(year: number, month?: number): Promise<TaxEqReport> {
+    const { data } = await api.get<TaxEqReport>('/reporting/tax-equalization', { params: { year, month: month || undefined } })
+    return data
+  },
+
+  async taxEqualizationExport(year: number, month?: number): Promise<void> {
+    const res = await api.get('/reporting/tax-equalization/export', { params: { year, month: month || undefined }, responseType: 'blob' })
+    const url = URL.createObjectURL(res.data as Blob)
+    const a = document.createElement('a')
+    a.href = url; a.download = `Ekualisasi_Pajak_${month ? `${year}-${String(month).padStart(2, '0')}` : year}.xlsx`
+    document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url)
   },
 
   async financeDetail(kind: string, params: { project_id?: string; month?: string } = {}): Promise<FinanceDetailRow[]> {
