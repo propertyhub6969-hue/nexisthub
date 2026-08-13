@@ -1861,6 +1861,28 @@ export interface ReconcileView {
   movements: ReconMovement[]
 }
 
+export interface MutationRow {
+  row: number
+  tgl?: string | null
+  description: string
+  direction: string
+  amount: number
+  status: string
+  entry_id?: string | null
+  entry_kind?: string | null
+  entry_desc?: string | null
+  note?: string | null
+}
+
+export interface MutationImportResult {
+  dry_run: boolean
+  total: number
+  matched: number
+  already_cleared: number
+  no_match: number
+  rows: MutationRow[]
+}
+
 export interface ReconciliationRow {
   id: string
   account_id: string

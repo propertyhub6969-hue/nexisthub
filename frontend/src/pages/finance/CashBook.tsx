@@ -1,10 +1,10 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { Link } from 'react-router-dom'
-import { Loader2, Wallet, TrendingUp, TrendingDown, Scale, ChevronLeft, ChevronRight, Landmark, Banknote, Plus, ArrowLeftRight, Settings2, Star, Trash2 } from 'lucide-react'
+import { Loader2, Wallet, TrendingUp, TrendingDown, Scale, ChevronLeft, ChevronRight, Landmark, Banknote, Plus, ArrowLeftRight, Settings2, Star, Trash2, Download, Upload } from 'lucide-react'
 import DateInput from '../../components/ui/DateInput'
 import Modal from '../../components/ui/Modal'
 import { cashbookService } from '../../services/cashbook'
-import type { AccountCategory, CashBookEntry, CashBookSummary, CashDirection, CashAccount, CashAccountsSummary } from '../../types'
+import type { AccountCategory, CashBookEntry, CashBookSummary, CashDirection, CashAccount, CashAccountsSummary, MutationImportResult } from '../../types'
 
 const fmt = (n?: number) =>
   n == null ? '—' : new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(Number(n))
@@ -325,6 +325,10 @@ function ReconcileModal({ accounts, initialAccountId, onClose, onSaved }:
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState('')
+  const [mutFile, setMutFile] = useState<File | null>(null)
+  const [mutResult, setMutResult] = useState<MutationImportResult | null>(null)
+  const [mutBusy, setMutBusy] = useState(false)
+  const mutRef = useRef<HTMLInputElement>(null)
 
   const load = useCallback(async () => {
     if (!accId) return
@@ -332,6 +336,18 @@ function ReconcileModal({ accounts, initialAccountId, onClose, onSaved }:
     try { setView(await cashbookService.reconcileView(accId, asOf)) }
     catch { setMsg('Gagal memuat rekonsiliasi.') } finally { setLoading(false) }
   }, [accId, asOf])
+
+  async function mutPreview(f: File) {
+    setMutBusy(true); setMutResult(null)
+    try { setMutResult(await cashbookService.importMutations(accId, f, true)) }
+    catch { setMsg('Gagal membaca file mutasi.') } finally { setMutBusy(false) }
+  }
+  async function mutApply() {
+    if (!mutFile) return
+    setMutBusy(true)
+    try { setMutResult(await cashbookService.importMutations(accId, mutFile, false)); load() }
+    catch { setMsg('Gagal menerapkan.') } finally { setMutBusy(false) }
+  }
   useEffect(() => { load() }, [load])
 
   async function toggle(m: import('../../types').ReconMovement) {
@@ -381,6 +397,28 @@ function ReconcileModal({ accounts, initialAccountId, onClose, onSaved }:
         )}
 
         <p className="text-xs text-slate-400">Centang tiap transaksi yang <b>sudah muncul di rekening koran</b>. Saldo Cleared harus sama dengan Saldo Bank agar cocok (selisih 0).</p>
+
+        {/* Impor mutasi bank → auto-centang */}
+        <div className="rounded-lg border border-slate-100 bg-slate-50/60 p-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs font-semibold text-slate-600">Impor Mutasi Bank (auto-cocok):</span>
+            <button onClick={() => cashbookService.downloadMutationsTemplate()} className="text-xs text-brand-600 hover:underline inline-flex items-center gap-1"><Download size={12} /> Template</button>
+            <input ref={mutRef} type="file" accept=".xlsx" className="hidden" onChange={(e) => { const f = e.target.files?.[0] ?? null; setMutFile(f); if (f) mutPreview(f) }} />
+            <button onClick={() => mutRef.current?.click()} disabled={mutBusy} className="btn-secondary text-xs inline-flex items-center gap-1"><Upload size={12} /> Pilih file mutasi</button>
+            {mutFile && <span className="text-xs text-slate-500 truncate max-w-[160px]">{mutFile.name}</span>}
+            {mutBusy && <Loader2 size={13} className="animate-spin text-slate-400" />}
+          </div>
+          {mutResult && (
+            <div className="mt-2 text-xs text-slate-600">
+              Cocok: <b className="text-emerald-600">{mutResult.matched}</b> · Tak cocok: <b className={mutResult.no_match ? 'text-amber-600' : 'text-slate-400'}>{mutResult.no_match}</b> dari {mutResult.total} baris.
+              {mutResult.no_match > 0 && <span className="text-slate-400"> (baris tak cocok = mutasi belum tercatat: biaya admin, bunga, dll)</span>}
+              {mutResult.dry_run && mutResult.matched > 0 && (
+                <button onClick={mutApply} disabled={mutBusy} className="ml-2 btn-primary text-xs">Terapkan — centang {mutResult.matched}</button>
+              )}
+              {!mutResult.dry_run && <span className="ml-2 text-emerald-600 font-medium">✓ {mutResult.matched} transaksi tercentang</span>}
+            </div>
+          )}
+        </div>
 
         <div className="overflow-x-auto max-h-[45vh] border border-slate-100 rounded-lg">
           <table className="w-full text-sm">

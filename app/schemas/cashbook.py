@@ -158,6 +158,28 @@ class ReconcileSaveRequest(BaseModel):
     note: Optional[str] = None
 
 
+class MutationRow(BaseModel):
+    row: int
+    tgl: Optional[date] = None
+    description: str
+    direction: str            # in | out
+    amount: Decimal
+    status: str               # matched | already_cleared | no_match | ambiguous | error
+    entry_id: Optional[uuid.UUID] = None
+    entry_kind: Optional[str] = None   # entry | transfer
+    entry_desc: Optional[str] = None
+    note: Optional[str] = None
+
+
+class MutationImportResult(BaseModel):
+    dry_run: bool
+    total: int
+    matched: int
+    already_cleared: int
+    no_match: int
+    rows: list[MutationRow]
+
+
 class ReconciliationRow(BaseModel):
     id: uuid.UUID
     account_id: uuid.UUID

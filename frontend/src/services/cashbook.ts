@@ -1,5 +1,5 @@
 import api from './api'
-import type { AccountCategory, CashBookEntry, CashBookSummary, PaginatedResponse, CashDirection, PendingExpenseList, CashAccount, CashAccountsSummary, CashTransfer, ReconcileView, ReconciliationRow } from '../types'
+import type { AccountCategory, CashBookEntry, CashBookSummary, PaginatedResponse, CashDirection, PendingExpenseList, CashAccount, CashAccountsSummary, CashTransfer, ReconcileView, ReconciliationRow, MutationImportResult } from '../types'
 
 export const cashbookService = {
   async listCategories(): Promise<AccountCategory[]> {
@@ -79,6 +79,22 @@ export const cashbookService = {
   },
   async markExpensesPaid(refs: string[], paid_date?: string, account_id?: string): Promise<{ marked: number; paid_date: string }> {
     const { data } = await api.post('/cashbook/pending-expenses/mark-paid', { refs, paid_date: paid_date || null, account_id: account_id || null })
+    return data
+  },
+
+  // ── Impor mutasi bank (auto-cocok cleared) ──
+  async downloadMutationsTemplate(): Promise<void> {
+    const res = await api.get('/cashbook/mutations/template', { responseType: 'blob' })
+    const url = URL.createObjectURL(res.data as Blob)
+    const a = document.createElement('a')
+    a.href = url; a.download = 'Template_Mutasi_Bank.xlsx'
+    document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url)
+  },
+  async importMutations(accountId: string, file: File, dryRun: boolean): Promise<MutationImportResult> {
+    const fd = new FormData(); fd.append('file', file)
+    const { data } = await api.post<MutationImportResult>(`/cashbook/accounts/${accountId}/mutations`, fd, {
+      params: { dry_run: dryRun }, headers: { 'Content-Type': 'multipart/form-data' },
+    })
     return data
   },
 }

@@ -3,7 +3,9 @@ from datetime import date
 from decimal import Decimal
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Query
+import io
+from fastapi import APIRouter, Depends, Query, UploadFile, File
+from fastapi.responses import StreamingResponse
 from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -28,6 +30,7 @@ from app.schemas.cashbook import (
     CashAccountCreate, CashAccountUpdate, CashAccountResponse, CashAccountsSummary,
     CashTransferCreate, CashTransferResponse, EntryAccountUpdate, ClearedUpdate,
     ReconMovement, ReconcileView, ReconcileSaveRequest, ReconciliationRow,
+    MutationRow, MutationImportResult,
 )
 from fastapi import HTTPException, status as httpstatus
 
@@ -561,3 +564,193 @@ async def list_reconciliations(account_id: uuid.UUID, ctx: AuthContext = Depends
             CashReconciliation.tenant_id == ctx.tenant_id, CashReconciliation.account_id == account_id)
         .order_by(CashReconciliation.statement_date.desc()).limit(50))).scalars().all()
     return [ReconciliationRow.model_validate(r) for r in rows]
+
+
+# ═══════════════════════ IMPOR MUTASI BANK (Slice 3, auto-cocok cleared) ═══════════════════════
+def _mut_field(h):
+    from app.api.v1.endpoints.import_data import _norm_header
+    n = _norm_header(h)
+    if n.startswith("tanggal") or n.startswith("tgl") or "date" in n: return "date"
+    if "debit" in n or "keluar" in n or "debet" in n: return "debit"
+    if "kredit" in n or "credit" in n or "masuk" in n: return "kredit"
+    if n.startswith("jumlah") or n.startswith("nominal") or n.startswith("mutasi") or n.startswith("nilai"): return "amount"
+    if "keterangan" in n or "uraian" in n or "berita" in n or n.startswith("deskrip"): return "desc"
+    if n.startswith("tipe") or n.startswith("dc") or n.startswith("d/c") or n == "dk": return "dc"
+    return None
+
+
+def _read_mutations(contents: bytes):
+    import openpyxl
+    try:
+        wb = openpyxl.load_workbook(io.BytesIO(contents), read_only=True, data_only=True)
+    except Exception:
+        raise HTTPException(status_code=400, detail="File bukan Excel (.xlsx) yang valid.")
+    ws = wb.worksheets[0]
+    it = ws.iter_rows(values_only=True)
+    try:
+        header = next(it)
+    except StopIteration:
+        return []
+    col = {}
+    for i, h in enumerate(header):
+        f = _mut_field(h)
+        if f and f not in col:
+            col[f] = i
+    if "date" not in col or not ({"debit", "kredit"} & set(col)) and "amount" not in col:
+        raise HTTPException(status_code=400, detail="Header wajib: Tanggal + (Debit/Kredit atau Jumlah).")
+    out = []
+    rn = 1
+    for raw in it:
+        rn += 1
+        def g(k):
+            i = col.get(k)
+            return raw[i] if (i is not None and i < len(raw)) else None
+        rec = {"date": g("date"), "debit": g("debit"), "kredit": g("kredit"),
+               "amount": g("amount"), "desc": g("desc"), "dc": g("dc")}
+        if all((v is None or str(v).strip() == "") for v in rec.values()):
+            continue
+        if str(rec.get("desc") or "").strip().upper().startswith("CONTOH"):
+            continue
+        out.append((rn, rec))
+    return out
+
+
+@router.post("/accounts/{account_id}/mutations", response_model=MutationImportResult)
+async def import_mutations(
+    account_id: uuid.UUID,
+    file: UploadFile = File(...),
+    dry_run: bool = Query(True),
+    tolerance_days: int = Query(5, ge=0, le=31),
+    ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db),
+):
+    """Impor mutasi rekening koran (xlsx) → cocokkan otomatis ke transaksi rekening ini (arah+jumlah,
+    tanggal ±toleransi) → tandai CLEARED. dry_run=true hanya pratinjau. Baris bank yang tak cocok
+    dilaporkan (mungkin transaksi belum tercatat: biaya admin, bunga, dll)."""
+    from app.api.v1.endpoints.import_data import _to_decimal, _to_date
+    a = await _get_account(db, ctx.tenant_id, account_id)
+    contents = await file.read()
+    rows = _read_mutations(contents)
+
+    # gerakan rekening yg BELUM cleared (entri + transfer)
+    movements = []
+    erows = (await db.execute(select(CashBookEntry).where(
+        CashBookEntry.tenant_id == ctx.tenant_id, CashBookEntry.account_id == a.id,
+        CashBookEntry.is_cleared == False))).scalars().all()  # noqa: E712
+    for e in erows:
+        movements.append({"obj": e, "kind": "entry", "date": e.date,
+                          "dir": "in" if e.direction == CashDirection.IN else "out",
+                          "amt": Decimal(e.amount or 0), "desc": e.description})
+    trows = (await db.execute(select(CashTransfer).where(
+        CashTransfer.tenant_id == ctx.tenant_id, CashTransfer.is_deleted == False,  # noqa: E712
+        CashTransfer.is_cleared == False,
+        ((CashTransfer.from_account_id == a.id) | (CashTransfer.to_account_id == a.id))))).scalars().all()
+    for tr in trows:
+        movements.append({"obj": tr, "kind": "transfer", "date": tr.date,
+                          "dir": "in" if tr.to_account_id == a.id else "out",
+                          "amt": Decimal(tr.amount or 0), "desc": tr.notes or "Transfer antar rekening"})
+
+    used = set()
+    result_rows = []
+    to_clear = []
+    matched = already = nomatch = 0
+    for rn, rec in rows:
+        errs = []
+        try:
+            bdate = _to_date(rec["date"])
+        except ValueError:
+            bdate = None
+        # arah & jumlah
+        deb = kre = None
+        try:
+            deb = _to_decimal(rec["debit"])
+            kre = _to_decimal(rec["kredit"])
+        except Exception:
+            errs.append("angka Debit/Kredit tak valid")
+        amt = None; direction = None
+        if kre and kre > 0:
+            direction, amt = "in", kre
+        elif deb and deb > 0:
+            direction, amt = "out", deb
+        elif rec["amount"] not in (None, ""):
+            try:
+                av = _to_decimal(rec["amount"])
+            except Exception:
+                av = None
+            dc = str(rec["dc"] or "").strip().lower()
+            if av is not None:
+                if dc in ("d", "db", "debit", "k", "keluar") or av < 0:
+                    direction, amt = "out", abs(av)
+                else:
+                    direction, amt = "in", abs(av)
+        desc = str(rec["desc"] or "").strip() or "(mutasi)"
+        if amt is None or amt <= 0:
+            errs.append("jumlah/ arah tak terbaca")
+
+        if errs:
+            result_rows.append(MutationRow(row=rn, tgl=bdate, description=desc, direction=direction or "-",
+                                           amount=amt or Decimal(0), status="error", note="; ".join(errs)))
+            continue
+
+        # cari kandidat: arah sama, jumlah sama, dalam toleransi tanggal, belum dipakai
+        cands = []
+        for idx, m in enumerate(movements):
+            if idx in used or m["dir"] != direction or m["amt"] != amt:
+                continue
+            if bdate is not None and abs((m["date"] - bdate).days) > tolerance_days:
+                continue
+            cands.append((idx, m))
+        if not cands:
+            nomatch += 1
+            result_rows.append(MutationRow(row=rn, tgl=bdate, description=desc, direction=direction,
+                                           amount=amt, status="no_match", note="tak ada transaksi cocok (mungkin belum dicatat)"))
+            continue
+        # pilih tanggal terdekat
+        cands.sort(key=lambda c: abs((c[1]["date"] - bdate).days) if bdate else 0)
+        idx, m = cands[0]
+        used.add(idx)
+        matched += 1
+        to_clear.append(m)
+        result_rows.append(MutationRow(row=rn, tgl=bdate, description=desc, direction=direction, amount=amt,
+                                       status="matched", entry_id=m["obj"].id, entry_kind=m["kind"],
+                                       entry_desc=m["desc"], note=("beberapa kandidat" if len(cands) > 1 else None)))
+
+    if not dry_run and to_clear:
+        from sqlalchemy import update as _update
+        e_ids = [m["obj"].id for m in to_clear if m["kind"] == "entry"]
+        t_ids = [m["obj"].id for m in to_clear if m["kind"] == "transfer"]
+        if e_ids:
+            await db.execute(_update(CashBookEntry).where(CashBookEntry.id.in_(e_ids)).values(is_cleared=True))
+        if t_ids:
+            await db.execute(_update(CashTransfer).where(CashTransfer.id.in_(t_ids)).values(is_cleared=True))
+        await record_audit(db, ctx.tenant_id, ctx.user_id, "IMPORT_MUTATION", "cash_accounts", a.id,
+                           new_data={"matched": matched})
+        await db.commit()
+
+    return MutationImportResult(dry_run=dry_run, total=len(result_rows), matched=matched,
+                                already_cleared=already, no_match=nomatch, rows=result_rows)
+
+
+@router.get("/mutations/template")
+async def mutations_template(ctx: AuthContext = Depends(get_current_context)):
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill, Alignment
+    wb = openpyxl.Workbook()
+    ws = wb.active; ws.title = "MUTASI"
+    hdr = ["Tanggal", "Keterangan", "Debit (keluar)", "Kredit (masuk)"]
+    fill = PatternFill("solid", fgColor="1E3A5F")
+    widths = [14, 40, 16, 16]
+    for i, (h, w) in enumerate(zip(hdr, widths), start=1):
+        c = ws.cell(row=1, column=i, value=h)
+        c.font = Font(name="Arial", bold=True, color="FFFFFF", size=10)
+        c.fill = fill; c.alignment = Alignment(horizontal="center")
+        ws.column_dimensions[chr(64 + i)].width = w
+    ex = ["20/05/2025", "CONTOH — hapus baris ini. DP dari Budi", "", 25000000]
+    for i, v in enumerate(ex, start=1):
+        cc = ws.cell(row=2, column=i, value=v)
+        cc.font = Font(name="Arial", italic=True, size=10, color="C08A2B")
+        if i == 4:
+            cc.number_format = "#,##0"
+    ws.freeze_panes = "A2"
+    bio = io.BytesIO(); wb.save(bio); bio.seek(0)
+    return StreamingResponse(bio, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                             headers={"Content-Disposition": 'attachment; filename="Template_Mutasi_Bank.xlsx"'})
