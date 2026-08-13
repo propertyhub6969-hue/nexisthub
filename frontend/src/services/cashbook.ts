@@ -1,5 +1,5 @@
 import api from './api'
-import type { AccountCategory, CashBookEntry, CashBookSummary, PaginatedResponse, CashDirection, PendingExpenseList, CashAccount, CashAccountsSummary, CashTransfer } from '../types'
+import type { AccountCategory, CashBookEntry, CashBookSummary, PaginatedResponse, CashDirection, PendingExpenseList, CashAccount, CashAccountsSummary, CashTransfer, ReconcileView, ReconciliationRow } from '../types'
 
 export const cashbookService = {
   async listCategories(): Promise<AccountCategory[]> {
@@ -43,6 +43,26 @@ export const cashbookService = {
   },
   async createTransfer(payload: { from_account_id: string; to_account_id: string; amount: number; date: string; notes?: string }): Promise<CashTransfer> {
     const { data } = await api.post<CashTransfer>('/cashbook/transfers', payload)
+    return data
+  },
+
+  // ── Rekonsiliasi ──
+  async reconcileView(accountId: string, asOf: string): Promise<ReconcileView> {
+    const { data } = await api.get<ReconcileView>(`/cashbook/accounts/${accountId}/reconcile`, { params: { as_of: asOf } })
+    return data
+  },
+  async setEntryCleared(entryId: string, is_cleared: boolean): Promise<void> {
+    await api.patch(`/cashbook/entries/${entryId}/cleared`, { is_cleared })
+  },
+  async setTransferCleared(transferId: string, is_cleared: boolean): Promise<void> {
+    await api.patch(`/cashbook/transfers/${transferId}/cleared`, { is_cleared })
+  },
+  async saveReconcile(accountId: string, payload: { statement_date: string; statement_balance: number; note?: string }): Promise<ReconciliationRow> {
+    const { data } = await api.post<ReconciliationRow>(`/cashbook/accounts/${accountId}/reconcile`, payload)
+    return data
+  },
+  async listReconciliations(accountId: string): Promise<ReconciliationRow[]> {
+    const { data } = await api.get<ReconciliationRow[]>(`/cashbook/accounts/${accountId}/reconciliations`)
     return data
   },
   async summary(params: { date_from?: string; date_to?: string } = {}): Promise<CashBookSummary> {

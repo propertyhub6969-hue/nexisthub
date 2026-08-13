@@ -1821,6 +1821,38 @@ export interface CashTransfer {
   created_at: string
 }
 
+export interface ReconMovement {
+  id: string
+  kind: 'entry' | 'transfer'
+  date: string
+  description: string
+  direction: 'in' | 'out'
+  amount: number
+  is_cleared: boolean
+}
+
+export interface ReconcileView {
+  account_id: string
+  account_name: string
+  as_of: string
+  opening_balance: number
+  book_balance: number
+  cleared_balance: number
+  movements: ReconMovement[]
+}
+
+export interface ReconciliationRow {
+  id: string
+  account_id: string
+  statement_date: string
+  statement_balance: number
+  book_balance: number
+  cleared_balance: number
+  difference: number
+  note?: string | null
+  created_at: string
+}
+
 export interface CashBookCategoryTotal {
   category_id?: string
   category_name: string

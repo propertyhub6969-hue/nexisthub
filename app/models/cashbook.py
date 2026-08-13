@@ -50,6 +50,24 @@ class CashTransfer(BaseModel, SoftDeleteMixin):
     amount: Mapped[float] = mapped_column(Numeric(15, 2), nullable=False)
     date: Mapped[date] = mapped_column(Date, nullable=False)
     notes: Mapped[str] = mapped_column(Text, nullable=True)
+    is_cleared: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)  # sudah cocok di rek. koran
+
+
+class CashReconciliation(BaseModel):
+    """Snapshot rekonsiliasi 1 rekening per tanggal: saldo bank aktual vs saldo buku."""
+    __tablename__ = "cash_reconciliations"
+
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    account_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("cash_accounts.id", ondelete="CASCADE"), nullable=False, index=True)
+    statement_date: Mapped[date] = mapped_column(Date, nullable=False)
+    statement_balance: Mapped[float] = mapped_column(Numeric(15, 2), nullable=False)  # saldo rek. koran
+    book_balance: Mapped[float] = mapped_column(Numeric(15, 2), nullable=False)        # saldo buku s/d tgl itu
+    cleared_balance: Mapped[float] = mapped_column(Numeric(15, 2), nullable=False)     # saldo dari entri cleared
+    difference: Mapped[float] = mapped_column(Numeric(15, 2), nullable=False)          # statement − cleared
+    note: Mapped[str] = mapped_column(Text, nullable=True)
+    created_by_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=True)
 
 
 class AccountCategory(BaseModel, SoftDeleteMixin):
@@ -88,6 +106,7 @@ class CashBookEntry(BaseModel):
     account_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("cash_accounts.id", ondelete="SET NULL"), nullable=True, index=True
     )  # rekening kas/bank tempat uang ini masuk/keluar (NULL = belum ditentukan)
+    is_cleared: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)  # sudah cocok di rek. koran
     source_type: Mapped[str] = mapped_column(String(20), nullable=False)  # 'payment' | 'expense'
     source_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
     description: Mapped[str] = mapped_column(String(300), nullable=False)

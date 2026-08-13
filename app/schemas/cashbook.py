@@ -127,6 +127,52 @@ class EntryAccountUpdate(BaseModel):
     account_id: Optional[uuid.UUID] = None   # None = lepaskan rekening
 
 
+class ClearedUpdate(BaseModel):
+    is_cleared: bool
+
+
+# ── Rekonsiliasi ──
+class ReconMovement(BaseModel):
+    id: uuid.UUID
+    kind: str            # 'entry' | 'transfer'
+    date: date
+    description: str
+    direction: str       # 'in' | 'out' (relatif ke rekening ini)
+    amount: Decimal
+    is_cleared: bool
+
+
+class ReconcileView(BaseModel):
+    account_id: uuid.UUID
+    account_name: str
+    as_of: date
+    opening_balance: Decimal
+    book_balance: Decimal      # saldo buku s/d as_of (semua gerakan)
+    cleared_balance: Decimal   # saldo dari gerakan yang sudah cleared
+    movements: list[ReconMovement]
+
+
+class ReconcileSaveRequest(BaseModel):
+    statement_date: date
+    statement_balance: Decimal
+    note: Optional[str] = None
+
+
+class ReconciliationRow(BaseModel):
+    id: uuid.UUID
+    account_id: uuid.UUID
+    statement_date: date
+    statement_balance: Decimal
+    book_balance: Decimal
+    cleared_balance: Decimal
+    difference: Decimal
+    note: Optional[str] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
 # ── Rekap ────────────────────────────────────────────────────────
 class CashBookCategoryTotal(BaseModel):
     category_id: Optional[uuid.UUID] = None

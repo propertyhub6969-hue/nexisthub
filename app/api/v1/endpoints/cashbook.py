@@ -13,7 +13,7 @@ from app.api.deps import get_current_context, AuthContext
 from app.core.audit import record_audit
 from app.core.cashbook import sync_expense_cashbook, sync_notary_fee_cashbook
 from app.core.notify import notify_roles
-from app.models.cashbook import AccountCategory, CashBookEntry, CashDirection, CashAccount, CashTransfer
+from app.models.cashbook import AccountCategory, CashBookEntry, CashDirection, CashAccount, CashTransfer, CashReconciliation
 from app.models.expense import Expense
 from app.models.marketing import Client
 from app.models.tax import NotaryFee, Notary
@@ -25,7 +25,8 @@ from app.schemas.cashbook import (
     CategoryResponse, CashBookEntryResponse, CashBookSummary, CashBookCategoryTotal, CashBookMonth,
     PendingExpenseRow, PendingExpenseList, MarkExpensePaidRequest,
     CashAccountCreate, CashAccountUpdate, CashAccountResponse, CashAccountsSummary,
-    CashTransferCreate, CashTransferResponse, EntryAccountUpdate,
+    CashTransferCreate, CashTransferResponse, EntryAccountUpdate, ClearedUpdate,
+    ReconMovement, ReconcileView, ReconcileSaveRequest, ReconciliationRow,
 )
 from fastapi import HTTPException, status as httpstatus
 
@@ -453,3 +454,98 @@ async def reassign_entry_account(entry_id: uuid.UUID, payload: EntryAccountUpdat
     e, cname, pname, acc_name = row
     return CashBookEntryResponse.model_validate(e).model_copy(update={
         "client_name": cname, "project_name": pname, "account_name": acc_name})
+
+
+# ═══════════════════════ REKONSILIASI (Slice 2, manual) ═══════════════════════
+@router.patch("/entries/{entry_id}/cleared")
+async def set_entry_cleared(entry_id: uuid.UUID, payload: ClearedUpdate, ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db)):
+    e = (await db.execute(select(CashBookEntry).where(
+        CashBookEntry.id == entry_id, CashBookEntry.tenant_id == ctx.tenant_id))).scalar_one_or_none()
+    if e is None:
+        raise HTTPException(status_code=httpstatus.HTTP_404_NOT_FOUND, detail="Baris kas tidak ditemukan")
+    e.is_cleared = payload.is_cleared
+    await db.commit()
+    return {"ok": True}
+
+
+@router.patch("/transfers/{transfer_id}/cleared")
+async def set_transfer_cleared(transfer_id: uuid.UUID, payload: ClearedUpdate, ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db)):
+    t = (await db.execute(select(CashTransfer).where(
+        CashTransfer.id == transfer_id, CashTransfer.tenant_id == ctx.tenant_id))).scalar_one_or_none()
+    if t is None:
+        raise HTTPException(status_code=httpstatus.HTTP_404_NOT_FOUND, detail="Transfer tidak ditemukan")
+    t.is_cleared = payload.is_cleared
+    await db.commit()
+    return {"ok": True}
+
+
+async def _reconcile_data(db, tenant_id, account_id, as_of):
+    """Kumpulkan gerakan rekening s/d as_of + hitung saldo buku & saldo cleared."""
+    a = await _get_account(db, tenant_id, account_id)
+    opening = Decimal(a.opening_balance or 0)
+    movements = []
+    book = opening
+    cleared = opening
+    # entri kas
+    erows = (await db.execute(
+        select(CashBookEntry).where(
+            CashBookEntry.tenant_id == tenant_id, CashBookEntry.account_id == account_id,
+            CashBookEntry.date <= as_of).order_by(CashBookEntry.date))).scalars().all()
+    for e in erows:
+        amt = Decimal(e.amount or 0)
+        signed = amt if e.direction == CashDirection.IN else -amt
+        book += signed
+        if e.is_cleared:
+            cleared += signed
+        movements.append(ReconMovement(id=e.id, kind="entry", date=e.date, description=e.description,
+                                       direction="in" if e.direction == CashDirection.IN else "out",
+                                       amount=amt, is_cleared=e.is_cleared))
+    # transfer masuk/keluar rekening
+    trows = (await db.execute(
+        select(CashTransfer).where(
+            CashTransfer.tenant_id == tenant_id, CashTransfer.is_deleted == False,  # noqa: E712
+            CashTransfer.date <= as_of,
+            ((CashTransfer.from_account_id == account_id) | (CashTransfer.to_account_id == account_id)))
+        .order_by(CashTransfer.date))).scalars().all()
+    for t in trows:
+        amt = Decimal(t.amount or 0)
+        is_in = t.to_account_id == account_id
+        signed = amt if is_in else -amt
+        book += signed
+        if t.is_cleared:
+            cleared += signed
+        movements.append(ReconMovement(id=t.id, kind="transfer", date=t.date,
+                                       description=(t.notes or "Transfer antar rekening"),
+                                       direction="in" if is_in else "out", amount=amt, is_cleared=t.is_cleared))
+    movements.sort(key=lambda m: m.date)
+    return a, opening, book, cleared, movements
+
+
+@router.get("/accounts/{account_id}/reconcile", response_model=ReconcileView)
+async def reconcile_view(account_id: uuid.UUID, as_of: date = Query(...), ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db)):
+    a, opening, book, cleared, movements = await _reconcile_data(db, ctx.tenant_id, account_id, as_of)
+    return ReconcileView(account_id=a.id, account_name=a.name, as_of=as_of,
+                         opening_balance=opening, book_balance=book, cleared_balance=cleared, movements=movements)
+
+
+@router.post("/accounts/{account_id}/reconcile", response_model=ReconciliationRow)
+async def save_reconciliation(account_id: uuid.UUID, payload: ReconcileSaveRequest, ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db)):
+    a, opening, book, cleared, _ = await _reconcile_data(db, ctx.tenant_id, account_id, payload.statement_date)
+    diff = Decimal(payload.statement_balance) - cleared
+    rec = CashReconciliation(tenant_id=ctx.tenant_id, account_id=a.id, statement_date=payload.statement_date,
+                             statement_balance=payload.statement_balance, book_balance=book,
+                             cleared_balance=cleared, difference=diff, note=payload.note, created_by_id=ctx.user_id)
+    db.add(rec); await db.flush()
+    await record_audit(db, ctx.tenant_id, ctx.user_id, "RECONCILE", "cash_accounts", a.id,
+                       new_data={"statement_date": str(payload.statement_date), "difference": str(diff)})
+    await db.commit(); await db.refresh(rec)
+    return ReconciliationRow.model_validate(rec)
+
+
+@router.get("/accounts/{account_id}/reconciliations", response_model=list[ReconciliationRow])
+async def list_reconciliations(account_id: uuid.UUID, ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db)):
+    rows = (await db.execute(
+        select(CashReconciliation).where(
+            CashReconciliation.tenant_id == ctx.tenant_id, CashReconciliation.account_id == account_id)
+        .order_by(CashReconciliation.statement_date.desc()).limit(50))).scalars().all()
+    return [ReconciliationRow.model_validate(r) for r in rows]

@@ -43,6 +43,7 @@ export default function CashBook() {
   const [accts, setAccts] = useState<CashAccountsSummary | null>(null)
   const [manageOpen, setManageOpen] = useState(false)
   const [transferOpen, setTransferOpen] = useState(false)
+  const [reconcileOpen, setReconcileOpen] = useState(false)
 
   const loadAccounts = useCallback(() => {
     cashbookService.listAccounts().then(setAccts).catch(() => {})
@@ -101,6 +102,8 @@ export default function CashBook() {
         <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
           <h3 className="text-sm font-semibold text-slate-600">Saldo per Rekening</h3>
           <div className="flex items-center gap-2">
+            <button onClick={() => setReconcileOpen(true)} disabled={(accts?.accounts.length ?? 0) === 0}
+              className="btn-secondary text-sm inline-flex items-center gap-1.5 disabled:opacity-40"><Scale size={14} /> Rekonsiliasi</button>
             <button onClick={() => setTransferOpen(true)} disabled={(accts?.accounts.length ?? 0) < 2}
               className="btn-secondary text-sm inline-flex items-center gap-1.5 disabled:opacity-40"><ArrowLeftRight size={14} /> Transfer</button>
             <button onClick={() => setManageOpen(true)} className="btn-secondary text-sm inline-flex items-center gap-1.5"><Settings2 size={14} /> Kelola Rekening</button>
@@ -303,7 +306,125 @@ export default function CashBook() {
         <TransferModal accounts={accts?.accounts ?? []} onClose={() => setTransferOpen(false)}
           onDone={() => { setTransferOpen(false); loadAccounts() }} />
       )}
+      {reconcileOpen && (
+        <ReconcileModal accounts={accts?.accounts ?? []} initialAccountId={accountId && accountId !== '__none__' ? accountId : (accts?.accounts[0]?.id ?? '')}
+          onClose={() => setReconcileOpen(false)} onSaved={() => { loadAccounts(); loadEntries() }} />
+      )}
     </div>
+  )
+}
+
+// ── Rekonsiliasi manual: cocokkan saldo buku vs mutasi bank ──
+function ReconcileModal({ accounts, initialAccountId, onClose, onSaved }:
+  { accounts: CashAccount[]; initialAccountId: string; onClose: () => void; onSaved: () => void }) {
+  const [accId, setAccId] = useState(initialAccountId)
+  const [asOf, setAsOf] = useState(new Date().toISOString().slice(0, 10))
+  const [view, setView] = useState<import('../../types').ReconcileView | null>(null)
+  const [stmtBalance, setStmtBalance] = useState('')
+  const [note, setNote] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [msg, setMsg] = useState('')
+
+  const load = useCallback(async () => {
+    if (!accId) return
+    setLoading(true)
+    try { setView(await cashbookService.reconcileView(accId, asOf)) }
+    catch { setMsg('Gagal memuat rekonsiliasi.') } finally { setLoading(false) }
+  }, [accId, asOf])
+  useEffect(() => { load() }, [load])
+
+  async function toggle(m: import('../../types').ReconMovement) {
+    if (m.kind === 'entry') await cashbookService.setEntryCleared(m.id, !m.is_cleared)
+    else await cashbookService.setTransferCleared(m.id, !m.is_cleared)
+    load()
+  }
+
+  const stmt = Number(stmtBalance || 0)
+  const diff = view ? stmt - view.cleared_balance : 0
+
+  async function save() {
+    if (!accId) return
+    setSaving(true); setMsg('')
+    try {
+      await cashbookService.saveReconcile(accId, { statement_date: asOf, statement_balance: stmt, note: note || undefined })
+      setMsg('Rekonsiliasi tersimpan.'); onSaved()
+    } catch { setMsg('Gagal menyimpan.') } finally { setSaving(false) }
+  }
+
+  return (
+    <Modal open onClose={onClose} title="Rekonsiliasi Rekening" size="xl">
+      <div className="space-y-3">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div><label className="label">Rekening</label>
+            <select className="input text-sm" value={accId} onChange={(e) => setAccId(e.target.value)}>
+              {accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+            </select>
+          </div>
+          <div><label className="label">Per Tanggal</label><DateInput className="input text-sm" value={asOf} onChange={setAsOf} /></div>
+          <div><label className="label">Saldo Bank (rek. koran)</label>
+            <input className="input text-sm" type="number" value={stmtBalance} onChange={(e) => setStmtBalance(e.target.value)} placeholder="0" />
+          </div>
+          <div className="flex items-end">
+            <div className={`w-full rounded-lg px-3 py-2 text-sm ${diff === 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
+              Selisih: <b>{fmt(diff)}</b>{diff === 0 ? ' ✓ cocok' : ''}
+            </div>
+          </div>
+        </div>
+
+        {view && (
+          <div className="grid grid-cols-3 gap-2 text-sm">
+            <div className="rounded-lg bg-slate-50 border border-slate-100 p-2"><span className="text-xs text-slate-400">Saldo Buku</span><div className="font-semibold text-slate-800">{fmt(view.book_balance)}</div></div>
+            <div className="rounded-lg bg-slate-50 border border-slate-100 p-2"><span className="text-xs text-slate-400">Saldo Cleared</span><div className="font-semibold text-blue-600">{fmt(view.cleared_balance)}</div></div>
+            <div className="rounded-lg bg-slate-50 border border-slate-100 p-2"><span className="text-xs text-slate-400">Saldo Awal</span><div className="font-semibold text-slate-500">{fmt(view.opening_balance)}</div></div>
+          </div>
+        )}
+
+        <p className="text-xs text-slate-400">Centang tiap transaksi yang <b>sudah muncul di rekening koran</b>. Saldo Cleared harus sama dengan Saldo Bank agar cocok (selisih 0).</p>
+
+        <div className="overflow-x-auto max-h-[45vh] border border-slate-100 rounded-lg">
+          <table className="w-full text-sm">
+            <thead className="bg-slate-50 border-b border-slate-200 sticky top-0">
+              <tr>
+                <th className="px-3 py-2 text-center text-xs font-semibold text-slate-500 w-12">Cocok</th>
+                <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Tanggal</th>
+                <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Uraian</th>
+                <th className="px-3 py-2 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Masuk</th>
+                <th className="px-3 py-2 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Keluar</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {loading ? (
+                <tr><td colSpan={5} className="px-3 py-6 text-center text-slate-400"><Loader2 size={16} className="inline animate-spin" /></td></tr>
+              ) : !view || view.movements.length === 0 ? (
+                <tr><td colSpan={5} className="px-3 py-6 text-center text-slate-400 text-sm">Tidak ada transaksi s/d tanggal ini.</td></tr>
+              ) : view.movements.map((m) => (
+                <tr key={m.kind + m.id} className={m.is_cleared ? 'bg-emerald-50/40' : 'hover:bg-slate-50'}>
+                  <td className="px-3 py-2 text-center">
+                    <input type="checkbox" checked={m.is_cleared} onChange={() => toggle(m)} className="accent-emerald-600" />
+                  </td>
+                  <td className="px-3 py-2 text-slate-500 text-xs whitespace-nowrap">{fmtDate(m.date)}</td>
+                  <td className="px-3 py-2 text-slate-700">{m.description}{m.kind === 'transfer' && <span className="ml-1 text-[10px] text-slate-400">(transfer)</span>}</td>
+                  <td className="px-3 py-2 text-right text-emerald-600">{m.direction === 'in' ? fmt(m.amount) : '—'}</td>
+                  <td className="px-3 py-2 text-right text-red-600">{m.direction === 'out' ? fmt(m.amount) : '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <div>
+          <input className="input text-sm w-full" placeholder="Catatan rekonsiliasi (opsional)" value={note} onChange={(e) => setNote(e.target.value)} />
+        </div>
+        {msg && <p className={`text-sm ${msg.includes('tersimpan') ? 'text-emerald-600' : 'text-red-600'}`}>{msg}</p>}
+        <div className="flex justify-end gap-2">
+          <button className="btn-secondary text-sm" onClick={onClose}>Tutup</button>
+          <button className="btn-primary text-sm inline-flex items-center gap-1.5" onClick={save} disabled={saving || !view}>
+            {saving ? <Loader2 size={14} className="animate-spin" /> : <Scale size={14} />} Simpan Rekonsiliasi
+          </button>
+        </div>
+      </div>
+    </Modal>
   )
 }
 
