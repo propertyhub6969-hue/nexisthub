@@ -2038,7 +2038,7 @@ export interface FinanceSummary {
 
 export interface ImportRow {
   row: number
-  action: 'insert' | 'update' | 'error'
+  action: 'insert' | 'update' | 'error' | 'skip'
   label: string
   errors?: string[]
   note?: string | null
@@ -2046,7 +2046,7 @@ export interface ImportRow {
 
 export interface ImportBatch {
   id: string
-  entity: 'units' | 'clients' | 'documents'
+  entity: 'units' | 'clients' | 'documents' | 'payments'
   inserted: number
   updated: number
   created_at: string
@@ -2060,6 +2060,7 @@ export interface ImportPreview {
   to_insert: number
   to_update: number
   error_count: number
+  to_skip?: number
   rows: ImportRow[]
 }
 
@@ -2068,6 +2069,7 @@ export interface ImportCommitResult {
   inserted: number
   updated: number
   error_count: number
+  skipped?: number
   rows: ImportRow[]
 }
 

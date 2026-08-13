@@ -3,15 +3,16 @@ import { Download, Upload, Loader2, CheckCircle2, PlusCircle, RefreshCw, AlertTr
 import { importDataService } from '../services/importData'
 import type { ImportPreview, ImportCommitResult, ImportBatch } from '../types'
 
-const ENTITY_LABEL: Record<string, string> = { units: 'Unit', clients: 'Pembeli & Kontrak', documents: 'Dokumen Legalitas' }
+const ENTITY_LABEL: Record<string, string> = { units: 'Unit', clients: 'Pembeli & Kontrak', documents: 'Dokumen Legalitas', payments: 'Pembayaran' }
 
 const actionCfg: Record<string, { label: string; cls: string; icon: typeof PlusCircle }> = {
   insert: { label: 'Baru', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200', icon: PlusCircle },
   update: { label: 'Perbarui', cls: 'bg-blue-50 text-blue-700 border-blue-200', icon: RefreshCw },
+  skip: { label: 'Dilewati', cls: 'bg-slate-100 text-slate-500 border-slate-200', icon: RefreshCw },
   error: { label: 'Error', cls: 'bg-red-50 text-red-700 border-red-200', icon: AlertTriangle },
 }
 
-type Entity = 'units' | 'clients' | 'documents'
+type Entity = 'units' | 'clients' | 'documents' | 'payments'
 const ENTITY: Record<Entity, {
   tab: string; noun: string; unitCol: string; keyHint: string; archive?: boolean
   download: () => Promise<void>
@@ -38,6 +39,13 @@ const ENTITY: Record<Entity, {
     download: () => importDataService.downloadDocumentsTemplate(),
     preview: (f) => importDataService.previewDocuments(f),
     commit: (f, a) => importDataService.commitDocuments(f, a),
+  },
+  payments: {
+    tab: 'Pembayaran', noun: 'pembayaran', unitCol: 'Pembayaran',
+    keyHint: 'NIK (bila ada) / Proyek + Nomor Unit; anti-dobel: No. Referensi atau (pembeli+tanggal+jumlah)',
+    download: () => importDataService.downloadPaymentsTemplate(),
+    preview: (f) => importDataService.previewPayments(f),
+    commit: (f) => importDataService.commitPayments(f),
   },
 }
 
@@ -166,7 +174,7 @@ export default function ImportData() {
       {result && (
         <div className="rounded-lg bg-emerald-50 border border-emerald-200 px-4 py-3">
           <p className="text-sm font-semibold text-emerald-800 flex items-center gap-2"><CheckCircle2 size={16} /> Impor selesai</p>
-          <p className="text-sm text-emerald-700 mt-1">{result.inserted} {cfg.noun} baru ditambahkan · {result.updated} diperbarui{result.error_count ? ` · ${result.error_count} baris dilewati (error)` : ''}.</p>
+          <p className="text-sm text-emerald-700 mt-1">{result.inserted} {cfg.noun} baru ditambahkan{result.updated ? ` · ${result.updated} diperbarui` : ''}{result.skipped ? ` · ${result.skipped} dilewati (dobel)` : ''}{result.error_count ? ` · ${result.error_count} baris error` : ''}.</p>
         </div>
       )}
 
@@ -176,7 +184,8 @@ export default function ImportData() {
           <div className="p-4 border-b border-slate-100 flex flex-wrap items-center gap-3 justify-between">
             <div className="flex flex-wrap gap-2">
               <Stat n={preview.to_insert} label="Baru" cls="text-emerald-600" />
-              <Stat n={preview.to_update} label="Diperbarui" cls="text-blue-600" />
+              {entity !== 'payments' && <Stat n={preview.to_update} label="Diperbarui" cls="text-blue-600" />}
+              {!!preview.to_skip && <Stat n={preview.to_skip} label="Dilewati (dobel)" cls="text-slate-500" />}
               <Stat n={preview.error_count} label="Error" cls={preview.error_count ? 'text-red-600' : 'text-slate-400'} />
               <Stat n={preview.total} label="Total baris" cls="text-slate-600" />
             </div>
@@ -264,7 +273,7 @@ export default function ImportData() {
           )}
       </div>
 
-      <p className="text-xs text-slate-400">Kunci pencocokan: <b>{cfg.keyHint}</b>. Yang cocok akan <b>diperbarui</b> (kolom kosong tidak menimpa nilai lama); yang belum ada akan <b>ditambah</b>. {entity === 'clients' && 'Menautkan pembeli ke unit otomatis mengubah status unit (Dipesan/Terjual). '}Impor Pembayaran menyusul.</p>
+      <p className="text-xs text-slate-400">Kunci pencocokan: <b>{cfg.keyHint}</b>. Yang cocok akan <b>diperbarui</b> (kolom kosong tidak menimpa nilai lama); yang belum ada akan <b>ditambah</b>. {entity === 'clients' && 'Menautkan pembeli ke unit otomatis mengubah status unit (Dipesan/Terjual). '}{entity === 'payments' && 'Pembayaran impor langsung disetujui (data historis) & masuk Buku Kas. Fase ini hanya dari pembeli.'}</p>
     </div>
   )
 }

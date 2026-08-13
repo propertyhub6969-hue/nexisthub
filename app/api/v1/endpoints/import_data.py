@@ -21,7 +21,7 @@ from openpyxl.utils import get_column_letter
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -33,6 +33,9 @@ from app.models.property import Project, Unit, UnitStatus
 from app.models.marketing import Client, ClientStatus, ClientPaymentType
 from app.models.document import Document, DocStatus
 from app.models.import_batch import ImportBatch, ImportBatchItem
+from app.models.payment import Payment, PaymentSource, PaymentPurpose, PaymentMethod, PaymentApprovalStatus
+from app.models.cashbook import CashBookEntry
+from app.core.cashbook import sync_payment_cashbook
 
 _MAX_FILE_BYTES = 10 * 1024 * 1024  # 10 MB / file (samakan dgn modul Dokumen)
 
@@ -121,6 +124,7 @@ class ImportPreview(BaseModel):
     to_insert: int
     to_update: int
     error_count: int
+    to_skip: int = 0
     rows: list[ImportRow]
 
 
@@ -129,6 +133,7 @@ class ImportCommitResult(BaseModel):
     inserted: int
     updated: int
     error_count: int
+    skipped: int = 0
     rows: list[ImportRow]
 
 
@@ -1247,6 +1252,16 @@ async def undo_batch(
                     await db.delete(obj); deleted += 1
                 if it.file_key:
                     file_keys.append(it.file_key)
+            elif it.resource == "payments":
+                obj = (await db.execute(select(Payment).where(
+                    Payment.id == it.resource_id, Payment.tenant_id == ctx.tenant_id))).scalar_one_or_none()
+                if obj is not None:
+                    ce = (await db.execute(select(CashBookEntry).where(
+                        CashBookEntry.tenant_id == ctx.tenant_id, CashBookEntry.source_type == "payment",
+                        CashBookEntry.source_id == obj.id))).scalar_one_or_none()
+                    if ce is not None:
+                        await db.delete(ce)
+                    await db.delete(obj); deleted += 1
         b.undone_at = datetime.now(timezone.utc)
         b.undone_by_id = ctx.user_id
         await record_audit(db, ctx.tenant_id, ctx.user_id, "UNDO_IMPORT", b.entity, b.id,
@@ -1266,3 +1281,285 @@ async def undo_batch(
         except Exception:
             pass
     return UndoResult(deleted=deleted, files_removed=removed, entity=b.entity)
+
+
+# ═══════════════════════ PEMBAYARAN (dari Pembeli) ═══════════════════════
+# Fase 1: source=PEMBELI, status langsung APPROVED (data historis). Anti-dobel hibrida:
+# No. Referensi bila diisi, kalau kosong dedup (pembeli+tanggal+jumlah).
+LABEL_TO_PURPOSE = {
+    "dp": PaymentPurpose.DP, "uang muka": PaymentPurpose.DP,
+    "booking fee": PaymentPurpose.BOOKING_FEE, "booking": PaymentPurpose.BOOKING_FEE,
+    "cicilan": PaymentPurpose.CICILAN_TERMIN, "termin": PaymentPurpose.CICILAN_TERMIN,
+    "angsuran": PaymentPurpose.CICILAN_TERMIN, "cicilan termin": PaymentPurpose.CICILAN_TERMIN,
+    "pelunasan": PaymentPurpose.PELUNASAN_TERMIN, "lunas": PaymentPurpose.LUNAS_UNIT,
+    "lunas unit": PaymentPurpose.LUNAS_UNIT, "cash keras": PaymentPurpose.LUNAS_UNIT,
+}
+PURPOSE_TO_LABEL = {
+    PaymentPurpose.DP: "DP", PaymentPurpose.BOOKING_FEE: "Booking Fee",
+    PaymentPurpose.CICILAN_TERMIN: "Cicilan", PaymentPurpose.PELUNASAN_TERMIN: "Pelunasan",
+    PaymentPurpose.LUNAS_UNIT: "Lunas Unit",
+}
+LABEL_TO_METHOD = {"transfer": PaymentMethod.TRANSFER, "tunai": PaymentMethod.TUNAI,
+                   "cash": PaymentMethod.TUNAI, "lainnya": PaymentMethod.LAINNYA}
+
+
+def _pay_field_of(h: str) -> Optional[str]:
+    n = _norm_header(h)
+    if n.startswith("nik"): return "nik"
+    if n.startswith("nama"): return "name"
+    if n.startswith("proyek"): return "project"
+    if n.startswith("nomor unit") or n.startswith("no unit") or n == "unit": return "unit_number"
+    if n.startswith("tanggal"): return "date"
+    if n.startswith("jumlah") or n.startswith("nominal") or n.startswith("nilai"): return "amount"
+    if n.startswith("jenis"): return "purpose"
+    if n.startswith("metode") or n.startswith("cara bayar"): return "method"
+    if "referensi" in n or "kwitansi" in n or n.startswith("no. ref") or n.startswith("no ref"): return "reference"
+    if n.startswith("keterangan") or n.startswith("catatan"): return "notes"
+    return None
+
+
+def _read_pay_rows(contents: bytes):
+    try:
+        wb = openpyxl.load_workbook(io.BytesIO(contents), read_only=True, data_only=True)
+    except Exception:
+        raise HTTPException(status_code=400, detail="File bukan Excel (.xlsx) yang valid.")
+    ws = None
+    for name in wb.sheetnames:
+        if name.strip().lower().startswith("pembayaran"):
+            ws = wb[name]; break
+    if ws is None:
+        raise HTTPException(status_code=400, detail="Sheet 'PEMBAYARAN' tidak ditemukan di file.")
+    it = ws.iter_rows(values_only=True)
+    try:
+        header = next(it)
+    except StopIteration:
+        return []
+    col_map = {}
+    for i, h in enumerate(header):
+        f = _pay_field_of(h)
+        if f and f not in col_map:
+            col_map[f] = i
+    if "amount" not in col_map:
+        raise HTTPException(status_code=400, detail="Header 'Jumlah' wajib ada di sheet PEMBAYARAN.")
+    fields = ["nik", "name", "project", "unit_number", "date", "amount", "purpose", "method", "reference", "notes"]
+    out = []
+    rnum = 1
+    for raw in it:
+        rnum += 1
+        d = {f: (raw[col_map[f]] if (f in col_map and col_map[f] < len(raw)) else None) for f in fields}
+        if all((v is None or str(v).strip() == "") for v in d.values()):
+            continue
+        if str(d.get("name") or "").strip().upper().startswith("CONTOH"):
+            continue
+        out.append((rnum, d))
+    return out
+
+
+async def _load_pay_maps(db: AsyncSession, tenant_id):
+    proj_by_name, unit_by_pu, by_nik, by_unit = await _load_client_maps(db, tenant_id)
+    pays = (await db.execute(
+        select(Payment.client_id, Payment.payment_date, Payment.amount, Payment.receipt_number)
+        .where(Payment.tenant_id == tenant_id, Payment.is_deleted == False))).all()  # noqa: E712
+    existing_receipts = set()
+    existing_combos = set()
+    for cid, pdate, amt, rcpt in pays:
+        if rcpt:
+            existing_receipts.add(str(rcpt).strip())
+        existing_combos.add((str(cid), pdate.isoformat() if pdate else "", _money_key(amt)))
+    return proj_by_name, unit_by_pu, by_nik, by_unit, existing_receipts, existing_combos
+
+
+def _money_key(v) -> str:
+    try:
+        return f"{Decimal(v or 0):.2f}"
+    except (InvalidOperation, TypeError, ValueError):
+        return "0.00"
+
+
+def _classify_payments(rows, proj_by_name, unit_by_pu, by_nik, by_unit, existing_receipts, existing_combos):
+    parsed = []
+    seen_receipt = set()
+    seen_combo = set()
+    for rnum, d in rows:
+        errors = []
+        nik = (str(d["nik"]).strip() if d["nik"] not in (None, "") else None)
+        pname = str(d["project"] or "").strip()
+        unum = (str(d["unit_number"]).strip() if d["unit_number"] not in (None, "") else None)
+        # cari pembeli: NIK dulu, lalu Proyek+Unit (pembeli aktif di unit itu)
+        client = None
+        if nik and nik in by_nik:
+            client = by_nik[nik]
+        elif pname and unum:
+            pid = proj_by_name.get(pname.lower())
+            if pid is not None:
+                cand = unit_by_pu.get((pid, unum.lower()), [])
+                if len(cand) == 1:
+                    client = by_unit.get(cand[0])
+        cname = client.full_name if client else (str(d["name"] or "").strip() or nik or "?")
+        if client is None:
+            errors.append("Pembeli tak ditemukan (isi NIK, atau Proyek+Nomor Unit yang benar)")
+        try:
+            amount = _to_decimal(d["amount"])
+        except (InvalidOperation, ValueError):
+            errors.append(f"Jumlah bukan angka: '{d['amount']}'"); amount = None
+        if amount is None or amount <= 0:
+            errors.append("Jumlah kosong / tidak valid")
+        try:
+            pdate = _to_date(d["date"])
+        except ValueError:
+            errors.append(f"Tanggal tak valid: '{d['date']}'"); pdate = None
+        purpose = PaymentPurpose.CICILAN_TERMIN
+        if d["purpose"] not in (None, ""):
+            purpose = LABEL_TO_PURPOSE.get(str(d["purpose"]).strip().lower())
+            if purpose is None:
+                errors.append(f"Jenis tak dikenal: '{d['purpose']}'")
+        method = PaymentMethod.TRANSFER
+        if d["method"] not in (None, ""):
+            method = LABEL_TO_METHOD.get(str(d["method"]).strip().lower(), PaymentMethod.TRANSFER)
+        ref = (str(d["reference"]).strip() if d["reference"] not in (None, "") else None)
+        notes = (str(d["notes"]).strip() if d["notes"] not in (None, "") else None)
+        label = f"{cname} — {_id_rp(amount)}"
+
+        if errors:
+            parsed.append((rnum, "error", None, None, ImportRow(row=rnum, action="error", label=label, errors=errors)))
+            continue
+        combo = (str(client.id), pdate.isoformat() if pdate else "", _money_key(amount))
+        if ref and (ref in existing_receipts or ref in seen_receipt):
+            parsed.append((rnum, "skip", None, None, ImportRow(row=rnum, action="skip", label=label, note=f"Dobel — No. Referensi '{ref}' sudah ada")))
+            continue
+        if not ref and (combo in existing_combos or combo in seen_combo):
+            parsed.append((rnum, "skip", None, None, ImportRow(row=rnum, action="skip", label=label, note="Dobel — pembeli+tanggal+jumlah sama sudah ada")))
+            continue
+        if ref:
+            seen_receipt.add(ref)
+        seen_combo.add(combo)
+        payload = {"client_id": client.id, "amount": amount, "payment_date": pdate,
+                   "purpose": purpose, "method": method, "reference": ref, "notes": notes}
+        parsed.append((rnum, "insert", payload, client, ImportRow(row=rnum, action="insert", label=label,
+                       note=PURPOSE_TO_LABEL.get(purpose, purpose.value))))
+    return parsed
+
+
+def _id_rp(v):
+    try:
+        return "Rp " + f"{int(v):,}".replace(",", ".")
+    except (TypeError, ValueError):
+        return "Rp -"
+
+
+@router.post("/payments/preview", response_model=ImportPreview)
+async def preview_payments(
+    file: UploadFile = File(...),
+    ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db),
+):
+    contents = await file.read()
+    rows = _read_pay_rows(contents)
+    maps = await _load_pay_maps(db, ctx.tenant_id)
+    parsed = _classify_payments(rows, *maps)
+    ins = sum(1 for p in parsed if p[1] == "insert")
+    skp = sum(1 for p in parsed if p[1] == "skip")
+    err = sum(1 for p in parsed if p[1] == "error")
+    return ImportPreview(sheet="PEMBAYARAN", total=len(parsed), to_insert=ins, to_update=0,
+                         error_count=err, to_skip=skp, rows=[p[4] for p in parsed])
+
+
+@router.post("/payments/commit", response_model=ImportCommitResult)
+async def commit_payments(
+    file: UploadFile = File(...),
+    ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db),
+):
+    contents = await file.read()
+    rows = _read_pay_rows(contents)
+    maps = await _load_pay_maps(db, ctx.tenant_id)
+    parsed = _classify_payments(rows, *maps)
+    seq = int(await db.scalar(select(func.count()).select_from(Payment).where(Payment.tenant_id == ctx.tenant_id)) or 0)
+    inserted = 0
+    new_pays = []
+    for rnum, kind, payload, client, rowres in parsed:
+        if kind != "insert":
+            continue
+        if payload["reference"]:
+            receipt = payload["reference"]
+        else:
+            seq += 1
+            receipt = f"KW-{seq:06d}"
+        pay = Payment(
+            tenant_id=ctx.tenant_id, client_id=payload["client_id"], amount=payload["amount"],
+            payment_date=payload["payment_date"], source=PaymentSource.PEMBELI,
+            purpose=payload["purpose"], method=payload["method"], receipt_number=receipt,
+            notes=payload["notes"], approval_status=PaymentApprovalStatus.APPROVED,
+            approver_id=ctx.user_id, approved_at=datetime.utcnow())
+        db.add(pay)
+        await db.flush()
+        await sync_payment_cashbook(db, ctx.tenant_id, pay)
+        new_pays.append(pay)
+        inserted += 1
+    skipped = sum(1 for p in parsed if p[1] == "skip")
+    err = sum(1 for p in parsed if p[1] == "error")
+    batch_id = ""
+    if inserted:
+        batch = await _save_batch(db, ctx, "payments", [(p.id, None) for p in new_pays], 0)
+        batch_id = str(batch.id)
+        await db.commit()
+    return ImportCommitResult(batch_id=batch_id, inserted=inserted, updated=0,
+                              error_count=err, skipped=skipped, rows=[p[4] for p in parsed])
+
+
+@router.get("/payments/template")
+async def download_payments_template(
+    ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db),
+):
+    """Template PEMBAYARAN (dari pembeli). Kosong + contoh — pembayaran itu kejadian, tak di-ekspor."""
+    projs = (await db.execute(
+        select(Project.name).where(Project.tenant_id == ctx.tenant_id).order_by(Project.name))).all()
+    pnames = [n for (n,) in projs]
+    data = _build_pay_template(pnames)
+    return StreamingResponse(
+        io.BytesIO(data),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="Template_Import_Pembayaran.xlsx"'})
+
+
+def _build_pay_template(projects) -> bytes:
+    wb = openpyxl.Workbook()
+    ws = wb.active; ws.title = "Petunjuk"; ws.sheet_view.showGridLines = False
+    ws.column_dimensions["A"].width = 3; ws.column_dimensions["B"].width = 24; ws.column_dimensions["C"].width = 94
+    t = ws.cell(row=1, column=2, value="TEMPLATE IMPOR — PEMBAYARAN (DARI PEMBELI)")
+    t.font = Font(name=_FONT, bold=True, color="FFFFFF", size=13); ws.merge_cells("B1:C1")
+    ws["B1"].fill = _hdr_fill; ws["C1"].fill = _hdr_fill; ws.row_dimensions[1].height = 26
+    tips = [
+        ("Cara kerja", "Isi sheet PEMBAYARAN (1 baris = 1 pembayaran). Upload → pratinjau → Terapkan. Pembayaran impor langsung DISETUJUI (data historis) & masuk Buku Kas."),
+        ("Pencocokan pembeli", "Lewat NIK; kalau NIK kosong, lewat Proyek + Nomor Unit (pembeli aktif di unit itu)."),
+        ("Anti-dobel", "Isi No. Referensi (mis. no. kwitansi) sebagai kunci unik. Kalau kosong, sistem menandai dobel bila pembeli+tanggal+jumlah sama sudah ada."),
+        ("Jenis", "DP · Booking Fee · Cicilan · Pelunasan · Lunas Unit"),
+        ("Metode", "Transfer · Tunai · Lainnya (default Transfer)"),
+        ("Format", "Tanggal dd/mm/yyyy · Jumlah angka polos tanpa 'Rp'/titik."),
+        ("Catatan", "Fase ini hanya pembayaran DARI PEMBELI. Pencairan Bank/KPR menyusul."),
+        ("Nama proyek (persis)", " · ".join(projects)),
+    ]
+    r = 3
+    for a, b in tips:
+        ca = ws.cell(row=r, column=2, value=a); ca.font = Font(name=_FONT, bold=True, size=10)
+        ca.alignment = Alignment(vertical="top", wrap_text=True)
+        cb = ws.cell(row=r, column=3, value=b); cb.font = Font(name=_FONT, size=10)
+        cb.alignment = Alignment(vertical="top", wrap_text=True); ws.row_dimensions[r].height = 28
+        r += 1
+    wp = wb.create_sheet("PEMBAYARAN"); wp.sheet_view.showGridLines = False
+    cols = [("NIK (KTP)", 20, False, False), ("Nama Pembeli", 22, False, False), ("Proyek", 18, True, False),
+            ("Nomor Unit", 12, True, False), ("Tanggal Bayar", 14, False, True), ("Jumlah (Rp)", 16, False, True),
+            ("Jenis", 14, False, False), ("Metode", 12, False, False), ("No. Referensi", 16, False, False),
+            ("Keterangan", 22, False, False)]
+    _headers(wp, cols)
+    ex = ["6371054910010004", "CONTOH — hapus baris ini", projects[0] if projects else "", "036",
+          "20/05/2025", 50000000, "DP", "Transfer", "KW-001", "uang muka"]
+    for i, v in enumerate(ex, start=1):
+        _cell(wp, 2, i, v, fill=_ex_fill, italic=True, numfmt="#,##0" if i == 6 else None,
+              align="right" if i == 6 else ("center" if i in (5, 7, 8) else "left"))
+    _dv(wp, ["DP", "Booking Fee", "Cicilan", "Pelunasan", "Lunas Unit"], 7, 2, 800)
+    _dv(wp, ["Transfer", "Tunai", "Lainnya"], 8, 2, 800)
+    _dv(wp, projects, 3, 2, 800)
+    for rr in range(3, 60):
+        wp.cell(row=rr, column=3).fill = _key_cell
+        wp.cell(row=rr, column=4).fill = _key_cell
+    bio = io.BytesIO(); wb.save(bio); bio.seek(0)
+    return bio.getvalue()

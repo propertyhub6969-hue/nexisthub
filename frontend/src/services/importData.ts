@@ -97,6 +97,37 @@ export const importDataService = {
     return data
   },
 
+  // ── PEMBAYARAN (dari pembeli) ──
+  async downloadPaymentsTemplate(): Promise<void> {
+    const res = await api.get('/import/payments/template', { responseType: 'blob' })
+    const url = URL.createObjectURL(res.data as Blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'Template_Import_Pembayaran.xlsx'
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(url)
+  },
+
+  async previewPayments(file: File): Promise<ImportPreview> {
+    const fd = new FormData()
+    fd.append('file', file)
+    const { data } = await api.post<ImportPreview>('/import/payments/preview', fd, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    return data
+  },
+
+  async commitPayments(file: File): Promise<ImportCommitResult> {
+    const fd = new FormData()
+    fd.append('file', file)
+    const { data } = await api.post<ImportCommitResult>('/import/payments/commit', fd, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    return data
+  },
+
   // ── Riwayat & undo batch ──
   async listBatches(): Promise<ImportBatch[]> {
     const { data } = await api.get<ImportBatch[]>('/import/batches')
