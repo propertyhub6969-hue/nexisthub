@@ -1,7 +1,7 @@
 import uuid
 import enum
 from datetime import date
-from sqlalchemy import String, Text, ForeignKey, Enum as SAEnum, Numeric, Date, UniqueConstraint
+from sqlalchemy import String, Text, ForeignKey, Enum as SAEnum, Numeric, Date, Integer, Boolean, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID
 from app.models.base import BaseModel, SoftDeleteMixin
@@ -10,6 +10,46 @@ from app.models.base import BaseModel, SoftDeleteMixin
 class CashDirection(str, enum.Enum):
     IN = "in"    # kas masuk
     OUT = "out"  # kas keluar
+
+
+class CashAccountKind(str, enum.Enum):
+    KAS = "kas"     # kas tunai / kas kecil
+    BANK = "bank"   # rekening bank
+
+
+class CashAccount(BaseModel, SoftDeleteMixin):
+    """Rekening kas/bank tenant. Buku Kas dipartisi per rekening (single-entry, BUKAN GL akuntansi).
+    Saldo = saldo_awal + Σ masuk − Σ keluar ± transfer."""
+    __tablename__ = "cash_accounts"
+
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)   # "BCA xxx", "Kas Kecil"
+    kind: Mapped[CashAccountKind] = mapped_column(
+        SAEnum(CashAccountKind, native_enum=False, length=10), default=CashAccountKind.BANK, nullable=False)
+    bank_name: Mapped[str] = mapped_column(String(100), nullable=True)
+    account_number: Mapped[str] = mapped_column(String(50), nullable=True)
+    opening_balance: Mapped[float] = mapped_column(Numeric(15, 2), default=0, nullable=False)
+    opening_date: Mapped[date] = mapped_column(Date, nullable=True)  # default 2026-01-01 (diisi app)
+    is_default: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)  # rekening default entri baru
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    notes: Mapped[str] = mapped_column(Text, nullable=True)
+
+
+class CashTransfer(BaseModel, SoftDeleteMixin):
+    """Pindah dana antar rekening — BUKAN pemasukan/pengeluaran (tak masuk laporan laba/rugi)."""
+    __tablename__ = "cash_transfers"
+
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    from_account_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("cash_accounts.id", ondelete="SET NULL"), nullable=True, index=True)
+    to_account_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("cash_accounts.id", ondelete="SET NULL"), nullable=True, index=True)
+    amount: Mapped[float] = mapped_column(Numeric(15, 2), nullable=False)
+    date: Mapped[date] = mapped_column(Date, nullable=False)
+    notes: Mapped[str] = mapped_column(Text, nullable=True)
 
 
 class AccountCategory(BaseModel, SoftDeleteMixin):
@@ -45,6 +85,9 @@ class CashBookEntry(BaseModel):
     category_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("account_categories.id", ondelete="SET NULL"), nullable=True, index=True
     )
+    account_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("cash_accounts.id", ondelete="SET NULL"), nullable=True, index=True
+    )  # rekening kas/bank tempat uang ini masuk/keluar (NULL = belum ditentukan)
     source_type: Mapped[str] = mapped_column(String(20), nullable=False)  # 'payment' | 'expense'
     source_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
     description: Mapped[str] = mapped_column(String(300), nullable=False)

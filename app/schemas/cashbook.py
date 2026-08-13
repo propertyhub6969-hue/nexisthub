@@ -4,7 +4,7 @@ from datetime import datetime, date
 from decimal import Decimal
 import uuid
 
-from app.models.cashbook import CashDirection
+from app.models.cashbook import CashDirection, CashAccountKind
 
 
 # ── Kategori Akun (Fase B1 — daftar pendek, bukan CoA penuh) ──────
@@ -39,6 +39,8 @@ class CashBookEntryResponse(BaseModel):
     amount: Decimal
     category_id: Optional[uuid.UUID] = None
     category_name: Optional[str] = None
+    account_id: Optional[uuid.UUID] = None
+    account_name: Optional[str] = None
     source_type: str
     source_id: uuid.UUID
     description: str
@@ -50,6 +52,79 @@ class CashBookEntryResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# ── Rekening Kas/Bank (multi-rekening) ────────────────────────────
+class CashAccountCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=100)
+    kind: CashAccountKind = CashAccountKind.BANK
+    bank_name: Optional[str] = None
+    account_number: Optional[str] = None
+    opening_balance: Decimal = Decimal(0)
+    opening_date: Optional[date] = None
+    is_default: bool = False
+    notes: Optional[str] = None
+
+
+class CashAccountUpdate(BaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=100)
+    kind: Optional[CashAccountKind] = None
+    bank_name: Optional[str] = None
+    account_number: Optional[str] = None
+    opening_balance: Optional[Decimal] = None
+    opening_date: Optional[date] = None
+    is_active: Optional[bool] = None
+    notes: Optional[str] = None
+
+
+class CashAccountResponse(BaseModel):
+    id: uuid.UUID
+    name: str
+    kind: CashAccountKind
+    bank_name: Optional[str] = None
+    account_number: Optional[str] = None
+    opening_balance: Decimal
+    opening_date: Optional[date] = None
+    is_default: bool
+    is_active: bool
+    balance: Decimal = Decimal(0)   # dihitung: saldo_awal + masuk − keluar ± transfer
+    notes: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+class CashAccountsSummary(BaseModel):
+    accounts: list[CashAccountResponse]
+    total_balance: Decimal
+    unassigned_balance: Decimal   # saldo entri yang belum diberi rekening
+
+
+class CashTransferCreate(BaseModel):
+    from_account_id: uuid.UUID
+    to_account_id: uuid.UUID
+    amount: Decimal = Field(..., gt=0)
+    date: date
+    notes: Optional[str] = None
+
+
+class CashTransferResponse(BaseModel):
+    id: uuid.UUID
+    from_account_id: Optional[uuid.UUID] = None
+    to_account_id: Optional[uuid.UUID] = None
+    from_account_name: Optional[str] = None
+    to_account_name: Optional[str] = None
+    amount: Decimal
+    date: date
+    notes: Optional[str] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class EntryAccountUpdate(BaseModel):
+    account_id: Optional[uuid.UUID] = None   # None = lepaskan rekening
 
 
 # ── Rekap ────────────────────────────────────────────────────────

@@ -13,7 +13,7 @@ from app.api.deps import get_current_context, AuthContext
 from app.core.audit import record_audit
 from app.core.cashbook import sync_expense_cashbook, sync_notary_fee_cashbook
 from app.core.notify import notify_roles
-from app.models.cashbook import AccountCategory, CashBookEntry, CashDirection
+from app.models.cashbook import AccountCategory, CashBookEntry, CashDirection, CashAccount, CashTransfer
 from app.models.expense import Expense
 from app.models.marketing import Client
 from app.models.tax import NotaryFee, Notary
@@ -24,7 +24,10 @@ from app.schemas.marketing import Paginated
 from app.schemas.cashbook import (
     CategoryResponse, CashBookEntryResponse, CashBookSummary, CashBookCategoryTotal, CashBookMonth,
     PendingExpenseRow, PendingExpenseList, MarkExpensePaidRequest,
+    CashAccountCreate, CashAccountUpdate, CashAccountResponse, CashAccountsSummary,
+    CashTransferCreate, CashTransferResponse, EntryAccountUpdate,
 )
+from fastapi import HTTPException, status as httpstatus
 
 router = APIRouter()
 
@@ -48,6 +51,8 @@ async def list_categories(ctx: AuthContext = Depends(get_current_context), db: A
 async def list_entries(
     direction: Optional[CashDirection] = Query(None),
     category_id: Optional[uuid.UUID] = Query(None),
+    account_id: Optional[uuid.UUID] = Query(None),
+    unassigned: bool = Query(False, description="hanya entri yang belum berrekening"),
     date_from: Optional[date] = Query(None),
     date_to: Optional[date] = Query(None),
     page: int = Query(1, ge=1),
@@ -61,6 +66,10 @@ async def list_entries(
         conds.append(CashBookEntry.direction == direction)
     if category_id:
         conds.append(CashBookEntry.category_id == category_id)
+    if account_id:
+        conds.append(CashBookEntry.account_id == account_id)
+    if unassigned:
+        conds.append(CashBookEntry.account_id.is_(None))
     if date_from:
         conds.append(CashBookEntry.date >= date_from)
     if date_to:
@@ -68,20 +77,21 @@ async def list_entries(
 
     total = await db.scalar(select(func.count()).select_from(CashBookEntry).where(*conds))
     rows = (await db.execute(
-        select(CashBookEntry, Client.full_name, Project.name)
+        select(CashBookEntry, Client.full_name, Project.name, CashAccount.name)
         .select_from(CashBookEntry)
         .options(selectinload(CashBookEntry.category))
         .outerjoin(Client, Client.id == CashBookEntry.client_id)
         .outerjoin(Project, Project.id == CashBookEntry.project_id)
+        .outerjoin(CashAccount, CashAccount.id == CashBookEntry.account_id)
         .where(*conds)
         .order_by(CashBookEntry.date.desc(), CashBookEntry.created_at.desc())
         .offset((page - 1) * size).limit(size)
     )).all()
 
     items = []
-    for entry, client_name, project_name in rows:
+    for entry, client_name, project_name, account_name in rows:
         item = CashBookEntryResponse.model_validate(entry).model_copy(update={
-            "client_name": client_name, "project_name": project_name,
+            "client_name": client_name, "project_name": project_name, "account_name": account_name,
         })
         items.append(item)
     return _paginate(items, total or 0, page, size)
@@ -301,3 +311,145 @@ async def mark_expenses_paid(
             link="/finance/biaya-menunggu-bayar", actor_id=ctx.user_id,
         )
     return {"marked": marked, "paid_date": str(pd)}
+
+
+# ═══════════════════════ REKENING KAS/BANK (multi-rekening) ═══════════════════════
+async def _compute_balances(db, tenant_id):
+    """→ (dict account_id→saldo, unassigned_balance). saldo = saldo_awal + masuk − keluar ± transfer."""
+    accts = (await db.execute(
+        select(CashAccount).where(CashAccount.tenant_id == tenant_id, CashAccount.is_deleted == False)  # noqa: E712
+        .order_by(CashAccount.sort_order, CashAccount.name))).scalars().all()
+    bal = {a.id: Decimal(a.opening_balance or 0) for a in accts}
+    # entri kas per rekening
+    erows = (await db.execute(
+        select(CashBookEntry.account_id, CashBookEntry.direction, func.coalesce(func.sum(CashBookEntry.amount), 0))
+        .where(CashBookEntry.tenant_id == tenant_id).group_by(CashBookEntry.account_id, CashBookEntry.direction))).all()
+    unassigned = Decimal(0)
+    for acc_id, direction, total in erows:
+        total = Decimal(total or 0)
+        signed = total if direction == CashDirection.IN else -total
+        if acc_id is None:
+            unassigned += signed
+        elif acc_id in bal:
+            bal[acc_id] += signed
+    # transfer
+    for col, sign in ((CashTransfer.to_account_id, 1), (CashTransfer.from_account_id, -1)):
+        trows = (await db.execute(
+            select(col, func.coalesce(func.sum(CashTransfer.amount), 0))
+            .where(CashTransfer.tenant_id == tenant_id, CashTransfer.is_deleted == False)  # noqa: E712
+            .group_by(col))).all()
+        for acc_id, total in trows:
+            if acc_id in bal:
+                bal[acc_id] += Decimal(total or 0) * sign
+    return accts, bal, unassigned
+
+
+@router.get("/accounts", response_model=CashAccountsSummary)
+async def list_accounts(ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db)):
+    accts, bal, unassigned = await _compute_balances(db, ctx.tenant_id)
+    out = []
+    for a in accts:
+        r = CashAccountResponse.model_validate(a).model_copy(update={"balance": bal.get(a.id, Decimal(0))})
+        out.append(r)
+    total = sum((bal.get(a.id, Decimal(0)) for a in accts), Decimal(0))
+    return CashAccountsSummary(accounts=out, total_balance=total, unassigned_balance=unassigned)
+
+
+async def _get_account(db, tenant_id, account_id) -> CashAccount:
+    a = (await db.execute(select(CashAccount).where(
+        CashAccount.id == account_id, CashAccount.tenant_id == tenant_id,
+        CashAccount.is_deleted == False))).scalar_one_or_none()  # noqa: E712
+    if a is None:
+        raise HTTPException(status_code=httpstatus.HTTP_404_NOT_FOUND, detail="Rekening tidak ditemukan")
+    return a
+
+
+@router.post("/accounts", response_model=CashAccountResponse, status_code=httpstatus.HTTP_201_CREATED)
+async def create_account(payload: CashAccountCreate, ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db)):
+    data = payload.model_dump()
+    if data.get("is_default"):
+        await db.execute(CashAccount.__table__.update().where(CashAccount.tenant_id == ctx.tenant_id).values(is_default=False))
+    a = CashAccount(tenant_id=ctx.tenant_id, **data)
+    db.add(a); await db.flush()
+    await record_audit(db, ctx.tenant_id, ctx.user_id, "CREATE", "cash_accounts", a.id, new_data={"name": a.name})
+    await db.commit(); await db.refresh(a)
+    return CashAccountResponse.model_validate(a).model_copy(update={"balance": Decimal(a.opening_balance or 0)})
+
+
+@router.patch("/accounts/{account_id}", response_model=CashAccountResponse)
+async def update_account(account_id: uuid.UUID, payload: CashAccountUpdate, ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db)):
+    a = await _get_account(db, ctx.tenant_id, account_id)
+    for k, v in payload.model_dump(exclude_unset=True).items():
+        setattr(a, k, v)
+    await db.flush(); await db.commit()
+    _, bal, _ = await _compute_balances(db, ctx.tenant_id)
+    return CashAccountResponse.model_validate(a).model_copy(update={"balance": bal.get(a.id, Decimal(0))})
+
+
+@router.post("/accounts/{account_id}/set-default", response_model=CashAccountResponse)
+async def set_default_account(account_id: uuid.UUID, ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db)):
+    a = await _get_account(db, ctx.tenant_id, account_id)
+    await db.execute(CashAccount.__table__.update().where(CashAccount.tenant_id == ctx.tenant_id).values(is_default=False))
+    a.is_default = True
+    await db.flush(); await db.commit()
+    return CashAccountResponse.model_validate(a).model_copy(update={"balance": Decimal(0)})
+
+
+@router.delete("/accounts/{account_id}", status_code=httpstatus.HTTP_204_NO_CONTENT)
+async def delete_account(account_id: uuid.UUID, ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db)):
+    a = await _get_account(db, ctx.tenant_id, account_id)
+    from datetime import datetime, timezone
+    a.is_deleted = True; a.deleted_at = datetime.now(timezone.utc); a.is_active = False; a.is_default = False
+    await db.commit()
+
+
+# ── Transfer antar rekening ──
+@router.get("/transfers", response_model=list[CashTransferResponse])
+async def list_transfers(ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db)):
+    Frm = CashAccount.__table__.alias("frm"); To = CashAccount.__table__.alias("dst")
+    rows = (await db.execute(
+        select(CashTransfer, Frm.c.name, To.c.name)
+        .outerjoin(Frm, Frm.c.id == CashTransfer.from_account_id)
+        .outerjoin(To, To.c.id == CashTransfer.to_account_id)
+        .where(CashTransfer.tenant_id == ctx.tenant_id, CashTransfer.is_deleted == False)  # noqa: E712
+        .order_by(CashTransfer.date.desc(), CashTransfer.created_at.desc()).limit(200))).all()
+    return [CashTransferResponse.model_validate(t).model_copy(update={"from_account_name": fn, "to_account_name": tn})
+            for t, fn, tn in rows]
+
+
+@router.post("/transfers", response_model=CashTransferResponse, status_code=httpstatus.HTTP_201_CREATED)
+async def create_transfer(payload: CashTransferCreate, ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db)):
+    if payload.from_account_id == payload.to_account_id:
+        raise HTTPException(status_code=400, detail="Rekening asal & tujuan tak boleh sama.")
+    await _get_account(db, ctx.tenant_id, payload.from_account_id)
+    await _get_account(db, ctx.tenant_id, payload.to_account_id)
+    t = CashTransfer(tenant_id=ctx.tenant_id, **payload.model_dump())
+    db.add(t); await db.flush()
+    await record_audit(db, ctx.tenant_id, ctx.user_id, "TRANSFER", "cash_transfers", t.id,
+                       new_data={"amount": str(t.amount)})
+    await db.commit(); await db.refresh(t)
+    return CashTransferResponse.model_validate(t)
+
+
+# ── Pindahkan entri ke rekening lain (reassign) ──
+@router.patch("/entries/{entry_id}/account", response_model=CashBookEntryResponse)
+async def reassign_entry_account(entry_id: uuid.UUID, payload: EntryAccountUpdate, ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db)):
+    entry = (await db.execute(select(CashBookEntry).where(
+        CashBookEntry.id == entry_id, CashBookEntry.tenant_id == ctx.tenant_id))).scalar_one_or_none()
+    if entry is None:
+        raise HTTPException(status_code=httpstatus.HTTP_404_NOT_FOUND, detail="Baris kas tidak ditemukan")
+    if payload.account_id is not None:
+        await _get_account(db, ctx.tenant_id, payload.account_id)
+    entry.account_id = payload.account_id
+    await db.flush(); await db.commit()
+    # re-fetch dgn relasi kategori + nama akun (hindari lazy-load di luar greenlet)
+    row = (await db.execute(
+        select(CashBookEntry, Client.full_name, Project.name, CashAccount.name)
+        .options(selectinload(CashBookEntry.category))
+        .outerjoin(Client, Client.id == CashBookEntry.client_id)
+        .outerjoin(Project, Project.id == CashBookEntry.project_id)
+        .outerjoin(CashAccount, CashAccount.id == CashBookEntry.account_id)
+        .where(CashBookEntry.id == entry_id))).first()
+    e, cname, pname, acc_name = row
+    return CashBookEntryResponse.model_validate(e).model_copy(update={
+        "client_name": cname, "project_name": pname, "account_name": acc_name})

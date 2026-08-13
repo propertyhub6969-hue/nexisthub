@@ -1775,6 +1775,8 @@ export interface CashBookEntry {
   amount: number
   category_id?: string
   category_name?: string
+  account_id?: string
+  account_name?: string
   source_type: string
   source_id: string
   description: string
@@ -1782,6 +1784,40 @@ export interface CashBookEntry {
   client_name?: string
   project_id?: string
   project_name?: string
+  created_at: string
+}
+
+export type CashAccountKind = 'kas' | 'bank'
+
+export interface CashAccount {
+  id: string
+  name: string
+  kind: CashAccountKind
+  bank_name?: string | null
+  account_number?: string | null
+  opening_balance: number
+  opening_date?: string | null
+  is_default: boolean
+  is_active: boolean
+  balance: number
+  notes?: string | null
+}
+
+export interface CashAccountsSummary {
+  accounts: CashAccount[]
+  total_balance: number
+  unassigned_balance: number
+}
+
+export interface CashTransfer {
+  id: string
+  from_account_id?: string | null
+  to_account_id?: string | null
+  from_account_name?: string | null
+  to_account_name?: string | null
+  amount: number
+  date: string
+  notes?: string | null
   created_at: string
 }
 

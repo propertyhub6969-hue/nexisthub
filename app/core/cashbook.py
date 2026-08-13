@@ -6,7 +6,7 @@ from typing import Optional
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.cashbook import AccountCategory, CashBookEntry, CashDirection
+from app.models.cashbook import AccountCategory, CashBookEntry, CashDirection, CashAccount
 
 # 6 kategori dasar Fase B1 — daftar pendek, bukan Chart of Accounts penuh.
 # code stabil dipakai utk auto-mapping sistem; kategori kustom tenant (dibuat manual) code=None.
@@ -40,6 +40,15 @@ async def _category_by_code(db: AsyncSession, tenant_id: uuid.UUID, code: str) -
     )).scalar_one_or_none()
 
 
+async def _default_account_id(db: AsyncSession, tenant_id: uuid.UUID):
+    """Rekening default utk entri kas BARU (bisa dipindah manual belakangan). None kalau belum ada akun."""
+    return (await db.execute(
+        select(CashAccount.id).where(
+            CashAccount.tenant_id == tenant_id, CashAccount.is_default == True,  # noqa: E712
+            CashAccount.is_deleted == False).limit(1)  # noqa: E712
+    )).scalar_one_or_none()
+
+
 async def _get_entry(db: AsyncSession, tenant_id: uuid.UUID, source_type: str, source_id: uuid.UUID) -> Optional[CashBookEntry]:
     return (await db.execute(
         select(CashBookEntry).where(CashBookEntry.tenant_id == tenant_id, CashBookEntry.source_type == source_type,
@@ -63,6 +72,7 @@ async def sync_payment_cashbook(db: AsyncSession, tenant_id: uuid.UUID, payment)
     category = await _category_by_code(db, tenant_id, code)
     if entry is None:
         entry = CashBookEntry(tenant_id=tenant_id, source_type="payment", source_id=payment.id)
+        entry.account_id = await _default_account_id(db, tenant_id)
         db.add(entry)
     entry.date = payment.payment_date or date.today()
     entry.direction = CashDirection.IN
@@ -85,6 +95,7 @@ async def sync_notary_fee_cashbook(db: AsyncSession, tenant_id: uuid.UUID, fee) 
     category = await _category_by_code(db, tenant_id, "biaya_notaris")
     if entry is None:
         entry = CashBookEntry(tenant_id=tenant_id, source_type="notary_fee", source_id=fee.id)
+        entry.account_id = await _default_account_id(db, tenant_id)
         db.add(entry)
     entry.date = fee.paid_at or fee.fee_date or date.today()   # tanggal bayar sebenarnya diutamakan
     entry.direction = CashDirection.OUT
@@ -107,6 +118,7 @@ async def sync_expense_cashbook(db: AsyncSession, tenant_id: uuid.UUID, expense)
     category = await _category_by_code(db, tenant_id, "biaya_operasional")
     if entry is None:
         entry = CashBookEntry(tenant_id=tenant_id, source_type="expense", source_id=expense.id)
+        entry.account_id = await _default_account_id(db, tenant_id)
         db.add(entry)
     entry.date = expense.paid_at or expense.expense_date or date.today()
     entry.direction = CashDirection.OUT
