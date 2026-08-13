@@ -36,6 +36,7 @@ import { taxService } from '../../services/tax'
 import { paymentService } from '../../services/payment'
 import { propertyService } from '../../services/property'
 import { cashbookService } from '../../services/cashbook'
+import { marketingService } from '../../services/marketing'
 import NexistLogo from '../ui/NexistLogo'
 
 interface NavChild {
@@ -174,6 +175,7 @@ export default function Sidebar({ open = false, onClose }: { open?: boolean; onC
   const [payPendingCount, setPayPendingCount] = useState(0)
   const [bookingPendingCount, setBookingPendingCount] = useState(0)
   const [expPendingCount, setExpPendingCount] = useState(0)
+  const [leadFollowupCount, setLeadFollowupCount] = useState(0)
   useEffect(() => {
     if (!user) return
     const refresh = () => {
@@ -182,6 +184,7 @@ export default function Sidebar({ open = false, onClose }: { open?: boolean; onC
       paymentService.pendingCount().then(setPayPendingCount).catch(() => {})
       propertyService.bookingRequestsPendingCount().then(setBookingPendingCount).catch(() => {})
       cashbookService.pendingExpensesCount().then(setExpPendingCount).catch(() => {})
+      marketingService.leadsFollowupCount().then(setLeadFollowupCount).catch(() => {})
     }
     refresh()
     // segarkan berkala — finance tahu ada entry baru dari marketing tanpa perlu muat ulang
@@ -261,6 +264,9 @@ export default function Sidebar({ open = false, onClose }: { open?: boolean; onC
                 >
                   <child.icon size={16} />
                   {child.label}
+                  {child.to === '/marketing/leads' && leadFollowupCount > 0 && (
+                    <span className="ml-auto text-[10px] font-semibold bg-amber-500 text-white rounded-full px-1.5 py-0.5 leading-none" title="Perlu follow-up">{leadFollowupCount}</span>
+                  )}
                   {child.to === '/marketing/bank-submissions' && bankPendingCount > 0 && (
                     <span className="ml-auto text-[10px] font-semibold bg-brass-500 text-white rounded-full px-1.5 py-0.5 leading-none">{bankPendingCount}</span>
                   )}

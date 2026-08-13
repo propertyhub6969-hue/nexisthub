@@ -1,18 +1,18 @@
 import uuid
 import math
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status, UploadFile, File
 from fastapi.responses import Response
-from sqlalchemy import select, func, or_
+from sqlalchemy import select, func, or_, case
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core import storage
 from app.api.deps import get_current_context, AuthContext
-from app.models.marketing import Lead, Prospect, Client, LeadStatus, ProspectStatus, ClientStatus
+from app.models.marketing import Lead, Prospect, Client, LeadStatus, LeadTemperature, ProspectStatus, ClientStatus
 from app.models.property import Unit, UnitStatus
 from app.models.payment import Payment, PaymentSource, PaymentApprovalStatus
 from app.models.kpr import KprApplication, KprStage
@@ -71,6 +71,52 @@ async def list_leads(
         .offset((page - 1) * size).limit(size)
     )
     return _paginate(result.scalars().all(), total or 0, page, size)
+
+
+# ── Follow-up worklist: Lead yang belum tuntas & tak disentuh beberapa hari ──
+# "Perlu follow-up" = status NEW/CONTACTED (belum qualified/unqualified) & updated_at
+# (aktivitas terakhir) lebih lama dari `days`. Prioritas HOT → WARM → COLD, lalu terlama.
+_FOLLOWUP_STATUSES = (LeadStatus.NEW, LeadStatus.CONTACTED)
+_TEMP_ORDER = case(
+    (Lead.temperature == LeadTemperature.HOT, 0),
+    (Lead.temperature == LeadTemperature.WARM, 1),
+    else_=2,
+)
+
+
+def _followup_conditions(tenant_id, days: int):
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    return [Lead.tenant_id == tenant_id, Lead.status.in_(_FOLLOWUP_STATUSES), Lead.updated_at < cutoff]
+
+
+@router.get("/leads/followup", response_model=Paginated[LeadResponse])
+async def leads_followup(
+    ctx: AuthContext = Depends(get_current_context),
+    db: AsyncSession = Depends(get_db),
+    days: int = Query(3, ge=0, le=365),
+    page: int = Query(1, ge=1),
+    size: int = Query(50, ge=1, le=500),
+):
+    """Lead yang perlu di-follow-up (belum tuntas & tak disentuh ≥ `days` hari)."""
+    conds = _followup_conditions(ctx.tenant_id, days)
+    total = await db.scalar(select(func.count()).select_from(Lead).where(*conds))
+    result = await db.execute(
+        select(Lead).where(*conds)
+        .order_by(_TEMP_ORDER, Lead.updated_at.asc())
+        .offset((page - 1) * size).limit(size)
+    )
+    return _paginate(result.scalars().all(), total or 0, page, size)
+
+
+@router.get("/leads/followup/count")
+async def leads_followup_count(
+    ctx: AuthContext = Depends(get_current_context),
+    db: AsyncSession = Depends(get_db),
+    days: int = Query(3, ge=0, le=365),
+):
+    """Jumlah lead yang perlu follow-up (untuk badge sidebar)."""
+    total = await db.scalar(select(func.count()).select_from(Lead).where(*_followup_conditions(ctx.tenant_id, days)))
+    return {"count": int(total or 0)}
 
 
 @router.post("/leads", response_model=LeadResponse, status_code=status.HTTP_201_CREATED)

@@ -33,6 +33,14 @@ export const marketingService = {
   async deleteLead(id: string): Promise<void> {
     await api.delete(`/marketing/leads/${id}`)
   },
+  async leadsFollowup(params: { days?: number; page?: number; size?: number } = {}): Promise<PaginatedResponse<Lead>> {
+    const { data } = await api.get<PaginatedResponse<Lead>>('/marketing/leads/followup', { params })
+    return data
+  },
+  async leadsFollowupCount(days = 3): Promise<number> {
+    const { data } = await api.get<{ count: number }>('/marketing/leads/followup/count', { params: { days } })
+    return data.count
+  },
   async convertLead(id: string): Promise<Prospect> {
     const { data } = await api.post<Prospect>(`/marketing/leads/${id}/convert`)
     return data

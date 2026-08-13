@@ -48,6 +48,8 @@ export default function Leads() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [projectFilter, setProjectFilter] = useState('')
   const [temperatureFilter, setTemperatureFilter] = useState('')
+  const [followupOnly, setFollowupOnly] = useState(false)
+  const [followupCount, setFollowupCount] = useState(0)
   const [page, setPage] = useState(1)
   const [total, setTotal] = useState(0)
   const [pages, setPages] = useState(1)
@@ -58,14 +60,16 @@ export default function Leads() {
     propertyService.listProjects({ size: 500 }).then((r) => setProjects(r.items)).catch(() => {})
   }, [])
 
-  const load = useCallback(async (term: string, pg: number, proj: string, temp: string) => {
+  const load = useCallback(async (term: string, pg: number, proj: string, temp: string, fu: boolean) => {
     setLoading(true)
     setError('')
     try {
-      const res = await marketingService.listLeads({
-        search: term || undefined, project_id: proj || undefined,
-        temperature: temp || undefined, page: pg, size: 25,
-      })
+      const res = fu
+        ? await marketingService.leadsFollowup({ page: pg, size: 25 })
+        : await marketingService.listLeads({
+            search: term || undefined, project_id: proj || undefined,
+            temperature: temp || undefined, page: pg, size: 25,
+          })
       setLeads(res.items); setTotal(res.total); setPages(res.pages)
     } catch {
       setError('Gagal memuat data lead.')
@@ -74,16 +78,21 @@ export default function Leads() {
     }
   }, [])
 
+  const refreshFollowupCount = useCallback(() => {
+    marketingService.leadsFollowupCount().then(setFollowupCount).catch(() => {})
+  }, [])
+  useEffect(() => { refreshFollowupCount() }, [refreshFollowupCount])
+
   const firstLoad = useRef(true)
   useEffect(() => {
     if (firstLoad.current) {
       firstLoad.current = false
-      load(search, page, projectFilter, temperatureFilter)   // load pertama langsung
+      load(search, page, projectFilter, temperatureFilter, followupOnly)   // load pertama langsung
       return
     }
-    const t = setTimeout(() => load(search, page, projectFilter, temperatureFilter), 300)  // debounce
+    const t = setTimeout(() => load(search, page, projectFilter, temperatureFilter, followupOnly), 300)  // debounce
     return () => clearTimeout(t)
-  }, [search, projectFilter, temperatureFilter, page, load])
+  }, [search, projectFilter, temperatureFilter, page, followupOnly, load])
 
   function openCreate() {
     setEditingId(null)
@@ -125,7 +134,8 @@ export default function Leads() {
         await marketingService.createLead(payload)
       }
       closeModal()
-      await load(search, page, projectFilter, temperatureFilter)
+      await load(search, page, projectFilter, temperatureFilter, followupOnly)
+      refreshFollowupCount()
     } catch {
       setError('Gagal menyimpan lead. Periksa isian Anda.')
     } finally {
@@ -178,12 +188,23 @@ export default function Leads() {
               <option key={k} value={k}>{temperatureConfig[k].label}</option>
             ))}
           </select>
+          <button
+            onClick={() => { setFollowupOnly((v) => !v); setPage(1) }}
+            className={`text-sm rounded-lg px-3 py-2 border transition-colors whitespace-nowrap ${followupOnly ? 'bg-amber-500 border-amber-500 text-white' : 'bg-white border-slate-200 text-slate-600 hover:bg-amber-50'}`}
+            title="Lead belum tuntas & tak disentuh ≥ 3 hari">
+            ⏰ Perlu Follow-up{followupCount > 0 ? ` (${followupCount})` : ''}
+          </button>
         </div>
         <button className="btn-primary flex items-center gap-2 text-sm" onClick={openCreate}>
           <Plus size={14} />
           Tambah Lead
         </button>
       </div>
+      {followupOnly && (
+        <p className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+          Menampilkan lead yang <b>belum tuntas</b> (status Baru/Dihubungi) & <b>tak diperbarui ≥ 3 hari</b> — prioritas HOT dulu. Perbarui status/catatan lead untuk mengeluarkannya dari daftar ini.
+        </p>
+      )}
 
       {error && <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-2">{error}</div>}
 
