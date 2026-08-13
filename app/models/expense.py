@@ -59,6 +59,9 @@ class Expense(BaseModel, SoftDeleteMixin):
     expense_date: Mapped[Date] = mapped_column(Date, nullable=True)
     is_paid: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     paid_at: Mapped[Date] = mapped_column(Date, nullable=True)  # tgl dibayar keuangan (opname: null=diajukan)
+    cash_account_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("cash_accounts.id", ondelete="SET NULL"), nullable=True
+    )  # rekening kas/bank sumber pembayaran (NULL → default)
     notes: Mapped[str] = mapped_column(Text, nullable=True)
 
     vendor: Mapped["Vendor"] = relationship("Vendor")

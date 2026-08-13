@@ -4,7 +4,7 @@ import Badge from '../../components/ui/Badge'
 import Modal from '../../components/ui/Modal'
 import DateInput from '../../components/ui/DateInput'
 import { cashbookService } from '../../services/cashbook'
-import type { PendingExpenseRow } from '../../types'
+import type { PendingExpenseRow, CashAccount } from '../../types'
 
 const fmt = (n?: number) =>
   n == null ? '—' : new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(Number(n))
@@ -61,6 +61,9 @@ export default function PendingExpenses() {
   const [srcFilter, setSrcFilter] = useState<string | null>(null)
   const [payModal, setPayModal] = useState(false)
   const [paidDate, setPaidDate] = useState('')
+  const [paidAccount, setPaidAccount] = useState('')
+  const [accounts, setAccounts] = useState<CashAccount[]>([])
+  useEffect(() => { cashbookService.listAccounts().then((s) => setAccounts(s.accounts)).catch(() => {}) }, [])
   const [saving, setSaving] = useState(false)
 
   const load = useCallback(() => {
@@ -120,7 +123,7 @@ export default function PendingExpenses() {
   async function submitPaid() {
     setSaving(true)
     try {
-      await cashbookService.markExpensesPaid([...sel], paidDate || undefined)
+      await cashbookService.markExpensesPaid([...sel], paidDate || undefined, paidAccount || undefined)
       setPayModal(false); setPaidDate(''); load()
     } catch { setError('Gagal menandai lunas.') } finally { setSaving(false) }
   }
@@ -261,6 +264,15 @@ export default function PendingExpenses() {
             <DateInput value={paidDate} onChange={setPaidDate} />
             <p className="text-xs text-slate-400 mt-1">Kosongkan = hari ini. Isi tanggal transfer sebenarnya bila berbeda dari tanggal pemasangan.</p>
           </div>
+          {accounts.length > 0 && (
+            <div>
+              <label className="label">Dibayar dari rekening</label>
+              <select className="input" value={paidAccount} onChange={(e) => setPaidAccount(e.target.value)}>
+                <option value="">— rekening default —</option>
+                {accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+              </select>
+            </div>
+          )}
           <div className="flex justify-end gap-2">
             <button className="btn-secondary text-sm" onClick={() => setPayModal(false)}>Batal</button>
             <button className="btn-primary text-sm flex items-center gap-2" disabled={saving} onClick={submitPaid}>

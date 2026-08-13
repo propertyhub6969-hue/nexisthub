@@ -15,6 +15,7 @@ from app.core.cashbook import sync_expense_cashbook, sync_notary_fee_cashbook
 from app.core.notify import notify_roles
 from app.models.cashbook import AccountCategory, CashBookEntry, CashDirection, CashAccount, CashTransfer, CashReconciliation
 from app.models.expense import Expense
+from app.models.payment import Payment
 from app.models.marketing import Client
 from app.models.tax import NotaryFee, Notary
 from app.models.notification import NotificationKind
@@ -283,6 +284,8 @@ async def mark_expenses_paid(
         for e in rows:
             e.is_paid = True
             e.paid_at = pd
+            if payload.account_id is not None:
+                e.cash_account_id = payload.account_id
         await db.flush()
         for e in rows:
             await sync_expense_cashbook(db, ctx.tenant_id, e)   # baru di sini uang tercatat keluar
@@ -296,6 +299,8 @@ async def mark_expenses_paid(
         for f in fees:
             f.is_paid = True
             f.paid_at = pd
+            if payload.account_id is not None:
+                f.cash_account_id = payload.account_id
         await db.flush()
         for f in fees:
             await sync_notary_fee_cashbook(db, ctx.tenant_id, f)
@@ -442,6 +447,13 @@ async def reassign_entry_account(entry_id: uuid.UUID, payload: EntryAccountUpdat
     if payload.account_id is not None:
         await _get_account(db, ctx.tenant_id, payload.account_id)
     entry.account_id = payload.account_id
+    # simpan juga ke SUMBER agar tak tertimpa saat re-sync
+    _src_model = {"payment": Payment, "expense": Expense, "notary_fee": NotaryFee}.get(entry.source_type)
+    if _src_model is not None:
+        src = (await db.execute(select(_src_model).where(
+            _src_model.id == entry.source_id, _src_model.tenant_id == ctx.tenant_id))).scalar_one_or_none()
+        if src is not None:
+            src.cash_account_id = payload.account_id
     await db.flush(); await db.commit()
     # re-fetch dgn relasi kategori + nama akun (hindari lazy-load di luar greenlet)
     row = (await db.execute(

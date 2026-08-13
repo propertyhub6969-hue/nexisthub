@@ -53,6 +53,7 @@ class PaymentBase(BaseModel):
     source: PaymentSource = PaymentSource.PEMBELI
     purpose: Optional[PaymentPurpose] = None
     receipt_number: Optional[str] = Field(None, max_length=50)
+    cash_account_id: Optional[uuid.UUID] = None   # rekening tujuan uang masuk (kosong → default)
     notes: Optional[str] = None
 
 
@@ -68,6 +69,7 @@ class PaymentUpdate(BaseModel):
     source: Optional[PaymentSource] = None
     purpose: Optional[PaymentPurpose] = None
     receipt_number: Optional[str] = Field(None, max_length=50)
+    cash_account_id: Optional[uuid.UUID] = None
     notes: Optional[str] = None
     schedule_id: Optional[uuid.UUID] = None
     reason: Optional[str] = None   # alasan (wajib bila mengubah nominal/sumber/tgl/termin) — tak disimpan ke kolom, hanya utk audit

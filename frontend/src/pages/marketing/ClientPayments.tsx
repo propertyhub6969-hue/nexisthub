@@ -10,13 +10,14 @@ import Modal from '../../components/ui/Modal'
 import { marketingService } from '../../services/marketing'
 import { propertyService } from '../../services/property'
 import { paymentService } from '../../services/payment'
+import { cashbookService } from '../../services/cashbook'
 import { auditService } from '../../services/audit'
 import { tenantLogoUrl } from '../../services/users'
 import { useAuth } from '../../context/AuthContext'
 import { hasAnyRole } from '../../utils/access'
 import type {
   Client, Unit, PaymentSchedule, PaymentScheduleCreate, Payment, PaymentCreate,
-  PaymentSummary, PaymentMethod, PaymentSource, PaymentPurpose, AuditEntry,
+  PaymentSummary, PaymentMethod, PaymentSource, PaymentPurpose, AuditEntry, CashAccount,
 } from '../../types'
 
 const actionLabel: Record<string, { label: string; variant: 'green' | 'blue' | 'red' }> = {
@@ -70,7 +71,7 @@ const approvalConfig: Record<Payment['approval_status'], { label: string; varian
 }
 
 const emptySchedule = (clientId: string): PaymentScheduleCreate => ({ client_id: clientId, label: '', sequence: 0, amount: 0, due_date: '' })
-const emptyPayment = (clientId: string): PaymentCreate => ({ client_id: clientId, schedule_id: '', amount: 0, payment_date: '', method: 'transfer', source: 'pembeli', purpose: undefined, receipt_number: '' })
+const emptyPayment = (clientId: string): PaymentCreate => ({ client_id: clientId, schedule_id: '', amount: 0, payment_date: '', method: 'transfer', source: 'pembeli', purpose: undefined, receipt_number: '', cash_account_id: '' })
 
 export default function ClientPayments() {
   const { clientId = '' } = useParams()
@@ -100,6 +101,8 @@ export default function ClientPayments() {
   const [busyId, setBusyId] = useState<string | null>(null)
   const [rejectTarget, setRejectTarget] = useState<Payment | null>(null)
   const [rejectReason, setRejectReason] = useState('')
+  const [accounts, setAccounts] = useState<CashAccount[]>([])
+  useEffect(() => { cashbookService.listAccounts().then((s) => setAccounts(s.accounts)).catch(() => {}) }, [])
 
   const canApprove = hasAnyRole(user, ['owner', 'admin', 'finance'])
 
@@ -160,7 +163,7 @@ export default function ClientPayments() {
   function openPayCreate() { setPayEditId(null); setPayReason(''); setPayForm(emptyPayment(clientId)); setTransferFile(null); setPayModal(true) }
   function openPayEdit(p: Payment) {
     setPayEditId(p.id); setPayReason('')
-    setPayForm({ client_id: clientId, schedule_id: p.schedule_id ?? '', amount: p.amount, payment_date: p.payment_date ?? '', method: p.method, source: p.source, purpose: p.purpose, receipt_number: p.receipt_number ?? '' })
+    setPayForm({ client_id: clientId, schedule_id: p.schedule_id ?? '', amount: p.amount, payment_date: p.payment_date ?? '', method: p.method, source: p.source, purpose: p.purpose, receipt_number: p.receipt_number ?? '', cash_account_id: p.cash_account_id ?? '' })
     setTransferFile(null)
     setPayModal(true)
   }
@@ -183,7 +186,7 @@ export default function ClientPayments() {
     try {
       const p = { ...payForm } as Partial<PaymentCreate> & { reason?: string }
       const rec = p as unknown as Record<string, unknown>
-      ;['schedule_id', 'payment_date', 'purpose', 'receipt_number'].forEach((k) => { if (rec[k] === '') delete rec[k] })
+      ;['schedule_id', 'payment_date', 'purpose', 'receipt_number', 'cash_account_id'].forEach((k) => { if (rec[k] === '') delete rec[k] })
       let result: Payment
       if (payEditId) {
         if (payReason.trim()) p.reason = payReason.trim()
@@ -490,6 +493,16 @@ export default function ClientPayments() {
               </select>
             </div>
           </div>
+          {accounts.length > 0 && (
+            <div>
+              <label className="label">Masuk ke rekening</label>
+              <select className="input" value={payForm.cash_account_id ?? ''} onChange={(e) => setPayForm({ ...payForm, cash_account_id: e.target.value })}>
+                <option value="">— rekening default —</option>
+                {accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+              </select>
+              <p className="text-[11px] text-slate-400 mt-1">Rekening kas/bank tujuan uang masuk (dipakai di Buku Kas setelah disetujui).</p>
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="label">Jenis Pembayaran</label>

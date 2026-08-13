@@ -111,6 +111,9 @@ class Payment(BaseModel, SoftDeleteMixin):
     )  # Jenis pembayaran: DP/Booking Fee/Cicilan/Realisasi KPR/Pelunasan
     receipt_number: Mapped[str] = mapped_column(String(50), nullable=True)  # No. kwitansi — auto-generate saat create
     notes: Mapped[str] = mapped_column(Text, nullable=True)
+    cash_account_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("cash_accounts.id", ondelete="SET NULL"), nullable=True
+    )  # rekening kas/bank tujuan uang masuk (NULL → rekening default)
     # Bukti transfer, disimpan di DB; file_data deferred agar tak ikut di query list
     file_name: Mapped[str] = mapped_column(String(255), nullable=True)
     file_type: Mapped[str] = mapped_column(String(100), nullable=True)

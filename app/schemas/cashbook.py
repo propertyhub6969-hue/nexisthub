@@ -224,3 +224,4 @@ class PendingExpenseList(BaseModel):
 class MarkExpensePaidRequest(BaseModel):
     refs: list[str]                    # dari PendingExpenseRow.ref
     paid_date: Optional[date] = None   # kosong = hari ini
+    account_id: Optional[uuid.UUID] = None   # rekening kas/bank sumber pembayaran (kosong → default)

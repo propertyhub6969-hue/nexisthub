@@ -457,6 +457,7 @@ export interface Payment {
   source: PaymentSource
   purpose?: PaymentPurpose
   receipt_number?: string
+  cash_account_id?: string
   has_file?: boolean
   file_name?: string
   notes?: string
@@ -492,6 +493,7 @@ export interface PaymentCreate {
   source?: PaymentSource
   purpose?: PaymentPurpose
   receipt_number?: string
+  cash_account_id?: string
   notes?: string
 }
 

@@ -72,8 +72,8 @@ async def sync_payment_cashbook(db: AsyncSession, tenant_id: uuid.UUID, payment)
     category = await _category_by_code(db, tenant_id, code)
     if entry is None:
         entry = CashBookEntry(tenant_id=tenant_id, source_type="payment", source_id=payment.id)
-        entry.account_id = await _default_account_id(db, tenant_id)
         db.add(entry)
+    entry.account_id = payment.cash_account_id or await _default_account_id(db, tenant_id)
     entry.date = payment.payment_date or date.today()
     entry.direction = CashDirection.IN
     entry.amount = payment.amount
@@ -95,8 +95,8 @@ async def sync_notary_fee_cashbook(db: AsyncSession, tenant_id: uuid.UUID, fee) 
     category = await _category_by_code(db, tenant_id, "biaya_notaris")
     if entry is None:
         entry = CashBookEntry(tenant_id=tenant_id, source_type="notary_fee", source_id=fee.id)
-        entry.account_id = await _default_account_id(db, tenant_id)
         db.add(entry)
+    entry.account_id = fee.cash_account_id or await _default_account_id(db, tenant_id)
     entry.date = fee.paid_at or fee.fee_date or date.today()   # tanggal bayar sebenarnya diutamakan
     entry.direction = CashDirection.OUT
     entry.amount = fee.amount
@@ -118,8 +118,8 @@ async def sync_expense_cashbook(db: AsyncSession, tenant_id: uuid.UUID, expense)
     category = await _category_by_code(db, tenant_id, "biaya_operasional")
     if entry is None:
         entry = CashBookEntry(tenant_id=tenant_id, source_type="expense", source_id=expense.id)
-        entry.account_id = await _default_account_id(db, tenant_id)
         db.add(entry)
+    entry.account_id = expense.cash_account_id or await _default_account_id(db, tenant_id)
     entry.date = expense.paid_at or expense.expense_date or date.today()
     entry.direction = CashDirection.OUT
     entry.amount = expense.amount
