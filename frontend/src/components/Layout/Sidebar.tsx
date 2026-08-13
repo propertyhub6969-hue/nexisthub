@@ -78,7 +78,6 @@ const propertiItem: NavItem = {
   children: [
     { label: 'Proyek & Unit', to: '/property/projects', icon: Building2 },
     { label: 'Dokumen Legalitas', to: '/property/legal-docs', icon: FileCheck },
-    { label: 'Impor Data', to: '/import', icon: Upload },
   ],
 }
 
@@ -119,6 +118,7 @@ const masterDataItem: NavItem = {
   icon: FileText,
   children: [
     { label: 'Master Data', to: '/legal', icon: FileText },
+    { label: 'Impor Data', to: '/import', icon: Upload },
   ],
 }
 
