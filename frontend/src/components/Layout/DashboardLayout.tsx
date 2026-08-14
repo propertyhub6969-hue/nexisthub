@@ -3,6 +3,7 @@ import { Outlet, useLocation, Navigate, Link } from 'react-router-dom'
 import { AlertTriangle } from 'lucide-react'
 import Sidebar from './Sidebar'
 import Header from './Header'
+import WhatsNewModal from '../WhatsNewModal'
 import { useAuth } from '../../context/AuthContext'
 import { billingService } from '../../services/billing'
 import { canAccessPath, canAccessFeature, defaultPathFor, effectiveRoles } from '../../utils/access'
@@ -72,6 +73,7 @@ export default function DashboardLayout() {
           <Outlet />
         </main>
       </div>
+      <WhatsNewModal />
     </div>
   )
 }

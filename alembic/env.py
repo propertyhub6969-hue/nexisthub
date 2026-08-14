@@ -32,6 +32,7 @@ from app.models.audit import AuditLog
 from app.models.billing import Invoice
 from app.models.cashbook import AccountCategory, CashBookEntry
 from app.models.notification import Notification
+from app.models.announcement import Announcement, AnnouncementDismissal
 
 config = context.config
 

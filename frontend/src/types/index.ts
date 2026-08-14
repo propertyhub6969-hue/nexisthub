@@ -997,6 +997,30 @@ export interface TaxEqReport {
   rows: TaxEqRow[]
 }
 
+// ── Pengumuman platform (what's new) ──
+export type AnnouncementKind = 'info' | 'feature' | 'warning'
+export interface AnnouncementPublic {
+  id: string
+  title: string
+  body: string
+  kind: AnnouncementKind
+}
+export interface AnnouncementAdmin extends AnnouncementPublic {
+  is_active: boolean
+  starts_at?: string | null
+  ends_at?: string | null
+  created_at: string
+  dismiss_count: number
+}
+export interface AnnouncementCreate {
+  title: string
+  body: string
+  kind: AnnouncementKind
+  is_active?: boolean
+  starts_at?: string | null
+  ends_at?: string | null
+}
+
 export interface TaxDraftItem {
   client_id: string
   pembeli: string

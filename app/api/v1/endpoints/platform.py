@@ -279,3 +279,51 @@ async def delete_invoice(iid: uuid.UUID, _: User = Depends(require_platform_admi
     if inv is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Invoice tidak ditemukan")
     await db.delete(inv)
+
+
+# ═══════════════════════ PENGUMUMAN (broadcast ke semua tenant) ═══════════════════════
+from app.models.announcement import Announcement, AnnouncementDismissal  # noqa: E402
+from app.schemas.announcement import (  # noqa: E402
+    AnnouncementCreate, AnnouncementUpdate, AnnouncementResponse,
+)
+
+
+async def _ann_resp(db, a: Announcement) -> AnnouncementResponse:
+    cnt = (await db.execute(
+        select(func.count()).select_from(AnnouncementDismissal).where(AnnouncementDismissal.announcement_id == a.id)
+    )).scalar() or 0
+    r = AnnouncementResponse.model_validate(a)
+    r.dismiss_count = cnt
+    return r
+
+
+@router.get("/announcements", response_model=list[AnnouncementResponse])
+async def list_announcements(_: User = Depends(require_platform_admin), db: AsyncSession = Depends(get_db)):
+    rows = (await db.execute(select(Announcement).order_by(Announcement.created_at.desc()))).scalars().all()
+    return [await _ann_resp(db, a) for a in rows]
+
+
+@router.post("/announcements", response_model=AnnouncementResponse, status_code=status.HTTP_201_CREATED)
+async def create_announcement(payload: AnnouncementCreate, admin: User = Depends(require_platform_admin), db: AsyncSession = Depends(get_db)):
+    a = Announcement(**payload.model_dump(), created_by=admin.id)
+    db.add(a); await db.commit(); await db.refresh(a)
+    return await _ann_resp(db, a)
+
+
+@router.patch("/announcements/{aid}", response_model=AnnouncementResponse)
+async def update_announcement(aid: uuid.UUID, payload: AnnouncementUpdate, _: User = Depends(require_platform_admin), db: AsyncSession = Depends(get_db)):
+    a = (await db.execute(select(Announcement).where(Announcement.id == aid))).scalar_one_or_none()
+    if a is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Pengumuman tidak ditemukan")
+    for f, v in payload.model_dump(exclude_unset=True).items():
+        setattr(a, f, v)
+    await db.commit(); await db.refresh(a)
+    return await _ann_resp(db, a)
+
+
+@router.delete("/announcements/{aid}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_announcement(aid: uuid.UUID, _: User = Depends(require_platform_admin), db: AsyncSession = Depends(get_db)):
+    a = (await db.execute(select(Announcement).where(Announcement.id == aid))).scalar_one_or_none()
+    if a is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Pengumuman tidak ditemukan")
+    await db.delete(a); await db.commit()

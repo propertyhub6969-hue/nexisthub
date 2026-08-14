@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends
-from app.api.v1.endpoints import notification, auth, users, marketing, property, sale, payment, audit, tax, document, kpr, procurement, stock, expense, rab, construction, contractor, legal, reporting, filing, platform, public, billing, cashbook, import_data
+from app.api.v1.endpoints import notification, auth, users, marketing, property, sale, payment, audit, tax, document, kpr, procurement, stock, expense, rab, construction, contractor, legal, reporting, filing, platform, public, billing, cashbook, import_data, announcement
 from app.api.deps import require_feature, guard
 from app.models.user import UserRole
 
@@ -25,6 +25,7 @@ def g(*write_roles: UserRole, read: tuple = ()):
 api_router.include_router(public.router,      prefix="/public",      tags=["Public"])
 api_router.include_router(auth.router,        prefix="/auth",        tags=["Auth"])
 api_router.include_router(notification.router, prefix="/notifications", tags=["Notifications"])
+api_router.include_router(announcement.router, prefix="/announcements", tags=["Announcements"])
 api_router.include_router(users.router,       prefix="/team",        tags=["Team"],        dependencies=[g(UserRole.OWNER, UserRole.ADMIN)])
 api_router.include_router(marketing.router,   prefix="/marketing",   tags=["Marketing"],   dependencies=[feat("marketing"), g(*SALES, read=(UserRole.FINANCE, V))])
 api_router.include_router(property.router,    prefix="/property",    tags=["Property"],    dependencies=[feat("properti"), g(*SALES, read=(UserRole.PRODUKSI, UserRole.FINANCE, V))])
