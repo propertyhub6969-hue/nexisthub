@@ -166,10 +166,19 @@ async def bank_letter(kpr_id: uuid.UUID, jenis: str = Query("surat_spr"),
 
     unit_label = ("-".join(x for x in [unit.block, unit.unit_number] if x)) if unit else (client.unit_number or "-")
     company = tenant.company_name or tenant.name
+    alamat_proyek = " ".join(x for x in [(project.address if project else None),
+                                         (project.city if project else None),
+                                         (project.province if project else None)] if x) or "-"
     ctx_vars = {
         "nama_pembeli": client.full_name or "-", "nik": client.nik or "-",
         "alamat_pembeli": client.address or "-", "bank": k.bank_name or "-",
-        "proyek": (project.name if project else "-"), "unit": unit_label,
+        "proyek": (project.name if project else "-"), "alamat_proyek": alamat_proyek,
+        "unit": unit_label,
+        "blok": (unit.block if unit and unit.block else "-"),
+        "no_unit": (unit.unit_number if unit else (client.unit_number or "-")),
+        "tipe": (unit.unit_type if unit and unit.unit_type else (client.unit_type or "-")),
+        "lt": (f"{float(unit.land_area):g} m²" if unit and unit.land_area is not None else "-"),
+        "lb": (f"{float(unit.building_area):g} m²" if unit and unit.building_area is not None else "-"),
         "harga_jual": rp(client.contract_value), "plafon": rp(k.plafond),
         "perusahaan": company, "kota": tenant.city or "-", "tanggal": tgl_id(date.today()),
         "tanggal_akad": tgl_id(k.akad_date),

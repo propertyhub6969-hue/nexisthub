@@ -18,7 +18,8 @@ DOC_TYPES = {
 BANK_LETTER_DOCS = {k: v["label"] for k, v in DOC_TYPES.items() if v["per_bank"]}
 
 # Daftar putih variabel per dokumen — utk chip di editor & mencegah token ngawur.
-_COMMON = ["nama_pembeli", "nik", "alamat_pembeli", "bank", "proyek", "unit",
+_COMMON = ["nama_pembeli", "nik", "alamat_pembeli", "bank", "proyek", "alamat_proyek",
+           "unit", "blok", "no_unit", "tipe", "lt", "lb",
            "harga_jual", "perusahaan", "kota", "tanggal"]
 _REKENING = ["nomor_rekening", "nama_bank_rekening"]
 DOC_VARIABLES = {
