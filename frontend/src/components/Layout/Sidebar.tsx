@@ -121,15 +121,15 @@ const masterDataItem: NavItem = {
   children: [
     { label: 'Master Data', to: '/legal', icon: FileText },
     { label: 'Impor Data', to: '/import', icon: Upload },
+    { label: 'Teks Dokumen', to: '/settings/teks-dokumen', icon: FileText },
   ],
 }
 
 const settingsItem: NavItem = {
-  label: 'Setting',
+  label: 'Role',
   icon: Settings,
   children: [
-    { label: 'Tim & Peran', to: '/settings/team', icon: UsersRound },
-    { label: 'Teks Dokumen', to: '/settings/teks-dokumen', icon: FileText },
+    { label: 'Tim', to: '/settings/team', icon: UsersRound },
   ],
 }
 
