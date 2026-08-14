@@ -535,13 +535,15 @@ async def sales_form(client_id: uuid.UUID, ctx: AuthContext = Depends(get_curren
         company_name=company, company_address=tenant.address, company_city=tenant.city, company_phone=tenant.phone,
         date=_date.today().isoformat(),
         nama=client.full_name or "-", nik=client.nik, alamat=client.address, telp=client.phone,
-        proyek=(project.name if project else None), unit_label=unit_label,
+        proyek=(project.name if project else None), alamat_proyek=(alamat_proyek if alamat_proyek != "-" else None),
+        unit_label=unit_label,
         tipe=(unit.unit_type if unit else client.unit_type),
         lt=(f"{float(unit.land_area):g} m²" if unit and unit.land_area is not None else None),
         lb=(f"{float(unit.building_area):g} m²" if unit and unit.building_area is not None else None),
         harga_jual=_rp(client.contract_value), diskon=(" · ".join(diskon_parts) or None),
         cara_bayar=cara, bank=bank, plafon=plafon,
         marketing=(client.marketing_user.full_name if client.marketing_user else None),
+        buyer_signature=client.signature,
         ketentuan=fill_vars(body, cvars), signer_name=sname, signer_title=stitle,
     )
 

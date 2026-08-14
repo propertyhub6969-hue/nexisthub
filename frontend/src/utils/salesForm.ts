@@ -1,3 +1,4 @@
+import QRCode from 'qrcode'
 import type { SalesFormData } from '../types'
 
 const esc = (s?: string | null) => (s || '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c] as string))
@@ -5,13 +6,27 @@ const nl2br = (s?: string | null) => esc(s).replace(/\n/g, '<br/>')
 const fmtDate = (iso: string) => new Date(iso).toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' })
 
 // Cetak Form Penjualan / Formulir Pemesanan Unit. Data terkunci sistem; ketentuan & penandatangan editable.
-export function printSalesForm(data: SalesFormData, logoUrl?: string): void {
+// TTD pembeli = tanda tangan digital saat input; TTD developer = QR (marketing, lokasi proyek, no unit).
+export async function printSalesForm(data: SalesFormData, logoUrl?: string): Promise<void> {
   const row = (label: string, value?: string | null) =>
     value ? `<tr><td class="lbl">${esc(label)}</td><td class="sep">:</td><td class="val">${esc(value)}</td></tr>` : ''
   const kopBaris = [data.company_address, data.company_city, data.company_phone ? `Telp. ${data.company_phone}` : '']
     .filter(Boolean).map(esc).join(' &middot; ')
   const signer = data.signer_name || data.company_name
   const signerTitle = data.signer_title || ''
+
+  // QR developer: nama marketing, lokasi proyek, no unit
+  const qrPayload = [
+    `Marketing: ${data.marketing || '-'}`,
+    `Proyek: ${data.proyek || '-'}${data.alamat_proyek ? ` (${data.alamat_proyek})` : ''}`,
+    `Unit: ${data.unit_label || '-'}`,
+  ].join('\n')
+  let qr = ''
+  try { qr = await QRCode.toDataURL(qrPayload, { width: 200, margin: 1, errorCorrectionLevel: 'M' }) } catch { /* tanpa QR */ }
+  const buyerSign = data.buyer_signature
+    ? `<img src="${esc(data.buyer_signature)}" alt="TTD" style="height:52px;object-fit:contain;"/>`
+    : '<div class="space"></div>'
+  const devSign = qr ? `<img src="${qr}" alt="QR" style="width:52px;height:52px;"/>` : '<div class="space"></div>'
 
   const html = `<!doctype html><html lang="id"><head><meta charset="utf-8"><title>Form Penjualan</title>
 <style>
@@ -33,6 +48,7 @@ export function printSalesForm(data: SalesFormData, logoUrl?: string): void {
   .ttd { margin-top: 30px; display: flex; justify-content: space-between; }
   .ttd .box { width: 45%; text-align: center; }
   .ttd .space { height: 56px; }
+  .ttd .signimg { height: 56px; display: flex; align-items: center; justify-content: center; }
   .ttd .nm { font-weight: 600; border-top: 1px solid #94a3b8; padding-top: 2px; }
   @media print { body { padding: 0; } }
 </style></head><body>
@@ -43,7 +59,7 @@ export function printSalesForm(data: SalesFormData, logoUrl?: string): void {
   <div class="doctitle">FORMULIR PENJUALAN / PEMESANAN UNIT</div>
   <div style="text-align:right;font-size:12px;margin-bottom:6px;">Tanggal: ${fmtDate(data.date)}</div>
 
-  <h2>Data Pemesan</h2>
+  <h2>Data Pembeli</h2>
   <table class="kv">
     ${row('Nama', data.nama)}${row('NIK', data.nik)}${row('Alamat', data.alamat)}${row('No. Telp', data.telp)}
   </table>
@@ -64,8 +80,8 @@ export function printSalesForm(data: SalesFormData, logoUrl?: string): void {
   <div class="kk">${nl2br(data.ketentuan)}</div>
 
   <div class="ttd">
-    <div class="box">Pemesan,<div class="space"></div><div class="nm">${esc(data.nama)}</div></div>
-    <div class="box">${signerTitle ? esc(signerTitle) + ',' : 'Hormat kami,'}<div class="space"></div><div class="nm">${esc(signer)}</div></div>
+    <div class="box">Pembeli,<div class="signimg">${buyerSign}</div><div class="nm">${esc(data.nama)}</div></div>
+    <div class="box">${signerTitle ? esc(signerTitle) + ',' : 'Hormat kami,'}<div class="signimg">${devSign}</div><div class="nm">${esc(signer)}</div></div>
   </div>
 </body></html>`
   const w = window.open('', '_blank', 'width=820,height=1000')

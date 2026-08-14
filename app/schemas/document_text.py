@@ -65,6 +65,7 @@ class SalesFormData(BaseModel):
     telp: Optional[str] = None
     # unit
     proyek: Optional[str] = None
+    alamat_proyek: Optional[str] = None
     unit_label: Optional[str] = None
     tipe: Optional[str] = None
     lt: Optional[str] = None
@@ -75,6 +76,7 @@ class SalesFormData(BaseModel):
     bank: Optional[str] = None         # kalau KPR
     plafon: Optional[str] = None
     marketing: Optional[str] = None
+    buyer_signature: Optional[str] = None   # data URL base64 (ttd digital pembeli)
     ketentuan: str
     signer_name: Optional[str] = None
     signer_title: Optional[str] = None

@@ -1037,6 +1037,7 @@ export interface SalesFormData {
   alamat?: string | null
   telp?: string | null
   proyek?: string | null
+  alamat_proyek?: string | null
   unit_label?: string | null
   tipe?: string | null
   lt?: string | null
@@ -1047,6 +1048,7 @@ export interface SalesFormData {
   bank?: string | null
   plafon?: string | null
   marketing?: string | null
+  buyer_signature?: string | null
   ketentuan: string
   signer_name?: string | null
   signer_title?: string | null

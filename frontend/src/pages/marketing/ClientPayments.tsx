@@ -255,7 +255,7 @@ export default function ClientPayments() {
     setPrintingForm(true)
     try {
       const data = await marketingService.getSalesForm(clientId)
-      printSalesForm(data, user?.tenant_slug ? tenantLogoUrl(user.tenant_slug) : undefined)
+      await printSalesForm(data, user?.tenant_slug ? tenantLogoUrl(user.tenant_slug) : undefined)
     } catch { /* toast ditangani interceptor */ } finally { setPrintingForm(false) }
   }
 
