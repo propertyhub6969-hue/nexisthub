@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { today } from '../../utils/date'
 import { useParams, Link } from 'react-router-dom'
-import { ArrowLeft, Loader2, Landmark, CheckCircle2, Banknote, Check, Plus, Trash2, XCircle, BellRing, Scale, HardHat, FileCheck, Printer } from 'lucide-react'
+import { ArrowLeft, Loader2, Landmark, CheckCircle2, Banknote, Check, Plus, Trash2, XCircle, BellRing, Scale, HardHat, FileCheck, Printer, ChevronDown } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { tenantLogoUrl } from '../../services/users'
 import { printBankLetter } from '../../utils/bankLetter'
@@ -29,6 +29,8 @@ export default function ClientKpr() {
   const { clientId = '' } = useParams()
   const { user } = useAuth()
   const [printing, setPrinting] = useState(false)
+  const [letterMenu, setLetterMenu] = useState(false)
+  const [letterTypes, setLetterTypes] = useState<{ key: string; label: string }[]>([])
   const [client, setClient] = useState<Client | null>(null)
   const [banks, setBanks] = useState<Bank[]>([])
   const [kpr, setKpr] = useState<KprApplication | null>(null)
@@ -60,6 +62,7 @@ export default function ClientKpr() {
     } catch { setError('Gagal memuat data KPR.') } finally { setLoading(false) }
   }, [clientId])
   useEffect(() => { load() }, [load])
+  useEffect(() => { kprService.bankLetterTypes().then(setLetterTypes).catch(() => {}) }, [])
 
   const reloadDisbursements = async (kprId: string) => setDisbursements(await kprService.listDisbursements(kprId))
 
@@ -75,11 +78,11 @@ export default function ClientKpr() {
   // ── Tolak pengajuan ──
   function openReject() { setRejReason(''); setRejDate(new Date().toISOString().slice(0, 10)); setRejCascade(true); setRejModal(true) }
 
-  async function printLetter() {
+  async function printLetter(jenis: string) {
     if (!kpr) return
-    setPrinting(true)
+    setLetterMenu(false); setPrinting(true)
     try {
-      const data = await kprService.getBankLetter(kpr.id)
+      const data = await kprService.getBankLetter(kpr.id, jenis)
       printBankLetter(data, user?.tenant_slug ? tenantLogoUrl(user.tenant_slug) : undefined)
     } catch { /* toast ditangani interceptor */ } finally { setPrinting(false) }
   }
@@ -166,9 +169,21 @@ export default function ClientKpr() {
         </div>
         <div className="flex items-center gap-2 shrink-0">
           {kpr && (
-            <button onClick={printLetter} disabled={printing} className="btn-secondary text-sm flex items-center gap-2" title="Cetak surat permohonan KPR ke bank">
-              {printing ? <Loader2 size={14} className="animate-spin" /> : <Printer size={14} />} Surat ke Bank
-            </button>
+            <div className="relative">
+              <button onClick={() => setLetterMenu((v) => !v)} disabled={printing} className="btn-secondary text-sm flex items-center gap-2" title="Cetak surat ke bank">
+                {printing ? <Loader2 size={14} className="animate-spin" /> : <Printer size={14} />} Surat ke Bank <ChevronDown size={13} />
+              </button>
+              {letterMenu && (
+                <div className="absolute right-0 mt-1 w-60 bg-white border border-slate-200 rounded-lg shadow-lg z-20 py-1">
+                  {letterTypes.map((t) => (
+                    <button key={t.key} onClick={() => printLetter(t.key)}
+                      className="flex items-center gap-2 w-full px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 text-left">
+                      <Printer size={13} className="text-slate-400 shrink-0" /> {t.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           )}
           {/* Tombol tolak hilang setelah akad kredit tersimpan (tak bisa ditolak lagi) */}
           {kpr && !kpr.is_rejected && stageIndex(kpr.stage) < stageIndex('akad_kredit') && (

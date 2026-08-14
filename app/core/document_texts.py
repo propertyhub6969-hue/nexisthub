@@ -1,36 +1,83 @@
-"""Teks dokumen per-tenant: default bawaan + pengisian variabel.
-Dipakai fitur 'Teks Dokumen' (Setting) & cetak dokumen. Pola generik via doc_key."""
+"""Teks dokumen per-tenant: default bawaan + pengisian variabel + terbilang.
+Dipakai fitur 'Teks Dokumen' (Setting) & cetak surat ke bank. Generik via doc_key, opsional per bank."""
 import re
+from decimal import Decimal
 from sqlalchemy import select
 from app.models.document_text import DocumentText
 
-# Daftar putih variabel per dokumen — supaya UI bisa tampilkan chip & tak ada token ngawur.
-DOC_VARIABLES = {
-    "surat_permohonan_bank": [
-        "nama_pembeli", "nik", "alamat_pembeli", "bank", "proyek", "unit",
-        "harga_jual", "plafon", "tenor", "bunga", "perusahaan", "kota", "tanggal",
-    ],
+# ── Jenis surat ke bank (label utk UI) ──
+BANK_LETTER_DOCS = {
+    "surat_spr": "Surat Pesanan Rumah (SPR)",
+    "surat_pencairan_awal": "Permohonan Pencairan Awal",
+    "surat_pencairan_retensi": "Permohonan Pencairan Retensi",
 }
 
-# Teks standar bawaan (dipakai bila tenant belum menyesuaikan).
+# Daftar putih variabel per dokumen — utk chip di editor & mencegah token ngawur.
+_COMMON = ["nama_pembeli", "nik", "alamat_pembeli", "bank", "proyek", "unit",
+           "harga_jual", "perusahaan", "kota", "tanggal"]
+_REKENING = ["nomor_rekening", "nama_bank_rekening"]
+DOC_VARIABLES = {
+    "surat_spr": _COMMON,
+    "surat_pencairan_awal": _COMMON + ["plafon", "tanggal_akad", "jumlah_pencairan", "terbilang_pencairan"] + _REKENING,
+    "surat_pencairan_retensi": _COMMON + ["plafon", "tanggal_akad", "jumlah_retensi", "terbilang_retensi"] + _REKENING,
+}
+
 DEFAULT_TEXTS = {
-    "surat_permohonan_bank": {
-        "subject": "Permohonan Fasilitas KPR a.n. {{nama_pembeli}}",
+    "surat_spr": {
+        "subject": "Surat Pesanan Rumah a.n. {{nama_pembeli}}",
+        "body": (
+            "Yang bertanda tangan di bawah ini:\n\n"
+            "Nama\t: {{nama_pembeli}}\n"
+            "NIK\t: {{nik}}\n"
+            "Alamat\t: {{alamat_pembeli}}\n\n"
+            "Dengan ini memesan 1 (satu) unit rumah pada {{perusahaan}} dengan rincian:\n\n"
+            "Proyek\t: {{proyek}}\n"
+            "Unit\t: {{unit}}\n"
+            "Harga\t: {{harga_jual}}\n\n"
+            "Pemesanan ini kami ajukan sebagai kelengkapan permohonan KPR pada {{bank}}. "
+            "Demikian surat pesanan ini kami buat dengan sebenarnya.\n\n"
+            "Hormat kami,\n\n\n"
+            "{{nama_pembeli}}"
+        ),
+    },
+    "surat_pencairan_awal": {
+        "subject": "Permohonan Pencairan Dana KPR a.n. {{nama_pembeli}}",
         "body": (
             "Kepada Yth.\n"
             "Pimpinan {{bank}}\n"
             "di Tempat\n\n"
             "Dengan hormat,\n\n"
-            "Bersama surat ini, kami {{perusahaan}} selaku pengembang mengajukan permohonan "
-            "fasilitas Kredit Pemilikan Rumah (KPR) untuk konsumen kami berikut:\n\n"
-            "Nama\t: {{nama_pembeli}}\n"
-            "NIK\t: {{nik}}\n"
-            "Alamat\t: {{alamat_pembeli}}\n"
-            "Proyek / Unit\t: {{proyek}} / {{unit}}\n"
-            "Harga Jual\t: {{harga_jual}}\n"
-            "Plafon Diajukan\t: {{plafon}}\n\n"
-            "Besar harapan kami permohonan ini dapat diproses. Atas perhatian dan kerja samanya, "
-            "kami ucapkan terima kasih.\n\n"
+            "Sehubungan telah dilaksanakannya akad kredit pada {{tanggal_akad}} untuk pembelian unit "
+            "di {{proyek}} / {{unit}} atas nama {{nama_pembeli}}, dengan ini kami {{perusahaan}} "
+            "mengajukan permohonan pencairan dana KPR sebesar:\n\n"
+            "{{jumlah_pencairan}}\n"
+            "({{terbilang_pencairan}})\n\n"
+            "Mohon dana ditransfer ke rekening kami:\n"
+            "Bank\t: {{nama_bank_rekening}}\n"
+            "No. Rekening\t: {{nomor_rekening}}\n"
+            "Atas Nama\t: {{perusahaan}}\n\n"
+            "Demikian permohonan ini kami sampaikan. Atas perhatiannya kami ucapkan terima kasih.\n\n"
+            "Hormat kami,\n"
+            "{{perusahaan}}"
+        ),
+    },
+    "surat_pencairan_retensi": {
+        "subject": "Permohonan Pencairan Retensi a.n. {{nama_pembeli}}",
+        "body": (
+            "Kepada Yth.\n"
+            "Pimpinan {{bank}}\n"
+            "di Tempat\n\n"
+            "Dengan hormat,\n\n"
+            "Sehubungan telah selesainya pembangunan unit di {{proyek}} / {{unit}} atas nama "
+            "{{nama_pembeli}} (akad kredit {{tanggal_akad}}), dengan ini kami {{perusahaan}} "
+            "mengajukan permohonan pencairan dana retensi sebesar:\n\n"
+            "{{jumlah_retensi}}\n"
+            "({{terbilang_retensi}})\n\n"
+            "Mohon dana ditransfer ke rekening kami:\n"
+            "Bank\t: {{nama_bank_rekening}}\n"
+            "No. Rekening\t: {{nomor_rekening}}\n"
+            "Atas Nama\t: {{perusahaan}}\n\n"
+            "Demikian permohonan ini kami sampaikan. Atas perhatiannya kami ucapkan terima kasih.\n\n"
             "Hormat kami,\n"
             "{{perusahaan}}"
         ),
@@ -47,7 +94,7 @@ async def get_doc_text(db, tenant_id, doc_key: str, bank_id=None):
             DocumentText.tenant_id == tenant_id, DocumentText.doc_key == doc_key,
             DocumentText.bank_id == bank_id))).scalar_one_or_none()
         if row is None or not (row.subject or row.body):
-            row = None  # bank belum punya template → jatuh ke default tenant
+            row = None
     if row is None:
         row = (await db.execute(select(DocumentText).where(
             DocumentText.tenant_id == tenant_id, DocumentText.doc_key == doc_key,
@@ -58,7 +105,43 @@ async def get_doc_text(db, tenant_id, doc_key: str, bank_id=None):
 
 
 def fill_vars(text: str, ctx: dict) -> str:
-    """Ganti {{key}} dengan ctx[key]. Token tak dikenal dikosongkan agar tak bocor ke hasil."""
     if not text:
         return ""
     return re.sub(r"\{\{\s*(\w+)\s*\}\}", lambda m: str(ctx.get(m.group(1), "")), text)
+
+
+# ── Terbilang (Bahasa Indonesia) ──
+_SATUAN = ["", "satu", "dua", "tiga", "empat", "lima", "enam", "tujuh", "delapan", "sembilan",
+           "sepuluh", "sebelas"]
+
+
+def _terbilang_int(n: int) -> str:
+    if n < 12:
+        return _SATUAN[n]
+    if n < 20:
+        return _terbilang_int(n - 10) + " belas"
+    if n < 100:
+        return _terbilang_int(n // 10) + " puluh" + ((" " + _terbilang_int(n % 10)) if n % 10 else "")
+    if n < 200:
+        return "seratus" + ((" " + _terbilang_int(n - 100)) if n > 100 else "")
+    if n < 1000:
+        return _terbilang_int(n // 100) + " ratus" + ((" " + _terbilang_int(n % 100)) if n % 100 else "")
+    if n < 2000:
+        return "seribu" + ((" " + _terbilang_int(n - 1000)) if n > 1000 else "")
+    if n < 1_000_000:
+        return _terbilang_int(n // 1000) + " ribu" + ((" " + _terbilang_int(n % 1000)) if n % 1000 else "")
+    if n < 1_000_000_000:
+        return _terbilang_int(n // 1_000_000) + " juta" + ((" " + _terbilang_int(n % 1_000_000)) if n % 1_000_000 else "")
+    if n < 1_000_000_000_000:
+        return _terbilang_int(n // 1_000_000_000) + " miliar" + ((" " + _terbilang_int(n % 1_000_000_000)) if n % 1_000_000_000 else "")
+    return _terbilang_int(n // 1_000_000_000_000) + " triliun" + ((" " + _terbilang_int(n % 1_000_000_000_000)) if n % 1_000_000_000_000 else "")
+
+
+def terbilang_rupiah(value) -> str:
+    if value is None:
+        return "-"
+    n = int(Decimal(value))
+    if n == 0:
+        return "nol rupiah"
+    words = _terbilang_int(n).strip().replace("  ", " ")
+    return words + " rupiah"

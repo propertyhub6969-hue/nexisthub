@@ -94,8 +94,12 @@ export const kprService = {
   async openSp3kFile(kprId: string): Promise<void> {
     return openViaViewUrl(`/kpr/applications/${kprId}/sp3k-view-url`)
   },
-  async getBankLetter(kprId: string): Promise<BankLetterData> {
-    const { data } = await api.get<BankLetterData>(`/kpr/applications/${kprId}/bank-letter`)
+  async bankLetterTypes(): Promise<{ key: string; label: string }[]> {
+    const { data } = await api.get<{ key: string; label: string }[]>('/kpr/bank-letter-types')
+    return data
+  },
+  async getBankLetter(kprId: string, jenis: string): Promise<BankLetterData> {
+    const { data } = await api.get<BankLetterData>(`/kpr/applications/${kprId}/bank-letter`, { params: { jenis } })
     return data
   },
 

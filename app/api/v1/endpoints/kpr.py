@@ -132,22 +132,34 @@ async def _load_kpr(db, tenant_id, kpr_id) -> KprApplication:
 
 
 @router.get("/applications/{kpr_id}/bank-letter", response_model=BankLetterData)
-async def bank_letter(kpr_id: uuid.UUID, ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db)):
-    """Surat permohonan KPR ke bank — teks dari 'Teks Dokumen' tenant (atau standar), variabel terisi otomatis."""
+async def bank_letter(kpr_id: uuid.UUID, jenis: str = Query("surat_spr"),
+                      ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db)):
+    """Surat ke bank (SPR / Pencairan Awal / Pencairan Retensi) — teks dari 'Teks Dokumen' tenant
+    (per bank, atau standar), variabel terisi otomatis dari data KPR + pembeli + perusahaan."""
     from app.models.tenant import Tenant
     from app.models.property import Project
-    from app.core.document_texts import get_doc_text, fill_vars
+    from app.models.cashbook import CashAccount
+    from app.core.document_texts import get_doc_text, fill_vars, terbilang_rupiah, BANK_LETTER_DOCS
+    if jenis not in BANK_LETTER_DOCS:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Jenis surat tidak dikenal")
     _BULAN = ["", "Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"]
-    _td = date.today()
-    _tanggal_id = f"{_td.day} {_BULAN[_td.month]} {_td.year}"
 
-    k = await _load_kpr(db, ctx.tenant_id, kpr_id)
+    def tgl_id(d):
+        return f"{d.day} {_BULAN[d.month]} {d.year}" if d else "-"
+
+    k = await _load_kpr(db, ctx.tenant_id, kpr_id)   # attaches k.total_disbursed & k.retention
     client = (await db.execute(select(Client).where(Client.id == k.client_id, Client.tenant_id == ctx.tenant_id))).scalar_one_or_none()
     if client is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Pembeli tidak ditemukan")
     unit = (await db.execute(select(Unit).where(Unit.id == client.unit_id))).scalar_one_or_none() if client.unit_id else None
     project = (await db.execute(select(Project).where(Project.id == client.project_id))).scalar_one_or_none() if client.project_id else None
     tenant = (await db.execute(select(Tenant).where(Tenant.id == ctx.tenant_id))).scalar_one()
+    acct = (await db.execute(select(CashAccount).where(
+        CashAccount.tenant_id == ctx.tenant_id, CashAccount.is_deleted == False,  # noqa: E712
+        CashAccount.is_default == True).limit(1))).scalar_one_or_none()  # noqa: E712
+    if acct is None:
+        acct = (await db.execute(select(CashAccount).where(
+            CashAccount.tenant_id == ctx.tenant_id, CashAccount.is_deleted == False).limit(1))).scalar_one_or_none()  # noqa: E712
 
     def rp(v):
         return f"Rp {int(v):,}".replace(",", ".") if v is not None else "-"
@@ -159,17 +171,26 @@ async def bank_letter(kpr_id: uuid.UUID, ctx: AuthContext = Depends(get_current_
         "alamat_pembeli": client.address or "-", "bank": k.bank_name or "-",
         "proyek": (project.name if project else "-"), "unit": unit_label,
         "harga_jual": rp(client.contract_value), "plafon": rp(k.plafond),
-        "tenor": f"{k.tenor_months} bulan" if k.tenor_months else "-",
-        "bunga": f"{k.interest_rate}%" if k.interest_rate is not None else "-",
-        "perusahaan": company, "kota": tenant.city or "-",
-        "tanggal": _tanggal_id,
+        "perusahaan": company, "kota": tenant.city or "-", "tanggal": tgl_id(date.today()),
+        "tanggal_akad": tgl_id(k.akad_date),
+        "jumlah_pencairan": rp(k.total_disbursed), "terbilang_pencairan": terbilang_rupiah(k.total_disbursed),
+        "jumlah_retensi": rp(k.retention), "terbilang_retensi": terbilang_rupiah(k.retention),
+        "nomor_rekening": (acct.account_number if acct else "-") or "-",
+        "nama_bank_rekening": (acct.bank_name if acct else "-") or "-",
     }
-    subject, body = await get_doc_text(db, ctx.tenant_id, "surat_permohonan_bank", k.bank_id)
+    subject, body = await get_doc_text(db, ctx.tenant_id, jenis, k.bank_id)
     return BankLetterData(
         subject=fill_vars(subject, ctx_vars), body=fill_vars(body, ctx_vars),
         company_name=company, company_address=tenant.address, company_city=tenant.city,
         company_phone=tenant.phone, letter_city=tenant.city, date=date.today().isoformat(),
     )
+
+
+@router.get("/bank-letter-types")
+async def bank_letter_types(ctx: AuthContext = Depends(get_current_context)):
+    """Daftar jenis surat ke bank (utk dropdown di halaman KPR & editor)."""
+    from app.core.document_texts import BANK_LETTER_DOCS
+    return [{"key": k, "label": v} for k, v in BANK_LETTER_DOCS.items()]
 
 
 async def _sync_client_on_kpr_stage(db: AsyncSession, tenant_id, client_id, stage: KprStage) -> None:
