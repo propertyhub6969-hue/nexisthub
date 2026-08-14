@@ -27,7 +27,7 @@ DOC_VARIABLES = {
     "surat_pencairan_awal": _COMMON + ["plafon", "tanggal_akad", "jumlah_pencairan", "terbilang_pencairan"] + _REKENING,
     "surat_pencairan_retensi": _COMMON + ["plafon", "tanggal_akad", "jumlah_retensi", "terbilang_retensi"] + _REKENING,
     "kuitansi": ["nama_pembeli", "unit", "proyek", "perusahaan"],
-    "form_penjualan": ["nama_pembeli", "unit", "proyek", "harga_jual", "perusahaan"],
+    "form_penjualan": ["nama_pembeli", "unit", "proyek", "alamat_proyek", "tipe", "lt", "lb", "harga_jual", "perusahaan"],
 }
 
 DEFAULT_TEXTS = {

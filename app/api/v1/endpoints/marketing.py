@@ -522,6 +522,14 @@ async def sales_form(client_id: uuid.UUID, ctx: AuthContext = Depends(get_curren
         diskon_parts.append(client.promo)
     if unit and unit.discount:
         diskon_parts.append(_rp(unit.discount))
+    # variabel tambahan utk isi Syarat & Ketentuan
+    alamat_proyek = " ".join(x for x in [(project.address if project else None),
+                                         (project.city if project else None),
+                                         (project.province if project else None)] if x) or "-"
+    cvars = {**cvars, "alamat_proyek": alamat_proyek,
+             "tipe": (unit.unit_type if unit and unit.unit_type else (client.unit_type or "-")),
+             "lt": (f"{float(unit.land_area):g} m²" if unit and unit.land_area is not None else "-"),
+             "lb": (f"{float(unit.building_area):g} m²" if unit and unit.building_area is not None else "-")}
     _, body, sname, stitle = await get_doc_full(db, ctx.tenant_id, "form_penjualan")
     return SalesFormData(
         company_name=company, company_address=tenant.address, company_city=tenant.city, company_phone=tenant.phone,
