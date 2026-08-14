@@ -213,40 +213,72 @@ async def delete_tenant_logo(actor: User = ManagerDep, db: AsyncSession = Depend
     return t
 
 
-# ═══════════════════════ TEKS DOKUMEN (kustomisasi kalimat per-tenant) ═══════════════════════
+# ═══════════════════════ TEKS DOKUMEN (kustomisasi kalimat per-tenant, opsional per bank) ═══════════════════════
+import uuid as _uuid  # noqa: E402
 from app.models.document_text import DocumentText  # noqa: E402
+from app.models.kpr import Bank  # noqa: E402
 from app.core.document_texts import get_doc_text, DEFAULT_TEXTS, DOC_VARIABLES  # noqa: E402
-from app.schemas.document_text import DocumentTextResponse, DocumentTextUpdate  # noqa: E402
+from app.schemas.document_text import DocumentTextResponse, DocumentTextUpdate, DocTextScope, DocTextScopeList  # noqa: E402
+
+
+async def _exact_row(db, tenant_id, doc_key, bank_id):
+    q = select(DocumentText).where(DocumentText.tenant_id == tenant_id, DocumentText.doc_key == doc_key)
+    q = q.where(DocumentText.bank_id == bank_id) if bank_id else q.where(DocumentText.bank_id.is_(None))
+    return (await db.execute(q)).scalar_one_or_none()
+
+
+@router.get("/document-texts/{doc_key}/scopes", response_model=DocTextScopeList)
+async def list_document_text_scopes(doc_key: str, actor: User = ManagerDep, db: AsyncSession = Depends(get_db)):
+    """Daftar cakupan editor: Default + tiap bank, dgn penanda mana yang sudah punya template sendiri."""
+    if doc_key not in DEFAULT_TEXTS:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Jenis dokumen tidak dikenal")
+    rows = (await db.execute(select(DocumentText.bank_id).where(
+        DocumentText.tenant_id == actor.tenant_id, DocumentText.doc_key == doc_key))).scalars().all()
+    custom = {r for r in rows if r is not None}
+    default_custom = any(r is None for r in rows)
+    banks = (await db.execute(select(Bank).where(
+        Bank.tenant_id == actor.tenant_id, Bank.is_deleted == False).order_by(Bank.name))).scalars().all()  # noqa: E712
+    scopes = [DocTextScope(bank_id=None, bank_name="Default (semua bank)", is_custom=default_custom)]
+    scopes += [DocTextScope(bank_id=b.id, bank_name=b.name, is_custom=b.id in custom) for b in banks]
+    return DocTextScopeList(doc_key=doc_key, scopes=scopes)
 
 
 @router.get("/document-texts/{doc_key}", response_model=DocumentTextResponse)
-async def get_document_text(doc_key: str, actor: User = ManagerDep, db: AsyncSession = Depends(get_db)):
+async def get_document_text(doc_key: str, bank_id: _uuid.UUID = None, actor: User = ManagerDep, db: AsyncSession = Depends(get_db)):
     if doc_key not in DEFAULT_TEXTS:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Jenis dokumen tidak dikenal")
-    row = (await db.execute(select(DocumentText).where(
-        DocumentText.tenant_id == actor.tenant_id, DocumentText.doc_key == doc_key))).scalar_one_or_none()
-    subject, body = await get_doc_text(db, actor.tenant_id, doc_key)
+    exact = await _exact_row(db, actor.tenant_id, doc_key, bank_id)
+    subject, body = await get_doc_text(db, actor.tenant_id, doc_key, bank_id)   # resolusi bertingkat utk prefill
     d = DEFAULT_TEXTS[doc_key]
     return DocumentTextResponse(
-        doc_key=doc_key, subject=subject, body=body,
-        is_custom=bool(row and (row.subject or row.body)),
+        doc_key=doc_key, bank_id=bank_id, subject=subject, body=body,
+        is_custom=bool(exact and (exact.subject or exact.body)),
         default_subject=d["subject"], default_body=d["body"], variables=DOC_VARIABLES.get(doc_key, []),
     )
 
 
 @router.put("/document-texts/{doc_key}", response_model=DocumentTextResponse)
-async def update_document_text(doc_key: str, payload: DocumentTextUpdate, actor: User = ManagerDep, db: AsyncSession = Depends(get_db)):
-    """Simpan teks kustom. Kirim subject/body kosong (atau null) = kembali ke standar."""
+async def update_document_text(doc_key: str, payload: DocumentTextUpdate, bank_id: _uuid.UUID = None,
+                               actor: User = ManagerDep, db: AsyncSession = Depends(get_db)):
+    """Simpan teks kustom utk cakupan (default atau bank tertentu). Kosong = hapus baris → kembali ke fallback."""
     if doc_key not in DEFAULT_TEXTS:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Jenis dokumen tidak dikenal")
-    row = (await db.execute(select(DocumentText).where(
-        DocumentText.tenant_id == actor.tenant_id, DocumentText.doc_key == doc_key))).scalar_one_or_none()
+    if bank_id is not None:
+        b = (await db.execute(select(Bank).where(Bank.id == bank_id, Bank.tenant_id == actor.tenant_id))).scalar_one_or_none()
+        if b is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Bank tidak ditemukan")
+    row = await _exact_row(db, actor.tenant_id, doc_key, bank_id)
     subj = (payload.subject or "").strip() or None
     body = (payload.body or "").strip() or None
+    if not subj and not body:
+        if row is not None:
+            await db.delete(row)
+            await db.commit()
+        return await get_document_text(doc_key, bank_id, actor, db)
     if row is None:
-        row = DocumentText(tenant_id=actor.tenant_id, doc_key=doc_key)
+        row = DocumentText(tenant_id=actor.tenant_id, doc_key=doc_key, bank_id=bank_id)
         db.add(row)
     row.subject = subj
     row.body = body
     await db.commit()
-    return await get_document_text(doc_key, actor, db)
+    return await get_document_text(doc_key, bank_id, actor, db)

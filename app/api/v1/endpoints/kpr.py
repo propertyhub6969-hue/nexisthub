@@ -164,7 +164,7 @@ async def bank_letter(kpr_id: uuid.UUID, ctx: AuthContext = Depends(get_current_
         "perusahaan": company, "kota": tenant.city or "-",
         "tanggal": _tanggal_id,
     }
-    subject, body = await get_doc_text(db, ctx.tenant_id, "surat_permohonan_bank")
+    subject, body = await get_doc_text(db, ctx.tenant_id, "surat_permohonan_bank", k.bank_id)
     return BankLetterData(
         subject=fill_vars(subject, ctx_vars), body=fill_vars(body, ctx_vars),
         company_name=company, company_address=tenant.address, company_city=tenant.city,

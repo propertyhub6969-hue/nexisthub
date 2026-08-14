@@ -1000,12 +1000,22 @@ export interface TaxEqReport {
 // ── Teks dokumen kustom per-tenant ──
 export interface DocumentText {
   doc_key: string
+  bank_id?: string | null
   subject: string
   body: string
   is_custom: boolean
   default_subject: string
   default_body: string
   variables: string[]
+}
+export interface DocTextScope {
+  bank_id?: string | null
+  bank_name: string
+  is_custom: boolean
+}
+export interface DocTextScopeList {
+  doc_key: string
+  scopes: DocTextScope[]
 }
 export interface BankLetterData {
   subject: string

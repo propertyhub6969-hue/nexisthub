@@ -38,11 +38,20 @@ DEFAULT_TEXTS = {
 }
 
 
-async def get_doc_text(db, tenant_id, doc_key: str):
-    """Kembalikan (subject, body) tersimpan tenant, atau default bawaan bila belum ada/kosong."""
-    row = (await db.execute(select(DocumentText).where(
-        DocumentText.tenant_id == tenant_id, DocumentText.doc_key == doc_key))).scalar_one_or_none()
+async def get_doc_text(db, tenant_id, doc_key: str, bank_id=None):
+    """Resolusi bertingkat: template bank spesifik → default tenant (bank NULL) → bawaan sistem."""
     d = DEFAULT_TEXTS.get(doc_key, {"subject": "", "body": ""})
+    row = None
+    if bank_id is not None:
+        row = (await db.execute(select(DocumentText).where(
+            DocumentText.tenant_id == tenant_id, DocumentText.doc_key == doc_key,
+            DocumentText.bank_id == bank_id))).scalar_one_or_none()
+        if row is None or not (row.subject or row.body):
+            row = None  # bank belum punya template → jatuh ke default tenant
+    if row is None:
+        row = (await db.execute(select(DocumentText).where(
+            DocumentText.tenant_id == tenant_id, DocumentText.doc_key == doc_key,
+            DocumentText.bank_id.is_(None)))).scalar_one_or_none()
     subject = (row.subject if row and row.subject else None) or d["subject"]
     body = (row.body if row and row.body else None) or d["body"]
     return subject, body

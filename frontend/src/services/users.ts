@@ -1,5 +1,5 @@
 import api from './api'
-import type { TeamMember, TeamMemberCreate, TeamMemberUpdate, TenantProfile, TenantProfileUpdate, DocumentText } from '../types'
+import type { TeamMember, TeamMemberCreate, TeamMemberUpdate, TenantProfile, TenantProfileUpdate, DocumentText, DocTextScopeList } from '../types'
 
 // URL publik logo tenant (tanpa auth) — dipakai langsung sbg <img src> di dokumen cetak.
 // Absolut (bukan relatif) karena dipakai di jendela print yang dibuka via document.write (basis about:blank).
@@ -49,13 +49,17 @@ export const usersService = {
     return data
   },
 
-  // ── Teks dokumen kustom ──
-  async getDocumentText(docKey: string): Promise<DocumentText> {
-    const { data } = await api.get<DocumentText>(`/team/document-texts/${docKey}`)
+  // ── Teks dokumen kustom (opsional per bank) ──
+  async listDocumentTextScopes(docKey: string): Promise<DocTextScopeList> {
+    const { data } = await api.get<DocTextScopeList>(`/team/document-texts/${docKey}/scopes`)
     return data
   },
-  async updateDocumentText(docKey: string, payload: { subject?: string; body?: string }): Promise<DocumentText> {
-    const { data } = await api.put<DocumentText>(`/team/document-texts/${docKey}`, payload)
+  async getDocumentText(docKey: string, bankId?: string | null): Promise<DocumentText> {
+    const { data } = await api.get<DocumentText>(`/team/document-texts/${docKey}`, { params: bankId ? { bank_id: bankId } : {} })
+    return data
+  },
+  async updateDocumentText(docKey: string, payload: { subject?: string; body?: string }, bankId?: string | null): Promise<DocumentText> {
+    const { data } = await api.put<DocumentText>(`/team/document-texts/${docKey}`, payload, { params: bankId ? { bank_id: bankId } : {} })
     return data
   },
 }
