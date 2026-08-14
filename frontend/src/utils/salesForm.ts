@@ -28,7 +28,8 @@ export async function printSalesForm(data: SalesFormData, logoUrl?: string): Pro
     : '<div class="space"></div>'
   const devSign = qr ? `<img src="${qr}" alt="QR" style="width:52px;height:52px;"/>` : '<div class="space"></div>'
 
-  const html = `<!doctype html><html lang="id"><head><meta charset="utf-8"><title>Form Penjualan</title>
+  const title = ['Form Penjualan', data.proyek, data.unit_label].filter(Boolean).join(' - ')
+  const html = `<!doctype html><html lang="id"><head><meta charset="utf-8"><title>${esc(title)}</title>
 <style>
   @page { size: A4; margin: 14mm; }
   * { box-sizing: border-box; }

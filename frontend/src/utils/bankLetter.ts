@@ -9,7 +9,7 @@ export function printBankLetter(data: BankLetterData, logoUrl?: string): void {
   const kopBaris = [data.company_address, [data.company_city].filter(Boolean).join(''), data.company_phone ? `Telp. ${data.company_phone}` : '']
     .filter(Boolean).map(esc).join(' &middot; ')
   const tempat = data.letter_city ? `${esc(data.letter_city)}, ` : ''
-  const html = `<!doctype html><html lang="id"><head><meta charset="utf-8"><title>Surat Permohonan KPR</title>
+  const html = `<!doctype html><html lang="id"><head><meta charset="utf-8"><title>${esc(data.subject || 'Surat ke Bank')}</title>
 <style>
   * { box-sizing: border-box; }
   body { font-family: 'Times New Roman', serif; color: #1a1a1a; margin: 0; padding: 32px 40px; font-size: 13px; line-height: 1.55; }

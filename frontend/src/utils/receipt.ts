@@ -57,7 +57,8 @@ export async function printReceipt(data: ReceiptData): Promise<void> {
   const row = (label: string, value: string) =>
     `<tr><td class="lbl">${label}</td><td class="sep">:</td><td class="val">${value}</td></tr>`
 
-  const html = `<!doctype html><html lang="id"><head><meta charset="utf-8"><title>Kuitansi ${esc(data.receiptNo ?? '')}</title>
+  const fileTitle = ['Kuitansi', data.name, data.unit, data.receiptNo].filter(Boolean).join(' - ')
+  const html = `<!doctype html><html lang="id"><head><meta charset="utf-8"><title>${esc(fileTitle)}</title>
 <style>
   @page { size: A5 landscape; margin: 10mm; }
   * { box-sizing: border-box; }
