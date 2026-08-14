@@ -125,10 +125,11 @@ const masterDataItem: NavItem = {
 }
 
 const settingsItem: NavItem = {
-  label: 'Role',
+  label: 'Setting',
   icon: Settings,
   children: [
-    { label: 'Tim', to: '/settings/team', icon: UsersRound },
+    { label: 'Tim & Peran', to: '/settings/team', icon: UsersRound },
+    { label: 'Teks Dokumen', to: '/settings/teks-dokumen', icon: FileText },
   ],
 }
 
