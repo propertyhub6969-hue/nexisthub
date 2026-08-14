@@ -997,6 +997,27 @@ export interface TaxEqReport {
   rows: TaxEqRow[]
 }
 
+// ── Teks dokumen kustom per-tenant ──
+export interface DocumentText {
+  doc_key: string
+  subject: string
+  body: string
+  is_custom: boolean
+  default_subject: string
+  default_body: string
+  variables: string[]
+}
+export interface BankLetterData {
+  subject: string
+  body: string
+  company_name: string
+  company_address?: string | null
+  company_city?: string | null
+  company_phone?: string | null
+  letter_city?: string | null
+  date: string
+}
+
 // ── Pengumuman platform (what's new) ──
 export type AnnouncementKind = 'info' | 'feature' | 'warning'
 export interface AnnouncementPublic {

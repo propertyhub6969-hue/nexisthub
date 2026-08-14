@@ -2,7 +2,7 @@ import api from './api'
 import { openViaViewUrl } from '../utils/openFile'
 import type {
   Bank, BankCreate, KprApplication, KprCreate, Disbursement,
-  BankShareLink, BankShareLinkCreate, BankSubmission, PublicBankPage,
+  BankShareLink, BankShareLinkCreate, BankSubmission, PublicBankPage, BankLetterData,
 } from '../types'
 
 export const kprService = {
@@ -93,6 +93,10 @@ export const kprService = {
   },
   async openSp3kFile(kprId: string): Promise<void> {
     return openViaViewUrl(`/kpr/applications/${kprId}/sp3k-view-url`)
+  },
+  async getBankLetter(kprId: string): Promise<BankLetterData> {
+    const { data } = await api.get<BankLetterData>(`/kpr/applications/${kprId}/bank-letter`)
+    return data
   },
 
   // ── Publik (tanpa login) — akses via tautan bank bertoken ──

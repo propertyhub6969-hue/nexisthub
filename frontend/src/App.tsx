@@ -30,6 +30,7 @@ import Utilities from './pages/production/Utilities'
 import Team from './pages/settings/Team'
 import Profile from './pages/settings/Profile'
 import Subscription from './pages/settings/Subscription'
+import DocumentTexts from './pages/settings/DocumentTexts'
 import Reports from './pages/Reports'
 import PaymentApproval from './pages/finance/PaymentApproval'
 import CashBook from './pages/finance/CashBook'
@@ -96,6 +97,7 @@ export default function App() {
           <Route path="/settings/team"       element={<Team />} />
           <Route path="/settings/profile"    element={<Profile />} />
           <Route path="/settings/langganan"  element={<Subscription />} />
+          <Route path="/settings/teks-dokumen" element={<DocumentTexts />} />
           <Route path="/reports"             element={<Navigate to="/reports/marketing" replace />} />
           <Route path="/reports/:category"   element={<Reports />} />
           <Route path="/payments/approval"   element={<PaymentApproval />} />

@@ -1,7 +1,10 @@
 import { useEffect, useState, useCallback } from 'react'
 import { today } from '../../utils/date'
 import { useParams, Link } from 'react-router-dom'
-import { ArrowLeft, Loader2, Landmark, CheckCircle2, Banknote, Check, Plus, Trash2, XCircle, BellRing, Scale, HardHat, FileCheck } from 'lucide-react'
+import { ArrowLeft, Loader2, Landmark, CheckCircle2, Banknote, Check, Plus, Trash2, XCircle, BellRing, Scale, HardHat, FileCheck, Printer } from 'lucide-react'
+import { useAuth } from '../../context/AuthContext'
+import { tenantLogoUrl } from '../../services/users'
+import { printBankLetter } from '../../utils/bankLetter'
 import Modal from '../../components/ui/Modal'
 import DateInput from '../../components/ui/DateInput'
 import MoneyInput from '../../components/ui/MoneyInput'
@@ -24,6 +27,8 @@ const stageIndex = (s?: KprStage) => STAGES.findIndex((x) => x.key === s)
 
 export default function ClientKpr() {
   const { clientId = '' } = useParams()
+  const { user } = useAuth()
+  const [printing, setPrinting] = useState(false)
   const [client, setClient] = useState<Client | null>(null)
   const [banks, setBanks] = useState<Bank[]>([])
   const [kpr, setKpr] = useState<KprApplication | null>(null)
@@ -69,6 +74,15 @@ export default function ClientKpr() {
 
   // ── Tolak pengajuan ──
   function openReject() { setRejReason(''); setRejDate(new Date().toISOString().slice(0, 10)); setRejCascade(true); setRejModal(true) }
+
+  async function printLetter() {
+    if (!kpr) return
+    setPrinting(true)
+    try {
+      const data = await kprService.getBankLetter(kpr.id)
+      printBankLetter(data, user?.tenant_slug ? tenantLogoUrl(user.tenant_slug) : undefined)
+    } catch { /* toast ditangani interceptor */ } finally { setPrinting(false) }
+  }
   async function submitReject(e: React.FormEvent) {
     e.preventDefault()
     if (!kpr) return
@@ -150,10 +164,17 @@ export default function ClientKpr() {
           <Link to="/marketing/clients" className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-brand-600 mb-1"><ArrowLeft size={14} /> Daftar Pembeli</Link>
           <h1 className="text-lg font-semibold text-slate-900 flex items-center gap-2"><Landmark size={18} /> KPR — {client?.full_name ?? 'Pembeli'}</h1>
         </div>
-        {/* Tombol tolak hilang setelah akad kredit tersimpan (tak bisa ditolak lagi) */}
-        {kpr && !kpr.is_rejected && stageIndex(kpr.stage) < stageIndex('akad_kredit') && (
-          <button onClick={openReject} className="btn-secondary text-sm text-red-600 flex items-center gap-2 shrink-0"><XCircle size={14} /> Tolak Pengajuan</button>
-        )}
+        <div className="flex items-center gap-2 shrink-0">
+          {kpr && (
+            <button onClick={printLetter} disabled={printing} className="btn-secondary text-sm flex items-center gap-2" title="Cetak surat permohonan KPR ke bank">
+              {printing ? <Loader2 size={14} className="animate-spin" /> : <Printer size={14} />} Surat ke Bank
+            </button>
+          )}
+          {/* Tombol tolak hilang setelah akad kredit tersimpan (tak bisa ditolak lagi) */}
+          {kpr && !kpr.is_rejected && stageIndex(kpr.stage) < stageIndex('akad_kredit') && (
+            <button onClick={openReject} className="btn-secondary text-sm text-red-600 flex items-center gap-2"><XCircle size={14} /> Tolak Pengajuan</button>
+          )}
+        </div>
       </div>
 
       {error && <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-2">{error}</div>}

@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { ChevronDown, LogOut, Menu, CreditCard, Building2 } from 'lucide-react'
+import { ChevronDown, LogOut, Menu, CreditCard, Building2, FileText } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { effectiveRoles, hasAnyRole } from '../../utils/access'
 import NotificationBell from './NotificationBell'
@@ -82,6 +82,14 @@ export default function Header({ title, onMenuClick }: HeaderProps) {
                   >
                     <Building2 size={15} className="text-slate-400" />
                     Profil Perusahaan
+                  </Link>
+                  <Link
+                    to="/settings/teks-dokumen"
+                    onClick={() => setOpen(false)}
+                    className="flex items-center gap-2 w-full px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
+                  >
+                    <FileText size={15} className="text-slate-400" />
+                    Teks Dokumen
                   </Link>
                   <Link
                     to="/settings/langganan"

@@ -25,6 +25,7 @@ const pageTitles: Record<string, string> = {
   '/settings/team': 'Tim & Peran',
   '/settings/profile': 'Profil Perusahaan',
   '/settings/langganan': 'Langganan',
+  '/settings/teks-dokumen': 'Teks Dokumen',
   '/reports/marketing': 'Report Marketing',
   '/reports/keuangan': 'Report Keuangan',
   '/reports/pajak': 'Report Pajak',

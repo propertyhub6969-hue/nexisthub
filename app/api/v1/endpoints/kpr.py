@@ -26,6 +26,7 @@ from app.schemas.kpr import (
     KprCreate, KprUpdate, KprResponse, DisburseRequest, DisbursementResponse, RejectRequest,
     BankShareLinkCreate, BankShareLinkResponse, BankSubmissionResponse, BankSubmissionRejectRequest,
 )
+from app.schemas.document_text import BankLetterData
 
 router = APIRouter()
 
@@ -128,6 +129,47 @@ async def _load_kpr(db, tenant_id, kpr_id) -> KprApplication:
     if k is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Pengajuan KPR tidak ditemukan")
     return await _attach_totals(db, tenant_id, k)
+
+
+@router.get("/applications/{kpr_id}/bank-letter", response_model=BankLetterData)
+async def bank_letter(kpr_id: uuid.UUID, ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db)):
+    """Surat permohonan KPR ke bank — teks dari 'Teks Dokumen' tenant (atau standar), variabel terisi otomatis."""
+    from app.models.tenant import Tenant
+    from app.models.property import Project
+    from app.core.document_texts import get_doc_text, fill_vars
+    _BULAN = ["", "Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"]
+    _td = date.today()
+    _tanggal_id = f"{_td.day} {_BULAN[_td.month]} {_td.year}"
+
+    k = await _load_kpr(db, ctx.tenant_id, kpr_id)
+    client = (await db.execute(select(Client).where(Client.id == k.client_id, Client.tenant_id == ctx.tenant_id))).scalar_one_or_none()
+    if client is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Pembeli tidak ditemukan")
+    unit = (await db.execute(select(Unit).where(Unit.id == client.unit_id))).scalar_one_or_none() if client.unit_id else None
+    project = (await db.execute(select(Project).where(Project.id == client.project_id))).scalar_one_or_none() if client.project_id else None
+    tenant = (await db.execute(select(Tenant).where(Tenant.id == ctx.tenant_id))).scalar_one()
+
+    def rp(v):
+        return f"Rp {int(v):,}".replace(",", ".") if v is not None else "-"
+
+    unit_label = ("-".join(x for x in [unit.block, unit.unit_number] if x)) if unit else (client.unit_number or "-")
+    company = tenant.company_name or tenant.name
+    ctx_vars = {
+        "nama_pembeli": client.full_name or "-", "nik": client.nik or "-",
+        "alamat_pembeli": client.address or "-", "bank": k.bank_name or "-",
+        "proyek": (project.name if project else "-"), "unit": unit_label,
+        "harga_jual": rp(client.contract_value), "plafon": rp(k.plafond),
+        "tenor": f"{k.tenor_months} bulan" if k.tenor_months else "-",
+        "bunga": f"{k.interest_rate}%" if k.interest_rate is not None else "-",
+        "perusahaan": company, "kota": tenant.city or "-",
+        "tanggal": _tanggal_id,
+    }
+    subject, body = await get_doc_text(db, ctx.tenant_id, "surat_permohonan_bank")
+    return BankLetterData(
+        subject=fill_vars(subject, ctx_vars), body=fill_vars(body, ctx_vars),
+        company_name=company, company_address=tenant.address, company_city=tenant.city,
+        company_phone=tenant.phone, letter_city=tenant.city, date=date.today().isoformat(),
+    )
 
 
 async def _sync_client_on_kpr_stage(db: AsyncSession, tenant_id, client_id, stage: KprStage) -> None:

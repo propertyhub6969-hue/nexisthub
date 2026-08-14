@@ -1,5 +1,5 @@
 import api from './api'
-import type { TeamMember, TeamMemberCreate, TeamMemberUpdate, TenantProfile, TenantProfileUpdate } from '../types'
+import type { TeamMember, TeamMemberCreate, TeamMemberUpdate, TenantProfile, TenantProfileUpdate, DocumentText } from '../types'
 
 // URL publik logo tenant (tanpa auth) — dipakai langsung sbg <img src> di dokumen cetak.
 // Absolut (bukan relatif) karena dipakai di jendela print yang dibuka via document.write (basis about:blank).
@@ -46,6 +46,16 @@ export const usersService = {
   },
   async deleteTenantLogo(): Promise<TenantProfile> {
     const { data } = await api.delete<TenantProfile>('/team/tenant/logo')
+    return data
+  },
+
+  // ── Teks dokumen kustom ──
+  async getDocumentText(docKey: string): Promise<DocumentText> {
+    const { data } = await api.get<DocumentText>(`/team/document-texts/${docKey}`)
+    return data
+  },
+  async updateDocumentText(docKey: string, payload: { subject?: string; body?: string }): Promise<DocumentText> {
+    const { data } = await api.put<DocumentText>(`/team/document-texts/${docKey}`, payload)
     return data
   },
 }

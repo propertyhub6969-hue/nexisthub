@@ -211,3 +211,42 @@ async def delete_tenant_logo(actor: User = ManagerDep, db: AsyncSession = Depend
     await db.commit()
     await db.refresh(t)
     return t
+
+
+# ═══════════════════════ TEKS DOKUMEN (kustomisasi kalimat per-tenant) ═══════════════════════
+from app.models.document_text import DocumentText  # noqa: E402
+from app.core.document_texts import get_doc_text, DEFAULT_TEXTS, DOC_VARIABLES  # noqa: E402
+from app.schemas.document_text import DocumentTextResponse, DocumentTextUpdate  # noqa: E402
+
+
+@router.get("/document-texts/{doc_key}", response_model=DocumentTextResponse)
+async def get_document_text(doc_key: str, actor: User = ManagerDep, db: AsyncSession = Depends(get_db)):
+    if doc_key not in DEFAULT_TEXTS:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Jenis dokumen tidak dikenal")
+    row = (await db.execute(select(DocumentText).where(
+        DocumentText.tenant_id == actor.tenant_id, DocumentText.doc_key == doc_key))).scalar_one_or_none()
+    subject, body = await get_doc_text(db, actor.tenant_id, doc_key)
+    d = DEFAULT_TEXTS[doc_key]
+    return DocumentTextResponse(
+        doc_key=doc_key, subject=subject, body=body,
+        is_custom=bool(row and (row.subject or row.body)),
+        default_subject=d["subject"], default_body=d["body"], variables=DOC_VARIABLES.get(doc_key, []),
+    )
+
+
+@router.put("/document-texts/{doc_key}", response_model=DocumentTextResponse)
+async def update_document_text(doc_key: str, payload: DocumentTextUpdate, actor: User = ManagerDep, db: AsyncSession = Depends(get_db)):
+    """Simpan teks kustom. Kirim subject/body kosong (atau null) = kembali ke standar."""
+    if doc_key not in DEFAULT_TEXTS:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Jenis dokumen tidak dikenal")
+    row = (await db.execute(select(DocumentText).where(
+        DocumentText.tenant_id == actor.tenant_id, DocumentText.doc_key == doc_key))).scalar_one_or_none()
+    subj = (payload.subject or "").strip() or None
+    body = (payload.body or "").strip() or None
+    if row is None:
+        row = DocumentText(tenant_id=actor.tenant_id, doc_key=doc_key)
+        db.add(row)
+    row.subject = subj
+    row.body = body
+    await db.commit()
+    return await get_document_text(doc_key, actor, db)
