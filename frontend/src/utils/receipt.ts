@@ -12,6 +12,7 @@ export interface ReceiptData {
   source?: string
   logoUrl?: string       // URL logo perusahaan (opsional) — placeholder "LOGO" bila kosong
   ketentuan?: string     // catatan/ketentuan kustom (dari Teks Dokumen)
+  companyName?: string   // nama perusahaan (PT) — dari Profil Perusahaan
   signerName?: string
   signerTitle?: string
 }
@@ -92,7 +93,7 @@ export async function printReceipt(data: ReceiptData): Promise<void> {
     <div class="head">
       <div class="brand">
         <div class="logo">${data.logoUrl ? `<img src="${esc(data.logoUrl)}" alt="Logo" onerror="this.outerHTML='LOGO&lt;br/&gt;PERUSAHAAN'" />` : 'LOGO<br/>PERUSAHAAN'}</div>
-        <div class="co"><b>${esc(data.project || 'Developer Properti')}</b>Kuitansi Pembayaran</div>
+        <div class="co"><b>${esc(data.companyName || data.project || 'Developer Properti')}</b>Kuitansi Pembayaran</div>
       </div>
       <div class="title">
         <h1>KUITANSI</h1>

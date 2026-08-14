@@ -491,9 +491,9 @@ async def kuitansi_text(client_id: uuid.UUID, ctx: AuthContext = Depends(get_cur
     """Ketentuan + penandatangan kuitansi (dari Teks Dokumen tenant), variabel terisi."""
     from app.core.document_texts import get_doc_full, fill_vars
     client = await _get_client(db, ctx.tenant_id, client_id)
-    cvars, *_ = await _client_doc_ctx(db, ctx.tenant_id, client)
+    cvars, _unit, _proj, _tenant, company, _ul = await _client_doc_ctx(db, ctx.tenant_id, client)
     _, body, sname, stitle = await get_doc_full(db, ctx.tenant_id, "kuitansi")
-    return KuitansiText(ketentuan=fill_vars(body, cvars), signer_name=sname, signer_title=stitle)
+    return KuitansiText(ketentuan=fill_vars(body, cvars), company_name=company, signer_name=sname, signer_title=stitle)
 
 
 @router.get("/clients/{client_id}/sales-form", response_model=SalesFormData)

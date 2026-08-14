@@ -47,6 +47,7 @@ class DocumentTextUpdate(BaseModel):
 
 class KuitansiText(BaseModel):
     ketentuan: str
+    company_name: str = ""
     signer_name: Optional[str] = None
     signer_title: Optional[str] = None
 

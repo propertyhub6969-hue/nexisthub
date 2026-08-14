@@ -232,7 +232,7 @@ export default function ClientPayments() {
   const selSchedule = schedules.find((s) => s.id === payForm.schedule_id)
 
   async function handlePrint(p: Payment) {
-    let kt: { ketentuan?: string; signer_name?: string | null; signer_title?: string | null } = {}
+    let kt: { ketentuan?: string; company_name?: string; signer_name?: string | null; signer_title?: string | null } = {}
     try { kt = await marketingService.getKuitansiText(clientId) } catch { /* pakai default kuitansi */ }
     await printReceipt({
       receiptNo: p.receipt_number,
@@ -245,6 +245,7 @@ export default function ClientPayments() {
       source: sourceConfig[p.source]?.label,
       logoUrl: user?.tenant_slug ? tenantLogoUrl(user.tenant_slug) : undefined,
       ketentuan: kt.ketentuan,
+      companyName: kt.company_name,
       signerName: kt.signer_name ?? undefined,
       signerTitle: kt.signer_title ?? undefined,
     })

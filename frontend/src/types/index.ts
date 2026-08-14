@@ -1022,6 +1022,7 @@ export interface DocTypeMeta {
 }
 export interface KuitansiText {
   ketentuan: string
+  company_name?: string
   signer_name?: string | null
   signer_title?: string | null
 }
