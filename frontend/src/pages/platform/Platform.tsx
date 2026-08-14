@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react'
 import { Loader2, Plus, Pencil, KeyRound, Building2, Receipt, Trash2, CheckCircle2, Wallet, RotateCcw } from 'lucide-react'
 import { Navigate } from 'react-router-dom'
 import Modal from '../../components/ui/Modal'
-import AnnouncementsManager from './AnnouncementsManager'
 import DateInput from '../../components/ui/DateInput'
 import Badge from '../../components/ui/Badge'
 import MoneyInput from '../../components/ui/MoneyInput'
@@ -253,8 +252,6 @@ export default function Platform() {
           </tbody>
         </table>
       </div>
-
-      <AnnouncementsManager />
 
       {/* Create */}
       <Modal open={cModal} onClose={() => setCModal(false)} title="Provision Tenant Baru">

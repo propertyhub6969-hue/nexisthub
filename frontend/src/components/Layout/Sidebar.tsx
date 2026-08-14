@@ -27,6 +27,7 @@ import {
   type LucideIcon,
   Zap,
   Upload,
+  Megaphone,
 } from 'lucide-react'
 import { clsx } from 'clsx'
 import { useAuth } from '../../context/AuthContext'
@@ -137,6 +138,7 @@ const platformItem: NavItem = {
   icon: Server,
   children: [
     { label: 'Pelanggan', to: '/platform/tenants', icon: Building2 },
+    { label: 'Pengumuman', to: '/platform/announcements', icon: Megaphone },
   ],
 }
 
