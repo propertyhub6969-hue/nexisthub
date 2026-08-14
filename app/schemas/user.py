@@ -53,6 +53,7 @@ class TenantProfileUpdate(BaseModel):
     address: Optional[str] = None
     city: Optional[str] = Field(None, max_length=100)
     province: Optional[str] = Field(None, max_length=100)
+    idle_timeout_minutes: Optional[int] = Field(None, ge=5, le=1440)   # 5 mnt – 24 jam
 
 
 class TenantProfileResponse(BaseModel):
@@ -66,6 +67,7 @@ class TenantProfileResponse(BaseModel):
     province: Optional[str] = None
     has_logo: bool = False
     logo_name: Optional[str] = None
+    idle_timeout_minutes: Optional[int] = None
 
     class Config:
         from_attributes = True

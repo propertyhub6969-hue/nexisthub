@@ -50,6 +50,8 @@ class Tenant(BaseModel, SoftDeleteMixin):
     expires_at: Mapped[date] = mapped_column(Date, nullable=True)  # akhir masa aktif langganan
     # Modul aktif per tenant (Control Plane feature-flag). None = semua aktif (default).
     feature_flags: Mapped[list] = mapped_column(JSONB, nullable=True)
+    # Logout otomatis setelah tidak aktif (menit). None = default 60 mnt.
+    idle_timeout_minutes: Mapped[int] = mapped_column(Integer, nullable=True)
 
     # Relationships
     users: Mapped[list["User"]] = relationship(

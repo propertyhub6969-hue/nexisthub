@@ -48,6 +48,7 @@ class UserResponse(BaseModel):
     tenant_slug: Optional[str] = None
     tenant_status: Optional[str] = None
     feature_flags: Optional[List[str]] = None
+    idle_timeout_minutes: Optional[int] = None   # None = default 60 mnt (auto-logout)
 
     class Config:
         from_attributes = True

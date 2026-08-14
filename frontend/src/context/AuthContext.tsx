@@ -17,9 +17,15 @@ const AuthContext = createContext<AuthContextValue | null>(null)
 // jadi tanpa ini user praktis tak pernah keluar. Timer ini memaksa keluar bila tak ada
 // aktivitas selama 1 jam. Timestamp aktivitas disimpan di localStorage agar dibagi antar-tab
 // dan tetap dihitung walau tab ditutup lalu dibuka lagi (mis. besok paginya).
-const IDLE_LIMIT_MS = 60 * 60 * 1000                 // 1 jam
+const DEFAULT_IDLE_MIN = 60                           // default bila tenant belum set
 const ACTIVITY_KEY = 'last_activity'
+const IDLE_MIN_KEY = 'idle_timeout_min'              // durasi (menit) per-tenant, di-set dari me()
 const ACTIVITY_EVENTS = ['mousedown', 'mousemove', 'keydown', 'scroll', 'touchstart', 'click'] as const
+
+function idleLimitMs(): number {
+  const m = Number(localStorage.getItem(IDLE_MIN_KEY)) || DEFAULT_IDLE_MIN
+  return m * 60 * 1000
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<UserResponse | null>(null)
@@ -28,7 +34,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Hydrate the current user (incl. role) whenever we hold a token.
   useEffect(() => {
     if (isAuthenticated && !user) {
-      authService.me().then(setUser).catch(() => {})
+      authService.me().then((me) => {
+        localStorage.setItem(IDLE_MIN_KEY, String(me.idle_timeout_minutes || DEFAULT_IDLE_MIN))
+        setUser(me)
+      }).catch(() => {})
     }
   }, [isAuthenticated, user])
 
@@ -37,6 +46,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     authService.setTokens(token)
     localStorage.setItem(ACTIVITY_KEY, String(Date.now()))
     const me = await authService.me()
+    localStorage.setItem(IDLE_MIN_KEY, String(me.idle_timeout_minutes || DEFAULT_IDLE_MIN))
     setUser(me)
     return me
   }, [])
@@ -76,7 +86,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     const check = () => {
       const last = Number(localStorage.getItem(ACTIVITY_KEY) || 0)
-      if (last && Date.now() - last > IDLE_LIMIT_MS) idleLogout()
+      if (last && Date.now() - last > idleLimitMs()) idleLogout()
     }
 
     check()                                            // cek segera (mis. tab dibuka lagi setelah lama)

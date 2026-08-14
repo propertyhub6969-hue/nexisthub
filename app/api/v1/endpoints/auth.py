@@ -205,4 +205,5 @@ async def get_me(
         resp.tenant_slug = tenant.slug
         resp.tenant_status = tenant.status.value
         resp.feature_flags = tenant.feature_flags
+        resp.idle_timeout_minutes = tenant.idle_timeout_minutes
     return resp

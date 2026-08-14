@@ -21,7 +21,7 @@ export default function Profile() {
   const load = () => {
     setLoading(true); setError('')
     usersService.getTenantProfile()
-      .then((p) => { setProfile(p); setForm({ company_name: p.company_name ?? '', phone: p.phone ?? '', address: p.address ?? '', city: p.city ?? '', province: p.province ?? '' }) })
+      .then((p) => { setProfile(p); setForm({ company_name: p.company_name ?? '', phone: p.phone ?? '', address: p.address ?? '', city: p.city ?? '', province: p.province ?? '', idle_timeout_minutes: p.idle_timeout_minutes ?? 60 }) })
       .catch(() => setError('Gagal memuat profil perusahaan.'))
       .finally(() => setLoading(false))
   }
@@ -145,6 +145,26 @@ export default function Profile() {
             <input className="input" value={form.address ?? ''} onChange={(e) => setForm({ ...form, address: e.target.value })} />
           </div>
         </div>
+        <div className="border-t border-slate-100 pt-3 mt-1">
+          <h2 className="font-semibold text-slate-900 mb-1">Keamanan Sesi</h2>
+          <label className="label">Logout otomatis setelah tidak aktif</label>
+          <select
+            className="input w-full sm:w-64"
+            value={form.idle_timeout_minutes ?? 60}
+            onChange={(e) => setForm({ ...form, idle_timeout_minutes: Number(e.target.value) })}
+          >
+            <option value={15}>15 menit</option>
+            <option value={30}>30 menit</option>
+            <option value={60}>1 jam</option>
+            <option value={120}>2 jam</option>
+            <option value={240}>4 jam</option>
+            <option value={480}>8 jam</option>
+          </select>
+          <p className="text-xs text-slate-400 mt-1">
+            Pengguna yang tidak ada aktivitas selama durasi ini akan keluar otomatis dan harus masuk kembali. Berlaku untuk semua akun di perusahaan ini.
+          </p>
+        </div>
+
         <div className="flex justify-end pt-2">
           <button type="submit" className="btn-primary text-sm flex items-center gap-2" disabled={saving}>
             {saving && <Loader2 size={14} className="animate-spin" />} Simpan

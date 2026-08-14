@@ -35,6 +35,7 @@ export interface UserResponse {
   tenant_slug?: string | null
   tenant_status?: string | null
   feature_flags?: string[] | null  // null = semua modul aktif
+  idle_timeout_minutes?: number | null  // null = default 60 mnt
 }
 
 // ── Control Plane / Platform ──────────────────────────────────────
@@ -165,6 +166,7 @@ export interface TenantProfile {
   province?: string
   has_logo: boolean
   logo_name?: string
+  idle_timeout_minutes?: number | null
 }
 export interface TenantProfileUpdate {
   company_name?: string
@@ -172,6 +174,7 @@ export interface TenantProfileUpdate {
   address?: string
   city?: string
   province?: string
+  idle_timeout_minutes?: number
 }
 
 // ── Marketing ─────────────────────────────────────────────────────
