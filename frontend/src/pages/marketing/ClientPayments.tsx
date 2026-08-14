@@ -3,6 +3,7 @@ import { today } from '../../utils/date'
 import { useParams, Link } from 'react-router-dom'
 import { ArrowLeft, Plus, Trash2, Pencil, Loader2, CalendarClock, Wallet, History, Eye, Printer, Landmark, Check, X } from 'lucide-react'
 import { printReceipt } from '../../utils/receipt'
+import { printSalesForm } from '../../utils/salesForm'
 import MoneyInput from '../../components/ui/MoneyInput'
 import DateInput from '../../components/ui/DateInput'
 import Badge from '../../components/ui/Badge'
@@ -84,6 +85,7 @@ export default function ClientPayments() {
   const [audit, setAudit] = useState<AuditEntry[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [printingForm, setPrintingForm] = useState(false)
 
   const [schModal, setSchModal] = useState(false)
   const [schForm, setSchForm] = useState<PaymentScheduleCreate>(emptySchedule(clientId))
@@ -230,6 +232,8 @@ export default function ClientPayments() {
   const selSchedule = schedules.find((s) => s.id === payForm.schedule_id)
 
   async function handlePrint(p: Payment) {
+    let kt: { ketentuan?: string; signer_name?: string | null; signer_title?: string | null } = {}
+    try { kt = await marketingService.getKuitansiText(clientId) } catch { /* pakai default kuitansi */ }
     await printReceipt({
       receiptNo: p.receipt_number,
       name: client?.full_name ?? '',
@@ -240,21 +244,37 @@ export default function ClientPayments() {
       purpose: p.purpose ? purposeLabel[p.purpose] : undefined,
       source: sourceConfig[p.source]?.label,
       logoUrl: user?.tenant_slug ? tenantLogoUrl(user.tenant_slug) : undefined,
+      ketentuan: kt.ketentuan,
+      signerName: kt.signer_name ?? undefined,
+      signerTitle: kt.signer_title ?? undefined,
     })
+  }
+
+  async function handlePrintSalesForm() {
+    setPrintingForm(true)
+    try {
+      const data = await marketingService.getSalesForm(clientId)
+      printSalesForm(data, user?.tenant_slug ? tenantLogoUrl(user.tenant_slug) : undefined)
+    } catch { /* toast ditangani interceptor */ } finally { setPrintingForm(false) }
   }
 
   if (loading) return <div className="py-16 text-center text-slate-400"><Loader2 size={20} className="inline animate-spin" /></div>
 
   return (
     <div className="space-y-5">
-      <div>
-        <Link to="/marketing/clients" className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-brand-600 mb-1">
-          <ArrowLeft size={14} /> Daftar Pembeli
-        </Link>
-        <h1 className="text-lg font-semibold text-slate-900">{client?.full_name ?? 'Pembeli'}</h1>
-        <p className="text-sm text-slate-500">
-          {unit ? [unit.block, unit.unit_number].filter(Boolean).join('-') : 'tanpa unit'} · Nilai kontrak {fmt(client?.contract_value)}
-        </p>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <Link to="/marketing/clients" className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-brand-600 mb-1">
+            <ArrowLeft size={14} /> Daftar Pembeli
+          </Link>
+          <h1 className="text-lg font-semibold text-slate-900">{client?.full_name ?? 'Pembeli'}</h1>
+          <p className="text-sm text-slate-500">
+            {unit ? [unit.block, unit.unit_number].filter(Boolean).join('-') : 'tanpa unit'} · Nilai kontrak {fmt(client?.contract_value)}
+          </p>
+        </div>
+        <button onClick={handlePrintSalesForm} disabled={printingForm} className="btn-secondary text-sm flex items-center gap-2 shrink-0" title="Cetak form penjualan / pemesanan unit">
+          {printingForm ? <Loader2 size={14} className="animate-spin" /> : <Printer size={14} />} Form Penjualan
+        </button>
       </div>
 
       {error && <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-2">{error}</div>}

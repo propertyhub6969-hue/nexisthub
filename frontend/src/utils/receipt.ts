@@ -11,6 +11,9 @@ export interface ReceiptData {
   purpose?: string
   source?: string
   logoUrl?: string       // URL logo perusahaan (opsional) — placeholder "LOGO" bila kosong
+  ketentuan?: string     // catatan/ketentuan kustom (dari Teks Dokumen)
+  signerName?: string
+  signerTitle?: string
 }
 
 const fmtRp = (n: number) =>
@@ -117,7 +120,8 @@ export async function printReceipt(data: ReceiptData): Promise<void> {
         </div>
       </div>
     </div>
-    <div class="foot">Kuitansi sah tanpa tanda tangan basah bila QR cocok dengan data sistem.</div>
+    ${data.signerName ? `<div style="display:flex;justify-content:flex-end;margin-top:10px;"><div style="text-align:center;font-size:12px;min-width:180px;">${data.signerTitle ? `<div style="color:#64748b;">${esc(data.signerTitle)}</div>` : ''}<div style="height:44px;"></div><div style="font-weight:600;border-top:1px solid #cbd5e1;padding-top:2px;">${esc(data.signerName)}</div></div></div>` : ''}
+    <div class="foot">${data.ketentuan ? esc(data.ketentuan) : 'Kuitansi sah tanpa tanda tangan basah bila QR cocok dengan data sistem.'}</div>
   </div>
 </body></html>`
 

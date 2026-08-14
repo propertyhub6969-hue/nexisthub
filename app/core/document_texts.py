@@ -5,12 +5,17 @@ from decimal import Decimal
 from sqlalchemy import select
 from app.models.document_text import DocumentText
 
-# ── Jenis surat ke bank (label utk UI) ──
-BANK_LETTER_DOCS = {
-    "surat_spr": "Surat Pesanan Rumah (SPR)",
-    "surat_pencairan_awal": "Permohonan Pencairan Awal",
-    "surat_pencairan_retensi": "Permohonan Pencairan Retensi",
+# ── Registry jenis dokumen ──
+# per_bank: template bisa dikhususkan per bank. has_subject: punya kolom Perihal.
+# has_signer: punya nama & jabatan penandatangan yang bisa diatur.
+DOC_TYPES = {
+    "surat_spr": {"label": "Surat Pesanan Rumah (SPR)", "per_bank": True, "has_subject": True, "has_signer": False},
+    "surat_pencairan_awal": {"label": "Permohonan Pencairan Awal", "per_bank": True, "has_subject": True, "has_signer": False},
+    "surat_pencairan_retensi": {"label": "Permohonan Pencairan Retensi", "per_bank": True, "has_subject": True, "has_signer": False},
+    "kuitansi": {"label": "Kuitansi", "per_bank": False, "has_subject": False, "has_signer": True},
+    "form_penjualan": {"label": "Form Penjualan", "per_bank": False, "has_subject": False, "has_signer": True},
 }
+BANK_LETTER_DOCS = {k: v["label"] for k, v in DOC_TYPES.items() if v["per_bank"]}
 
 # Daftar putih variabel per dokumen — utk chip di editor & mencegah token ngawur.
 _COMMON = ["nama_pembeli", "nik", "alamat_pembeli", "bank", "proyek", "unit",
@@ -20,6 +25,8 @@ DOC_VARIABLES = {
     "surat_spr": _COMMON,
     "surat_pencairan_awal": _COMMON + ["plafon", "tanggal_akad", "jumlah_pencairan", "terbilang_pencairan"] + _REKENING,
     "surat_pencairan_retensi": _COMMON + ["plafon", "tanggal_akad", "jumlah_retensi", "terbilang_retensi"] + _REKENING,
+    "kuitansi": ["nama_pembeli", "unit", "proyek", "perusahaan"],
+    "form_penjualan": ["nama_pembeli", "unit", "proyek", "harga_jual", "perusahaan"],
 }
 
 DEFAULT_TEXTS = {
@@ -82,12 +89,28 @@ DEFAULT_TEXTS = {
             "{{perusahaan}}"
         ),
     },
+    "kuitansi": {
+        "subject": "",
+        "body": (
+            "Pembayaran dianggap sah setelah dana diterima dan tervalidasi oleh {{perusahaan}}. "
+            "Kuitansi ini merupakan bukti pembayaran yang sah."
+        ),
+    },
+    "form_penjualan": {
+        "subject": "",
+        "body": (
+            "1. Pemesan telah membaca dan menyetujui harga serta cara pembayaran yang tercantum.\n"
+            "2. Tanda jadi/uang muka yang telah dibayarkan tidak dapat dikembalikan apabila "
+            "pemesan membatalkan pembelian secara sepihak.\n"
+            "3. Serah terima unit dilakukan setelah kewajiban pembayaran diselesaikan sesuai kesepakatan.\n"
+            "4. Hal-hal lain yang belum diatur akan dituangkan dalam PPJB/AJB."
+        ),
+    },
 }
 
 
-async def get_doc_text(db, tenant_id, doc_key: str, bank_id=None):
-    """Resolusi bertingkat: template bank spesifik → default tenant (bank NULL) → bawaan sistem."""
-    d = DEFAULT_TEXTS.get(doc_key, {"subject": "", "body": ""})
+async def _resolve_row(db, tenant_id, doc_key: str, bank_id=None):
+    """Baris pemenang: template bank spesifik (bila ada isi) → default tenant (bank NULL)."""
     row = None
     if bank_id is not None:
         row = (await db.execute(select(DocumentText).where(
@@ -99,9 +122,25 @@ async def get_doc_text(db, tenant_id, doc_key: str, bank_id=None):
         row = (await db.execute(select(DocumentText).where(
             DocumentText.tenant_id == tenant_id, DocumentText.doc_key == doc_key,
             DocumentText.bank_id.is_(None)))).scalar_one_or_none()
+    return row
+
+
+async def get_doc_text(db, tenant_id, doc_key: str, bank_id=None):
+    """(subject, body) dgn fallback ke bawaan sistem."""
+    d = DEFAULT_TEXTS.get(doc_key, {"subject": "", "body": ""})
+    row = await _resolve_row(db, tenant_id, doc_key, bank_id)
     subject = (row.subject if row and row.subject else None) or d["subject"]
     body = (row.body if row and row.body else None) or d["body"]
     return subject, body
+
+
+async def get_doc_full(db, tenant_id, doc_key: str, bank_id=None):
+    """(subject, body, signer_name, signer_title) — signer dari baris pemenang (boleh None)."""
+    d = DEFAULT_TEXTS.get(doc_key, {"subject": "", "body": ""})
+    row = await _resolve_row(db, tenant_id, doc_key, bank_id)
+    subject = (row.subject if row and row.subject else None) or d["subject"]
+    body = (row.body if row and row.body else None) or d["body"]
+    return subject, body, (row.signer_name if row else None), (row.signer_title if row else None)
 
 
 def fill_vars(text: str, ctx: dict) -> str:

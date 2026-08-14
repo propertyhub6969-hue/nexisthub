@@ -21,4 +21,6 @@ class DocumentText(BaseModel):
         UUID(as_uuid=True), ForeignKey("banks.id", ondelete="CASCADE"), nullable=True, index=True
     )  # NULL = default semua bank
     subject: Mapped[str] = mapped_column(String(300), nullable=True)   # mis. perihal surat
-    body: Mapped[str] = mapped_column(Text, nullable=True)             # isi, boleh mengandung {{variabel}}
+    body: Mapped[str] = mapped_column(Text, nullable=True)             # isi/ketentuan, boleh {{variabel}}
+    signer_name: Mapped[str] = mapped_column(String(200), nullable=True)   # nama penandatangan (kuitansi/form)
+    signer_title: Mapped[str] = mapped_column(String(200), nullable=True)  # jabatan penandatangan

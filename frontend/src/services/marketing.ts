@@ -4,6 +4,7 @@ import type {
   Prospect, ProspectCreate,
   Client, ClientCreate,
   PaginatedResponse,
+  KuitansiText, SalesFormData,
 } from '../types'
 
 interface ListParams {
@@ -74,6 +75,14 @@ export const marketingService = {
   },
   async getClient(id: string): Promise<Client> {
     const { data } = await api.get<Client>(`/marketing/clients/${id}`)
+    return data
+  },
+  async getKuitansiText(clientId: string): Promise<KuitansiText> {
+    const { data } = await api.get<KuitansiText>(`/marketing/clients/${clientId}/kuitansi-text`, { skipToast: true })
+    return data
+  },
+  async getSalesForm(clientId: string): Promise<SalesFormData> {
+    const { data } = await api.get<SalesFormData>(`/marketing/clients/${clientId}/sales-form`)
     return data
   },
   async createClient(payload: ClientCreate): Promise<Client> {

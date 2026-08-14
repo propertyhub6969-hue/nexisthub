@@ -1003,10 +1003,52 @@ export interface DocumentText {
   bank_id?: string | null
   subject: string
   body: string
+  signer_name?: string | null
+  signer_title?: string | null
   is_custom: boolean
   default_subject: string
   default_body: string
   variables: string[]
+  has_subject: boolean
+  has_signer: boolean
+  per_bank: boolean
+}
+export interface DocTypeMeta {
+  key: string
+  label: string
+  per_bank: boolean
+  has_subject: boolean
+  has_signer: boolean
+}
+export interface KuitansiText {
+  ketentuan: string
+  signer_name?: string | null
+  signer_title?: string | null
+}
+export interface SalesFormData {
+  company_name: string
+  company_address?: string | null
+  company_city?: string | null
+  company_phone?: string | null
+  date: string
+  nama: string
+  nik?: string | null
+  alamat?: string | null
+  telp?: string | null
+  proyek?: string | null
+  unit_label?: string | null
+  tipe?: string | null
+  lt?: string | null
+  lb?: string | null
+  harga_jual?: string | null
+  diskon?: string | null
+  cara_bayar?: string | null
+  bank?: string | null
+  plafon?: string | null
+  marketing?: string | null
+  ketentuan: string
+  signer_name?: string | null
+  signer_title?: string | null
 }
 export interface DocTextScope {
   bank_id?: string | null

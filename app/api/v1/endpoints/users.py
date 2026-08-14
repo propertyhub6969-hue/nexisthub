@@ -217,14 +217,21 @@ async def delete_tenant_logo(actor: User = ManagerDep, db: AsyncSession = Depend
 import uuid as _uuid  # noqa: E402
 from app.models.document_text import DocumentText  # noqa: E402
 from app.models.kpr import Bank  # noqa: E402
-from app.core.document_texts import get_doc_text, DEFAULT_TEXTS, DOC_VARIABLES  # noqa: E402
-from app.schemas.document_text import DocumentTextResponse, DocumentTextUpdate, DocTextScope, DocTextScopeList  # noqa: E402
+from app.core.document_texts import get_doc_full, DEFAULT_TEXTS, DOC_VARIABLES, DOC_TYPES  # noqa: E402
+from app.schemas.document_text import DocumentTextResponse, DocumentTextUpdate, DocTextScope, DocTextScopeList, DocTypeMeta  # noqa: E402
 
 
 async def _exact_row(db, tenant_id, doc_key, bank_id):
     q = select(DocumentText).where(DocumentText.tenant_id == tenant_id, DocumentText.doc_key == doc_key)
     q = q.where(DocumentText.bank_id == bank_id) if bank_id else q.where(DocumentText.bank_id.is_(None))
     return (await db.execute(q)).scalar_one_or_none()
+
+
+@router.get("/document-texts", response_model=list[DocTypeMeta])
+async def list_document_types(actor: User = ManagerDep):
+    """Semua jenis dokumen yang bisa dikustomisasi (utk pemilih di editor)."""
+    return [DocTypeMeta(key=k, label=v["label"], per_bank=v["per_bank"],
+                        has_subject=v["has_subject"], has_signer=v["has_signer"]) for k, v in DOC_TYPES.items()]
 
 
 @router.get("/document-texts/{doc_key}/scopes", response_model=DocTextScopeList)
@@ -248,12 +255,15 @@ async def get_document_text(doc_key: str, bank_id: _uuid.UUID = None, actor: Use
     if doc_key not in DEFAULT_TEXTS:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Jenis dokumen tidak dikenal")
     exact = await _exact_row(db, actor.tenant_id, doc_key, bank_id)
-    subject, body = await get_doc_text(db, actor.tenant_id, doc_key, bank_id)   # resolusi bertingkat utk prefill
+    subject, body, sname, stitle = await get_doc_full(db, actor.tenant_id, doc_key, bank_id)   # prefill
     d = DEFAULT_TEXTS[doc_key]
+    meta = DOC_TYPES[doc_key]
     return DocumentTextResponse(
         doc_key=doc_key, bank_id=bank_id, subject=subject, body=body,
-        is_custom=bool(exact and (exact.subject or exact.body)),
+        signer_name=sname, signer_title=stitle,
+        is_custom=bool(exact and (exact.subject or exact.body or exact.signer_name or exact.signer_title)),
         default_subject=d["subject"], default_body=d["body"], variables=DOC_VARIABLES.get(doc_key, []),
+        has_subject=meta["has_subject"], has_signer=meta["has_signer"], per_bank=meta["per_bank"],
     )
 
 
@@ -270,7 +280,9 @@ async def update_document_text(doc_key: str, payload: DocumentTextUpdate, bank_i
     row = await _exact_row(db, actor.tenant_id, doc_key, bank_id)
     subj = (payload.subject or "").strip() or None
     body = (payload.body or "").strip() or None
-    if not subj and not body:
+    sname = (payload.signer_name or "").strip() or None
+    stitle = (payload.signer_title or "").strip() or None
+    if not subj and not body and not sname and not stitle:
         if row is not None:
             await db.delete(row)
             await db.commit()
@@ -280,5 +292,7 @@ async def update_document_text(doc_key: str, payload: DocumentTextUpdate, bank_i
         db.add(row)
     row.subject = subj
     row.body = body
+    row.signer_name = sname
+    row.signer_title = stitle
     await db.commit()
     return await get_document_text(doc_key, bank_id, actor, db)

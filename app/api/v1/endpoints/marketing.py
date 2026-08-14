@@ -24,6 +24,7 @@ from app.schemas.marketing import (
     ProspectCreate, ProspectUpdate, ProspectResponse,
     ClientCreate, ClientUpdate, ClientResponse,
 )
+from app.schemas.document_text import KuitansiText, SalesFormData
 
 router = APIRouter()
 
@@ -464,6 +465,77 @@ async def get_client(
     db: AsyncSession = Depends(get_db),
 ):
     return await _get_client(db, ctx.tenant_id, client_id)
+
+
+def _rp(v):
+    return f"Rp {int(v):,}".replace(",", ".") if v is not None else "-"
+
+
+async def _client_doc_ctx(db, tenant_id, client):
+    """Data umum utk isi variabel dokumen klien (nama, unit, proyek, perusahaan) + objek unit/project/tenant."""
+    from app.models.tenant import Tenant
+    from app.models.property import Project
+    unit = (await db.execute(select(Unit).where(Unit.id == client.unit_id))).scalar_one_or_none() if client.unit_id else None
+    project = (await db.execute(select(Project).where(Project.id == client.project_id))).scalar_one_or_none() if client.project_id else None
+    tenant = (await db.execute(select(Tenant).where(Tenant.id == tenant_id))).scalar_one()
+    unit_label = ("-".join(x for x in [unit.block, unit.unit_number] if x)) if unit else (client.unit_number or "-")
+    company = tenant.company_name or tenant.name
+    ctx = {"nama_pembeli": client.full_name or "-", "unit": unit_label,
+           "proyek": (project.name if project else "-"), "perusahaan": company,
+           "harga_jual": _rp(client.contract_value)}
+    return ctx, unit, project, tenant, company, unit_label
+
+
+@router.get("/clients/{client_id}/kuitansi-text", response_model=KuitansiText)
+async def kuitansi_text(client_id: uuid.UUID, ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db)):
+    """Ketentuan + penandatangan kuitansi (dari Teks Dokumen tenant), variabel terisi."""
+    from app.core.document_texts import get_doc_full, fill_vars
+    client = await _get_client(db, ctx.tenant_id, client_id)
+    cvars, *_ = await _client_doc_ctx(db, ctx.tenant_id, client)
+    _, body, sname, stitle = await get_doc_full(db, ctx.tenant_id, "kuitansi")
+    return KuitansiText(ketentuan=fill_vars(body, cvars), signer_name=sname, signer_title=stitle)
+
+
+@router.get("/clients/{client_id}/sales-form", response_model=SalesFormData)
+async def sales_form(client_id: uuid.UUID, ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db)):
+    """Data lengkap Form Penjualan (data terkunci sistem + Syarat & Ketentuan editable + penandatangan)."""
+    from datetime import date as _date
+    from app.core.document_texts import get_doc_full, fill_vars
+    from app.models.marketing import ClientPaymentType
+    client = await _get_client(db, ctx.tenant_id, client_id)
+    cvars, unit, project, tenant, company, unit_label = await _client_doc_ctx(db, ctx.tenant_id, client)
+    # cara bayar + bank (kalau KPR)
+    cara = "-"; bank = None; plafon = None
+    if client.payment_type == ClientPaymentType.CASH:
+        cara = "Tunai / Cash"
+    elif client.payment_type == ClientPaymentType.KPR:
+        cara = "KPR"
+        kpr = (await db.execute(select(KprApplication).options(selectinload(KprApplication.bank)).where(
+            KprApplication.client_id == client.id, KprApplication.tenant_id == ctx.tenant_id,
+            KprApplication.is_deleted == False).order_by(KprApplication.created_at.desc()))).scalars().first()  # noqa: E712
+        if kpr:
+            bank = kpr.bank_name or None
+            plafon = _rp(kpr.plafond) if kpr.plafond is not None else None
+    # diskon: promo (teks) + potongan unit (Rp)
+    diskon_parts = []
+    if client.promo:
+        diskon_parts.append(client.promo)
+    if unit and unit.discount:
+        diskon_parts.append(_rp(unit.discount))
+    _, body, sname, stitle = await get_doc_full(db, ctx.tenant_id, "form_penjualan")
+    return SalesFormData(
+        company_name=company, company_address=tenant.address, company_city=tenant.city, company_phone=tenant.phone,
+        date=_date.today().isoformat(),
+        nama=client.full_name or "-", nik=client.nik, alamat=client.address, telp=client.phone,
+        proyek=(project.name if project else None), unit_label=unit_label,
+        tipe=(unit.unit_type if unit else client.unit_type),
+        lt=(f"{unit.land_area:g} m²" if unit and unit.land_area is not None else None),
+        lb=(f"{unit.building_area:g} m²" if unit and unit.building_area is not None else None),
+        harga_jual=_rp(client.contract_value), diskon=(" · ".join(diskon_parts) or None),
+        cara_bayar=cara, bank=bank, plafon=plafon,
+        marketing=(client.marketing_user.full_name if client.marketing_user else None),
+        ketentuan=fill_vars(body, cvars), signer_name=sname, signer_title=stitle,
+    )
 
 
 @router.patch("/clients/{client_id}", response_model=ClientResponse)
