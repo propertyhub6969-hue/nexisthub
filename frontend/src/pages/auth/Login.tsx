@@ -22,10 +22,19 @@ export default function Login() {
   const fromApp = params.get('from') === 'app'
   const justRegistered = params.get('baru') === '1'
   const [redirecting, setRedirecting] = useState(false)
+  // ditendang keluar karena tidak aktif 1 jam (di-set AuthContext.idleLogout)
+  const [idleNotice, setIdleNotice] = useState(false)
 
   useEffect(() => {
     if (slug) publicService.tenantBySlug(slug).then((t) => setBrand(t?.name ?? null))
   }, [slug])
+
+  useEffect(() => {
+    if (sessionStorage.getItem('logout_reason') === 'idle') {
+      setIdleNotice(true)
+      sessionStorage.removeItem('logout_reason')
+    }
+  }, [])
 
   const {
     register,
@@ -88,6 +97,12 @@ export default function Login() {
                 {...register('password', { required: 'Password wajib diisi' })} />
               {errors.password && <p className="text-xs text-red-500 mt-1">{errors.password.message}</p>}
             </div>
+
+            {idleNotice && !error && (
+              <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-sm text-amber-700">
+                Sesi Anda berakhir otomatis karena tidak ada aktivitas selama 1 jam. Silakan masuk kembali.
+              </div>
+            )}
 
             {(fromApp || justRegistered) && !error && (
               <div className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-sm text-blue-700">
