@@ -1145,6 +1145,19 @@ export interface BusinessPnL {
   margin_pct?: number | null
 }
 
+export interface FinancialPosition {
+  kas_bank: number
+  persediaan: number
+  piutang_pembeli: number
+  retensi_bank: number
+  total_aset: number
+  biaya_belum_dibayar: number
+  hutang_notaris: number
+  opex_belum_dibayar: number
+  total_kewajiban: number
+  kekayaan_bersih: number
+}
+
 export interface CashflowReport {
   total_contract: number
   from_buyer: number

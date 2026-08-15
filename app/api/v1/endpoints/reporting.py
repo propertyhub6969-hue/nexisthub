@@ -1384,6 +1384,90 @@ async def business_pnl(year: int = Query(...), month: int = Query(None, ge=1, le
     )
 
 
+class FinancialPosition(BaseModel):
+    # Harta / Aset
+    kas_bank: Decimal
+    persediaan: Decimal            # modal tertanam: biaya unit belum terjual
+    piutang_pembeli: Decimal
+    retensi_bank: Decimal
+    total_aset: Decimal
+    # Kewajiban
+    biaya_belum_dibayar: Decimal   # biaya proyek menunggu bayar
+    hutang_notaris: Decimal
+    opex_belum_dibayar: Decimal
+    total_kewajiban: Decimal
+    # Bersih
+    kekayaan_bersih: Decimal
+
+
+@router.get("/financial-position", response_model=FinancialPosition)
+async def financial_position(ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db)):
+    """Posisi Keuangan Ringkas (snapshot manajerial, bukan neraca formal). Menggabungkan data yg sudah ada:
+    Kas+Bank, Persediaan (modal tertanam unit belum terjual), Piutang Pembeli, Retensi Bank − Kewajiban."""
+    from app.models.opex import OperationalExpense
+    t = ctx.tenant_id
+
+    # ── Kas & Bank: Σ saldo awal + entri masuk − entri keluar (transfer net nol) ──
+    opening = Decimal(await db.scalar(select(func.coalesce(func.sum(CashAccount.opening_balance), 0)).where(
+        CashAccount.tenant_id == t, CashAccount.is_deleted == False)) or 0)  # noqa: E712
+    ein = Decimal(await db.scalar(select(func.coalesce(func.sum(CashBookEntry.amount), 0)).where(
+        CashBookEntry.tenant_id == t, CashBookEntry.direction == CashDirection.IN)) or 0)
+    eout = Decimal(await db.scalar(select(func.coalesce(func.sum(CashBookEntry.amount), 0)).where(
+        CashBookEntry.tenant_id == t, CashBookEntry.direction == CashDirection.OUT)) or 0)
+    kas_bank = opening + ein - eout
+
+    # ── Persediaan (biaya unit belum terjual) — sama aturan dgn Laba/Rugi Proyek ──
+    clients_full = await _clients_of_project(db, t)
+    sold_unit_ids = {c.unit_id for c in clients_full if c.unit_id is not None}
+    proj_ids = [pid for (pid,) in (await db.execute(select(Project.id).where(Project.tenant_id == t))).all()]
+    persediaan = Decimal(0)
+    for pid in proj_ids:
+        cmap = await _project_cost_map(db, t, pid)
+        for uid, grp in cmap.items():
+            if uid is not None and uid not in sold_unit_ids:
+                persediaan += sum(grp.values(), Decimal(0))
+
+    # ── Piutang Pembeli & Retensi Bank (pisah, tak dobel) — pola finance_summary ──
+    notdel_p = (Payment.is_deleted == False) & (Payment.approval_status == PaymentApprovalStatus.APPROVED)  # noqa: E712
+    clients = (await db.execute(select(Client.id, Client.contract_value).where(
+        Client.tenant_id == t, Client.is_deleted == False, Client.status != ClientStatus.INACTIVE))).all()  # noqa: E712
+    buyer_by = {cid: Decimal(v) for cid, v in (await db.execute(
+        select(Payment.client_id, func.coalesce(func.sum(Payment.amount), 0))
+        .where(Payment.tenant_id == t, Payment.source == PaymentSource.PEMBELI, notdel_p).group_by(Payment.client_id))).all()}
+    bank_by = {cid: Decimal(v) for cid, v in (await db.execute(
+        select(Payment.client_id, func.coalesce(func.sum(Payment.amount), 0))
+        .where(Payment.tenant_id == t, Payment.source == PaymentSource.BANK, notdel_p).group_by(Payment.client_id))).all()}
+    committed_by: dict = {}
+    for cid, plaf, stage in (await db.execute(select(KprApplication.client_id, KprApplication.plafond, KprApplication.stage)
+                             .where(KprApplication.tenant_id == t, KprApplication.is_deleted == False)  # noqa: E712
+                             .order_by(KprApplication.client_id, KprApplication.created_at.desc()))).all():
+        if cid not in committed_by:
+            committed_by[cid] = Decimal(plaf or 0) if stage in (KprStage.AKAD_KREDIT, KprStage.PENCAIRAN) else Decimal(0)
+    piutang = Decimal(0); retensi = Decimal(0)
+    for cid, price in clients:
+        price = Decimal(price or 0); committed = committed_by.get(cid, Decimal(0))
+        piutang += max(price - buyer_by.get(cid, Decimal(0)) - committed, Decimal(0))
+        if committed > 0:
+            retensi += max(committed - bank_by.get(cid, Decimal(0)), Decimal(0))
+
+    # ── Kewajiban ──
+    biaya_bd = Decimal(await db.scalar(select(func.coalesce(func.sum(Expense.amount), 0)).where(
+        Expense.tenant_id == t, Expense.is_deleted == False, Expense.is_paid == False)) or 0)  # noqa: E712
+    notaris_bd = Decimal(await db.scalar(select(func.coalesce(func.sum(NotaryFee.amount), 0)).where(
+        NotaryFee.tenant_id == t, NotaryFee.is_deleted == False, NotaryFee.is_paid == False)) or 0)  # noqa: E712
+    opex_bd = Decimal(await db.scalar(select(func.coalesce(func.sum(OperationalExpense.amount), 0)).where(
+        OperationalExpense.tenant_id == t, OperationalExpense.is_deleted == False, OperationalExpense.is_paid == False)) or 0)  # noqa: E712
+
+    total_aset = kas_bank + persediaan + piutang + retensi
+    total_kewajiban = biaya_bd + notaris_bd + opex_bd
+    return FinancialPosition(
+        kas_bank=kas_bank, persediaan=persediaan, piutang_pembeli=piutang, retensi_bank=retensi,
+        total_aset=total_aset, biaya_belum_dibayar=biaya_bd, hutang_notaris=notaris_bd,
+        opex_belum_dibayar=opex_bd, total_kewajiban=total_kewajiban,
+        kekayaan_bersih=total_aset - total_kewajiban,
+    )
+
+
 @router.get("/project-profit/{project_id}", response_model=ProjectProfitDetail)
 async def project_profit_detail(
     project_id: uuid.UUID,

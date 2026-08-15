@@ -16,7 +16,7 @@ import { useAuth } from '../context/AuthContext'
 import Modal from '../components/ui/Modal'
 import Badge from '../components/ui/Badge'
 import DateInput from '../components/ui/DateInput'
-import type { KprRejectionReport, CashflowReport, SalesRecapReport, AgingReport, ConstructionProgressReport, MonthlyTaxReport, MonthlyTaxShareLink, Project, TaxChecklistReport, TaxChecklistItem, TaxChecklistStatus, ProjectProfitReport, ProjectProfitDetail, BankRetentionReport, CashProjection, TaxEqReport, TaxDraftItem, BusinessPnL } from '../types'
+import type { KprRejectionReport, CashflowReport, SalesRecapReport, AgingReport, ConstructionProgressReport, MonthlyTaxReport, MonthlyTaxShareLink, Project, TaxChecklistReport, TaxChecklistItem, TaxChecklistStatus, ProjectProfitReport, ProjectProfitDetail, BankRetentionReport, CashProjection, TaxEqReport, TaxDraftItem, BusinessPnL, FinancialPosition } from '../types'
 
 const fmtRp = (n?: number | null) =>
   n == null ? '—' : new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(Number(n))
@@ -1137,6 +1137,70 @@ function TaxChecklistTab() {
   )
 }
 
+// ═══════════════════════ POSISI KEUANGAN (snapshot) ═══════════════════════
+function FinancialPositionTab() {
+  const [rep, setRep] = useState<FinancialPosition | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    setLoading(true); setError('')
+    reportingService.financialPosition().then(setRep).catch(() => setError('Gagal memuat Posisi Keuangan.')).finally(() => setLoading(false))
+  }, [])
+
+  const Row = ({ label, value, hint, strong, total, indent, danger }: { label: string; value?: number; hint?: string; strong?: boolean; total?: boolean; indent?: boolean; danger?: boolean }) => (
+    <div className={`flex items-center justify-between py-2 ${indent ? 'pl-4' : ''} ${total ? 'border-t-2 border-slate-300 mt-1' : strong ? 'border-t border-slate-200 mt-1' : 'border-b border-slate-50'}`}>
+      <span className={`text-sm ${total || strong ? 'font-semibold text-slate-900' : 'text-slate-600'}`}>{label}{hint && <span className="block text-[11px] text-slate-400 font-normal">{hint}</span>}</span>
+      <span className={`tabular-nums ${total ? 'text-lg font-bold' : strong ? 'text-base font-bold' : 'text-sm'} ${danger ? 'text-red-600' : 'text-slate-900'}`}>{fmtRp(value)}</span>
+    </div>
+  )
+
+  return (
+    <div className="space-y-5">
+      <p className="text-xs text-slate-500 max-w-2xl">
+        Potret kekayaan usaha saat ini — menjawab <b>“uang saya ada di mana?”</b>. Pelengkap Laba/Rugi: uang yang keluar untuk membangun
+        unit <b>belum terjual</b> tidak hilang, ia tercatat di sini sebagai <b>Persediaan (Modal Tertanam)</b>. Snapshot manajerial, bukan neraca formal.
+      </p>
+
+      {loading ? (
+        <div className="card p-12 text-center text-slate-400"><Loader2 size={20} className="inline animate-spin" /></div>
+      ) : error ? (
+        <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-2">{error}</div>
+      ) : rep && (
+        <>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="card p-4"><div className="text-xs text-slate-500">Total Harta</div><div className="text-lg font-bold text-slate-900 mt-1">{fmtRp(rep.total_aset)}</div></div>
+            <div className="card p-4"><div className="text-xs text-slate-500">Total Kewajiban</div><div className="text-lg font-bold text-red-600 mt-1">{fmtRp(rep.total_kewajiban)}</div></div>
+            <div className="card p-4 ring-1 ring-emerald-200"><div className="text-xs text-slate-500">Kekayaan Bersih</div><div className={`text-lg font-bold mt-1 ${rep.kekayaan_bersih < 0 ? 'text-red-600' : 'text-emerald-600'}`}>{fmtRp(rep.kekayaan_bersih)}</div></div>
+          </div>
+
+          <div className="card p-5 max-w-2xl">
+            <h3 className="text-sm font-semibold text-slate-600 mb-1">Harta / Aset</h3>
+            <Row label="Kas & Bank" hint="saldo riil semua rekening" value={rep.kas_bank} indent />
+            <Row label="Persediaan / Modal Tertanam" hint="biaya unit belum terjual" value={rep.persediaan} indent />
+            <Row label="Piutang Pembeli" hint="sisa kontrak belum dibayar pembeli" value={rep.piutang_pembeli} indent />
+            <Row label="Retensi di Bank" hint="dana ditahan bank, belum cair" value={rep.retensi_bank} indent />
+            <Row label="Total Harta" value={rep.total_aset} strong />
+
+            <h3 className="text-sm font-semibold text-slate-600 mb-1 mt-4">Kewajiban</h3>
+            <Row label="Biaya proyek belum dibayar" value={rep.biaya_belum_dibayar} indent danger />
+            <Row label="Hutang ke Notaris" value={rep.hutang_notaris} indent danger />
+            <Row label="Biaya operasional belum dibayar" value={rep.opex_belum_dibayar} indent danger />
+            <Row label="Total Kewajiban" value={rep.total_kewajiban} strong danger />
+
+            <Row label="KEKAYAAN BERSIH USAHA" value={rep.kekayaan_bersih} total danger={rep.kekayaan_bersih < 0} />
+          </div>
+
+          <div className="rounded-lg bg-slate-50 border border-slate-200 text-slate-500 text-xs px-4 py-2.5 max-w-2xl leading-relaxed">
+            <b className="text-slate-700">Cara baca:</b> Kekayaan Bersih = Total Harta − Total Kewajiban. Persediaan yang besar berarti banyak modal
+            sedang “tidur” dalam bentuk rumah belum terjual — normal untuk developer yang sedang membangun, tapi perhatikan agar kas tetap cukup.
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
 // ═══════════════════════ LABA/RUGI USAHA (per tahun) ═══════════════════════
 function BusinessPnLTab() {
   const { user } = useAuth()
@@ -1773,6 +1837,7 @@ function Row({ label, value, pos, neg, bold }: { label: string; value: string; p
 
 // ═══════════════════════ PAGE ═══════════════════════
 const TABS = [
+  { key: 'position', label: 'Posisi Keuangan', desc: 'Potret kekayaan usaha: Kas, Persediaan (modal tertanam), Piutang, Retensi − Kewajiban = Kekayaan Bersih.' },
   { key: 'cashflow', label: 'Arus Kas', desc: 'Kas masuk dari pembeli vs bank, plus piutang & retensi.' },
   { key: 'profit', label: 'Laba/Rugi Proyek', desc: 'Untung-rugi per proyek & margin per unit. Laporan operasional, bukan akuntansi formal.' },
   { key: 'business-pnl', label: 'Laba/Rugi Usaha', desc: 'Laba bersih perusahaan per tahun: pendapatan − beban pokok − biaya operasional (gaji, sewa, dll).' },
@@ -1791,7 +1856,7 @@ type TabKey = (typeof TABS)[number]['key']
 // Report dipecah per kategori (menu sidebar) — tiap kategori hanya menampilkan subset tab yang relevan.
 const CATEGORIES: Record<string, { label: string; tabs: TabKey[] }> = {
   pajak: { label: 'Report Pajak', tabs: ['tax', 'tax-checklist', 'tax-equalization'] },
-  keuangan: { label: 'Report Keuangan', tabs: ['cashflow', 'profit', 'business-pnl', 'retention', 'projection'] },
+  keuangan: { label: 'Report Keuangan', tabs: ['position', 'cashflow', 'profit', 'business-pnl', 'retention', 'projection'] },
   marketing: { label: 'Report Marketing', tabs: ['kpr', 'sales', 'aging'] },
   pembangunan: { label: 'Report Pembangunan', tabs: ['construction'] },
 }
@@ -1833,6 +1898,7 @@ export default function Reports() {
       )}
 
       {active.key === 'cashflow' && <CashflowTab />}
+      {active.key === 'position' && <FinancialPositionTab />}
       {active.key === 'profit' && <ProjectProfitTab />}
       {active.key === 'business-pnl' && <BusinessPnLTab />}
       {active.key === 'retention' && <BankRetentionTab />}
