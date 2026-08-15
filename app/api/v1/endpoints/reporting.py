@@ -1321,16 +1321,22 @@ class BusinessPnL(BaseModel):
 
 
 @router.get("/business-pnl", response_model=BusinessPnL)
-async def business_pnl(year: int = Query(...), ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db)):
+async def business_pnl(year: int = Query(...), month: int = Query(None, ge=1, le=12),
+                       ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db)):
     """Laba/Rugi Usaha per tahun (manajerial, accrual matching-at-sale). Pendapatan = kontrak unit
     yang AKAD tahun ini; HPP = biaya bangun unit tsb + alokasi biaya umum proyek + notaris; dikurangi
     Biaya Operasional (opex) tahun ini. Unit belum terjual tetap persediaan (tak jadi beban)."""
     from app.models.opex import OperationalExpense
     from datetime import date as _d
+    from calendar import monthrange
     t = ctx.tenant_id
+    if month:
+        p_start, p_end = _d(year, month, 1), _d(year, month, monthrange(year, month)[1])
+    else:
+        p_start, p_end = _d(year, 1, 1), _d(year, 12, 31)
     yclients = (await db.execute(select(Client.id, Client.project_id, Client.unit_id, Client.contract_value).where(
         Client.tenant_id == t, Client.is_deleted == False, Client.status != ClientStatus.INACTIVE,  # noqa: E712
-        Client.contract_date >= _d(year, 1, 1), Client.contract_date <= _d(year, 12, 31)))).all()
+        Client.contract_date >= p_start, Client.contract_date <= p_end))).all()
     revenue = sum((Decimal(c.contract_value or 0) for c in yclients), Decimal(0))
 
     fee_rows = (await db.execute(
@@ -1361,7 +1367,7 @@ async def business_pnl(year: int = Query(...), ctx: AuthContext = Depends(get_cu
     orows = (await db.execute(select(OperationalExpense).options(selectinload(OperationalExpense.category)).where(
         OperationalExpense.tenant_id == t, OperationalExpense.is_deleted == False,  # noqa: E712
         OperationalExpense.is_paid == True,  # noqa: E712
-        OperationalExpense.expense_date >= _d(year, 1, 1), OperationalExpense.expense_date <= _d(year, 12, 31)))).scalars().all()
+        OperationalExpense.expense_date >= p_start, OperationalExpense.expense_date <= p_end))).scalars().all()
     opex_total = sum((Decimal(o.amount) for o in orows), Decimal(0))
     agg: dict = {}
     for o in orows:

@@ -1140,16 +1140,18 @@ function TaxChecklistTab() {
 function BusinessPnLTab() {
   const now = new Date()
   const [year, setYear] = useState(now.getFullYear())
+  const [month, setMonth] = useState(0)   // 0 = setahun
   const [rep, setRep] = useState<BusinessPnL | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
   useEffect(() => {
     setLoading(true); setError('')
-    reportingService.businessPnl(year).then(setRep).catch(() => setError('Gagal memuat Laba/Rugi Usaha.')).finally(() => setLoading(false))
-  }, [year])
+    reportingService.businessPnl(year, month || undefined).then(setRep).catch(() => setError('Gagal memuat Laba/Rugi Usaha.')).finally(() => setLoading(false))
+  }, [year, month])
 
   const years = Array.from({ length: 5 }, (_, i) => now.getFullYear() - i)
+  const periodLabel = month ? `${MONTHS_ID[month - 1]} ${year}` : `${year}`
   const rugi = rep && rep.laba_usaha < 0
 
   const Line = ({ label, value, sign, strong, indent }: { label: string; value?: number; sign?: '+' | '−'; strong?: boolean; indent?: boolean }) => (
@@ -1163,13 +1165,17 @@ function BusinessPnLTab() {
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <select className="input w-32" value={year} onChange={(e) => setYear(Number(e.target.value))}>
+      <div className="flex flex-wrap items-center gap-2">
+        <select className="input w-28" value={year} onChange={(e) => setYear(Number(e.target.value))}>
           {years.map((y) => <option key={y} value={y}>{y}</option>)}
+        </select>
+        <select className="input w-40" value={month} onChange={(e) => setMonth(Number(e.target.value))}>
+          <option value={0}>Setahun penuh</option>
+          {MONTHS_ID.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
         </select>
       </div>
       <p className="text-xs text-slate-500 -mt-2 max-w-2xl">
-        Laba bersih perusahaan tahun ini. <b>Pendapatan</b> = nilai kontrak unit yang akad tahun ini; <b>beban pokok</b> = biaya membangun unit tsb (accrual) + notaris;
+        Laba bersih perusahaan pada periode ini. <b>Pendapatan</b> = nilai kontrak unit yang akad pada periode ini; <b>beban pokok</b> = biaya membangun unit tsb (accrual) + notaris;
         dikurangi <b>biaya operasional</b> (gaji, sewa, dll). Unit belum terjual tetap persediaan (tak jadi beban). Laporan manajerial, bukan akuntansi formal.
       </p>
 
@@ -1180,17 +1186,17 @@ function BusinessPnLTab() {
       ) : rep && (
         <>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div className="card p-4"><div className="text-xs text-slate-500">Pendapatan {year}</div><div className="text-lg font-bold text-slate-900 mt-1">{fmtRp(rep.pendapatan)}</div><div className="text-[11px] text-slate-400 mt-0.5">{rep.units_sold} unit terjual</div></div>
+            <div className="card p-4"><div className="text-xs text-slate-500">Pendapatan {periodLabel}</div><div className="text-lg font-bold text-slate-900 mt-1">{fmtRp(rep.pendapatan)}</div><div className="text-[11px] text-slate-400 mt-0.5">{rep.units_sold} unit terjual</div></div>
             <div className="card p-4"><div className="text-xs text-slate-500">Laba Kotor</div><div className="text-lg font-bold text-slate-900 mt-1">{fmtRp(rep.laba_kotor)}</div></div>
             <div className={`card p-4 ${rugi ? 'ring-1 ring-red-200' : 'ring-1 ring-emerald-200'}`}>
-              <div className="text-xs text-slate-500">{rugi ? 'Rugi Usaha' : 'Laba Usaha'} {year}</div>
+              <div className="text-xs text-slate-500">{rugi ? 'Rugi Usaha' : 'Laba Usaha'} {periodLabel}</div>
               <div className={`text-lg font-bold mt-1 ${rugi ? 'text-red-600' : 'text-emerald-600'}`}>{fmtRp(rep.laba_usaha)}</div>
               <div className="text-[11px] text-slate-400 mt-0.5">margin {rep.margin_pct != null ? `${rep.margin_pct}%` : '—'}</div>
             </div>
           </div>
 
           <div className="card p-5 max-w-2xl">
-            <h3 className="text-sm font-semibold text-slate-600 mb-2">Laporan Laba/Rugi Usaha — {year}</h3>
+            <h3 className="text-sm font-semibold text-slate-600 mb-2">Laporan Laba/Rugi Usaha — {periodLabel}</h3>
             <Line label="Pendapatan (unit terjual)" value={rep.pendapatan} />
             <Line label="Beban Pokok — biaya bangun unit" value={rep.hpp_unit} sign="−" indent />
             <Line label="Beban Pokok — jasa notaris" value={rep.hpp_notaris} sign="−" indent />

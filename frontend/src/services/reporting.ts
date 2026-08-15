@@ -22,8 +22,8 @@ export const reportingService = {
     return data
   },
 
-  async businessPnl(year: number): Promise<BusinessPnL> {
-    const { data } = await api.get<BusinessPnL>('/reporting/business-pnl', { params: { year } })
+  async businessPnl(year: number, month?: number): Promise<BusinessPnL> {
+    const { data } = await api.get<BusinessPnL>('/reporting/business-pnl', { params: { year, month: month || undefined } })
     return data
   },
 
