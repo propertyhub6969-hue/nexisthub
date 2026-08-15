@@ -44,6 +44,7 @@ export default function CashBook() {
   const [manageOpen, setManageOpen] = useState(false)
   const [transferOpen, setTransferOpen] = useState(false)
   const [reconcileOpen, setReconcileOpen] = useState(false)
+  const [tab, setTab] = useState<'ringkasan' | 'transaksi'>('ringkasan')
 
   const loadAccounts = useCallback(() => {
     cashbookService.listAccounts().then(setAccts).catch(() => {})
@@ -116,7 +117,7 @@ export default function CashBook() {
         ) : (
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
             {accts.accounts.map((a) => (
-              <button key={a.id} onClick={() => { setAccountId(a.id) }}
+              <button key={a.id} onClick={() => { setAccountId(a.id); setTab('transaksi') }}
                 className={`card p-3 text-left hover:ring-2 hover:ring-brand-200 transition ${accountId === a.id ? 'ring-2 ring-brand-400' : ''}`}>
                 <div className="flex items-center gap-1.5 text-slate-400 text-xs">
                   {a.kind === 'bank' ? <Landmark size={13} /> : <Banknote size={13} />}
@@ -130,7 +131,7 @@ export default function CashBook() {
               <div className="text-xs text-slate-400">Total Semua Rekening</div>
               <div className="mt-1 font-display text-base font-bold text-brand-700 truncate">{fmt(accts.total_balance)}</div>
               {accts.unassigned_balance !== 0 && (
-                <button onClick={() => setAccountId('__none__')} className="mt-1 text-[11px] text-amber-600 hover:underline">
+                <button onClick={() => { setAccountId('__none__'); setTab('transaksi') }} className="mt-1 text-[11px] text-amber-600 hover:underline">
                   Belum berrekening: {fmt(accts.unassigned_balance)} →
                 </button>
               )}
@@ -154,7 +155,17 @@ export default function CashBook() {
         )}
       </div>
 
-      {loading ? (
+      {/* Tab: Ringkasan (analitik) vs Transaksi (buku besar) */}
+      <div className="flex items-center gap-1 border-b border-slate-200">
+        {([['ringkasan', 'Ringkasan'], ['transaksi', 'Transaksi']] as const).map(([key, label]) => (
+          <button key={key} onClick={() => setTab(key)}
+            className={`px-4 py-2 text-sm font-medium -mb-px border-b-2 transition ${tab === key ? 'border-brand-500 text-brand-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'ringkasan' && (loading ? (
         <div className="card p-12 text-center text-slate-400"><Loader2 size={20} className="inline animate-spin" /></div>
       ) : summary && (
         <>
@@ -227,8 +238,9 @@ export default function CashBook() {
             </div>
           </div>
         </>
-      )}
+      ))}
 
+      {tab === 'transaksi' && (
       <div>
         <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
           <h3 className="text-sm font-semibold text-slate-600">Daftar Transaksi</h3>
@@ -297,6 +309,7 @@ export default function CashBook() {
           </div>
         )}
       </div>
+      )}
 
       {manageOpen && (
         <ManageAccountsModal accounts={accts?.accounts ?? []} onClose={() => setManageOpen(false)}
