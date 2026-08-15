@@ -1301,6 +1301,83 @@ async def project_profit(
     )
 
 
+class BizOpexCat(BaseModel):
+    name: str
+    total: Decimal
+
+
+class BusinessPnL(BaseModel):
+    year: int
+    pendapatan: Decimal          # nilai kontrak unit terjual (akad) tahun ini
+    units_sold: int
+    hpp_unit: Decimal            # biaya bangun unit terjual + alokasi biaya umum proyek
+    hpp_notaris: Decimal
+    hpp_total: Decimal
+    laba_kotor: Decimal
+    biaya_operasional: Decimal
+    opex_by_category: list[BizOpexCat]
+    laba_usaha: Decimal
+    margin_pct: Optional[Decimal] = None
+
+
+@router.get("/business-pnl", response_model=BusinessPnL)
+async def business_pnl(year: int = Query(...), ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db)):
+    """Laba/Rugi Usaha per tahun (manajerial, accrual matching-at-sale). Pendapatan = kontrak unit
+    yang AKAD tahun ini; HPP = biaya bangun unit tsb + alokasi biaya umum proyek + notaris; dikurangi
+    Biaya Operasional (opex) tahun ini. Unit belum terjual tetap persediaan (tak jadi beban)."""
+    from app.models.opex import OperationalExpense
+    from datetime import date as _d
+    t = ctx.tenant_id
+    yclients = (await db.execute(select(Client.id, Client.project_id, Client.unit_id, Client.contract_value).where(
+        Client.tenant_id == t, Client.is_deleted == False, Client.status != ClientStatus.INACTIVE,  # noqa: E712
+        Client.contract_date >= _d(year, 1, 1), Client.contract_date <= _d(year, 12, 31)))).all()
+    revenue = sum((Decimal(c.contract_value or 0) for c in yclients), Decimal(0))
+
+    fee_rows = (await db.execute(
+        select(NotaryFee.client_id, func.coalesce(func.sum(NotaryFee.amount), 0))
+        .where(NotaryFee.tenant_id == t, NotaryFee.is_deleted == False).group_by(NotaryFee.client_id))).all()  # noqa: E712
+    fee_by_client = {cid: Decimal(v) for cid, v in fee_rows}
+
+    # biaya per proyek (hanya proyek yg ada penjualan tahun ini) + alokasi biaya umum per unit
+    proj_ids = {c.project_id for c in yclients if c.project_id}
+    units = (await db.execute(select(Unit).where(Unit.tenant_id == t))).scalars().all()
+    units_per_proj: dict = {}
+    for u in units:
+        units_per_proj[u.project_id] = units_per_proj.get(u.project_id, 0) + 1
+    hpp_unit = Decimal(0)
+    for pid in proj_ids:
+        cmap = await _project_cost_map(db, t, pid)
+        general = sum(cmap.get(None, {}).values(), Decimal(0))
+        gen_per_unit = general / Decimal(max(units_per_proj.get(pid, 0), 1))
+        for c in yclients:
+            if c.project_id == pid and c.unit_id is not None:
+                direct = sum(cmap.get(c.unit_id, {}).values(), Decimal(0))
+                hpp_unit += direct + gen_per_unit
+    notary = sum((fee_by_client.get(c.id, Decimal(0)) for c in yclients), Decimal(0))
+    hpp_total = hpp_unit + notary
+    laba_kotor = revenue - hpp_total
+
+    # biaya operasional tahun ini (dibayar)
+    orows = (await db.execute(select(OperationalExpense).options(selectinload(OperationalExpense.category)).where(
+        OperationalExpense.tenant_id == t, OperationalExpense.is_deleted == False,  # noqa: E712
+        OperationalExpense.is_paid == True,  # noqa: E712
+        OperationalExpense.expense_date >= _d(year, 1, 1), OperationalExpense.expense_date <= _d(year, 12, 31)))).scalars().all()
+    opex_total = sum((Decimal(o.amount) for o in orows), Decimal(0))
+    agg: dict = {}
+    for o in orows:
+        k = o.category.name if o.category else "Tanpa kategori"
+        agg[k] = agg.get(k, Decimal(0)) + Decimal(o.amount)
+    opex_by_cat = [BizOpexCat(name=k, total=v) for k, v in sorted(agg.items(), key=lambda x: -x[1])]
+
+    laba_usaha = laba_kotor - opex_total
+    return BusinessPnL(
+        year=year, pendapatan=revenue, units_sold=len([c for c in yclients if c.unit_id]),
+        hpp_unit=hpp_unit, hpp_notaris=notary, hpp_total=hpp_total, laba_kotor=laba_kotor,
+        biaya_operasional=opex_total, opex_by_category=opex_by_cat, laba_usaha=laba_usaha,
+        margin_pct=_margin_pct(laba_usaha, revenue),
+    )
+
+
 @router.get("/project-profit/{project_id}", response_model=ProjectProfitDetail)
 async def project_profit_detail(
     project_id: uuid.UUID,

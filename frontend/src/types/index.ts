@@ -1130,6 +1130,21 @@ export interface TaxDraftResult {
   by_type: Record<string, number>
 }
 
+export interface BizOpexCat { name: string; total: number }
+export interface BusinessPnL {
+  year: number
+  pendapatan: number
+  units_sold: number
+  hpp_unit: number
+  hpp_notaris: number
+  hpp_total: number
+  laba_kotor: number
+  biaya_operasional: number
+  opex_by_category: BizOpexCat[]
+  laba_usaha: number
+  margin_pct?: number | null
+}
+
 export interface CashflowReport {
   total_contract: number
   from_buyer: number
