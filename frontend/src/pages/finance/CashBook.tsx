@@ -706,21 +706,35 @@ function OperationalExpenseTab({ accounts, onChanged }: { accounts: CashAccount[
         </table>
       </div>
 
-      {addOpen && <OpexAddModal accounts={accounts} cats={cats} onClose={() => setAddOpen(false)} onSaved={() => { setAddOpen(false); load(); onChanged() }} />}
+      {addOpen && <OpexAddModal accounts={accounts} cats={cats} onClose={() => setAddOpen(false)} onSaved={() => { setAddOpen(false); load(); onChanged() }}
+        onCatsChanged={() => cashbookService.listOpexCategories().then(setCats)} />}
       {catOpen && <OpexCategoriesModal cats={cats} onClose={() => setCatOpen(false)} onChanged={() => { cashbookService.listOpexCategories().then(setCats) }} />}
     </div>
   )
 }
 
-function OpexAddModal({ accounts, cats, onClose, onSaved }: { accounts: CashAccount[]; cats: OpexCategory[]; onClose: () => void; onSaved: () => void }) {
+function OpexAddModal({ accounts, cats, onClose, onSaved, onCatsChanged }: { accounts: CashAccount[]; cats: OpexCategory[]; onClose: () => void; onSaved: () => void; onCatsChanged?: () => void }) {
   const [desc, setDesc] = useState('')
   const [amount, setAmount] = useState<number | undefined>(undefined)
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10))
+  const [catList, setCatList] = useState<OpexCategory[]>(cats)
   const [catId, setCatId] = useState('')
+  const [newCatMode, setNewCatMode] = useState(false)
+  const [newCatName, setNewCatName] = useState('')
+  const [catBusy, setCatBusy] = useState(false)
   const [acctId, setAcctId] = useState(accounts.find((a) => a.is_default)?.id ?? accounts[0]?.id ?? '')
   const [isPaid, setIsPaid] = useState(true)
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState('')
+
+  const addCat = async () => {
+    if (!newCatName.trim()) return
+    setCatBusy(true)
+    try {
+      const c = await cashbookService.createOpexCategory(newCatName.trim())
+      setCatList((l) => [...l, c]); setCatId(c.id); setNewCatName(''); setNewCatMode(false); onCatsChanged?.()
+    } catch { /* toast */ } finally { setCatBusy(false) }
+  }
 
   const save = async () => {
     if (!desc.trim() || !amount) { setErr('Deskripsi & nominal wajib diisi.'); return }
@@ -744,11 +758,26 @@ function OpexAddModal({ accounts, cats, onClose, onSaved }: { accounts: CashAcco
           <div><label className="label">Nominal</label><MoneyInput value={amount} onChange={setAmount} /></div>
           <div><label className="label">Tanggal</label><DateInput className="input" value={date} onChange={setDate} /></div>
         </div>
-        <div><label className="label">Kategori</label>
-          <select className="input" value={catId} onChange={(e) => setCatId(e.target.value)}>
-            <option value="">— Pilih kategori —</option>
-            {cats.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
+        <div>
+          <div className="flex items-center justify-between">
+            <label className="label">Kategori</label>
+            {!newCatMode && (
+              <button type="button" onClick={() => setNewCatMode(true)} className="text-xs text-brand-600 hover:underline inline-flex items-center gap-0.5"><Plus size={12} /> Kategori baru</button>
+            )}
+          </div>
+          {newCatMode ? (
+            <div className="flex gap-2">
+              <input className="input flex-1" value={newCatName} autoFocus onChange={(e) => setNewCatName(e.target.value)}
+                placeholder="Nama kategori baru" onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addCat() } }} />
+              <button type="button" className="btn-primary text-sm" onClick={addCat} disabled={catBusy}>{catBusy ? <Loader2 size={14} className="animate-spin" /> : 'Simpan'}</button>
+              <button type="button" className="btn-secondary text-sm" onClick={() => { setNewCatMode(false); setNewCatName('') }}>Batal</button>
+            </div>
+          ) : (
+            <select className="input" value={catId} onChange={(e) => setCatId(e.target.value)}>
+              <option value="">— Pilih kategori —</option>
+              {catList.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          )}
         </div>
         <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer select-none">
           <input type="checkbox" checked={isPaid} onChange={(e) => setIsPaid(e.target.checked)} /> Sudah dibayar (langsung tercatat keluar dari kas)
