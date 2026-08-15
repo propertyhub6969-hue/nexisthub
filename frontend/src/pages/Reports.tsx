@@ -11,6 +11,7 @@ import { taxService } from '../services/tax'
 import { printMonthlyTax, downloadMonthlyTaxCsv } from '../utils/monthlyTax'
 import { printCashflow } from '../utils/cashflow'
 import { printProjectProfit } from '../utils/profit'
+import { printBusinessPnl } from '../utils/businessPnl'
 import { useAuth } from '../context/AuthContext'
 import Modal from '../components/ui/Modal'
 import Badge from '../components/ui/Badge'
@@ -1138,6 +1139,7 @@ function TaxChecklistTab() {
 
 // ═══════════════════════ LABA/RUGI USAHA (per tahun) ═══════════════════════
 function BusinessPnLTab() {
+  const { user } = useAuth()
   const now = new Date()
   const [year, setYear] = useState(now.getFullYear())
   const [month, setMonth] = useState(0)   // 0 = setahun
@@ -1165,14 +1167,19 @@ function BusinessPnLTab() {
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-center gap-2">
-        <select className="input w-28" value={year} onChange={(e) => setYear(Number(e.target.value))}>
-          {years.map((y) => <option key={y} value={y}>{y}</option>)}
-        </select>
-        <select className="input w-40" value={month} onChange={(e) => setMonth(Number(e.target.value))}>
-          <option value={0}>Setahun penuh</option>
-          {MONTHS_ID.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
-        </select>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <select className="input w-28" value={year} onChange={(e) => setYear(Number(e.target.value))}>
+            {years.map((y) => <option key={y} value={y}>{y}</option>)}
+          </select>
+          <select className="input w-40" value={month} onChange={(e) => setMonth(Number(e.target.value))}>
+            <option value={0}>Setahun penuh</option>
+            {MONTHS_ID.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
+          </select>
+        </div>
+        <button className="btn-secondary" disabled={!rep} onClick={() => rep && printBusinessPnl(rep, { tenantName: user?.tenant_name ?? undefined, periodLabel: periodLabel })}>
+          <Printer size={15} /> Cetak
+        </button>
       </div>
       <p className="text-xs text-slate-500 -mt-2 max-w-2xl">
         Laba bersih perusahaan pada periode ini. <b>Pendapatan</b> = nilai kontrak unit yang akad pada periode ini; <b>beban pokok</b> = biaya membangun unit tsb (accrual) + notaris;
