@@ -12,6 +12,7 @@ import { printMonthlyTax, downloadMonthlyTaxCsv } from '../utils/monthlyTax'
 import { printCashflow } from '../utils/cashflow'
 import { printProjectProfit } from '../utils/profit'
 import { printBusinessPnl } from '../utils/businessPnl'
+import { printFinancialPosition } from '../utils/financialPosition'
 import { useAuth } from '../context/AuthContext'
 import Modal from '../components/ui/Modal'
 import Badge from '../components/ui/Badge'
@@ -1139,6 +1140,7 @@ function TaxChecklistTab() {
 
 // ═══════════════════════ POSISI KEUANGAN (snapshot) ═══════════════════════
 function FinancialPositionTab() {
+  const { user } = useAuth()
   const [rep, setRep] = useState<FinancialPosition | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -1157,7 +1159,12 @@ function FinancialPositionTab() {
 
   return (
     <div className="space-y-5">
-      <p className="text-xs text-slate-500 max-w-2xl">
+      <div className="flex justify-end">
+        <button className="btn-secondary text-sm inline-flex items-center gap-1.5 shrink-0" disabled={!rep} onClick={() => rep && printFinancialPosition(rep, { tenantName: user?.tenant_name ?? undefined })}>
+          <Printer size={14} /> Cetak
+        </button>
+      </div>
+      <p className="text-xs text-slate-500 max-w-2xl -mt-3">
         Potret kekayaan usaha saat ini — menjawab <b>“uang saya ada di mana?”</b>. Pelengkap Laba/Rugi: uang yang keluar untuk membangun
         unit <b>belum terjual</b> tidak hilang, ia tercatat di sini sebagai <b>Persediaan (Modal Tertanam)</b>. Snapshot manajerial, bukan neraca formal.
       </p>
