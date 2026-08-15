@@ -1177,8 +1177,8 @@ function BusinessPnLTab() {
             {MONTHS_ID.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
           </select>
         </div>
-        <button className="btn-secondary" disabled={!rep} onClick={() => rep && printBusinessPnl(rep, { tenantName: user?.tenant_name ?? undefined, periodLabel: periodLabel })}>
-          <Printer size={15} /> Cetak
+        <button className="btn-secondary text-sm inline-flex items-center gap-1.5 shrink-0" disabled={!rep} onClick={() => rep && printBusinessPnl(rep, { tenantName: user?.tenant_name ?? undefined, periodLabel: periodLabel })}>
+          <Printer size={14} /> Cetak
         </button>
       </div>
       <p className="text-xs text-slate-500 -mt-2 max-w-2xl">
