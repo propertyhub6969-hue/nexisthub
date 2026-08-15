@@ -1145,6 +1145,9 @@ export interface BusinessPnL {
   margin_pct?: number | null
 }
 
+export interface PositionDetailRow { label: string; sublabel?: string | null; amount: number }
+export interface PositionDetail { kind: string; title: string; rows: PositionDetailRow[]; total: number }
+
 export interface FinancialPosition {
   kas_bank: number
   persediaan: number

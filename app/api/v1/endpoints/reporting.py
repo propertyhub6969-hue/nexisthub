@@ -1468,6 +1468,103 @@ async def financial_position(ctx: AuthContext = Depends(get_current_context), db
     )
 
 
+class PositionDetailRow(BaseModel):
+    label: str
+    sublabel: Optional[str] = None
+    amount: Decimal
+
+
+class PositionDetail(BaseModel):
+    kind: str
+    title: str
+    rows: list[PositionDetailRow]
+    total: Decimal
+
+
+@router.get("/financial-position/detail", response_model=PositionDetail)
+async def financial_position_detail(kind: str = Query(...), ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db)):
+    """Rincian satu baris Posisi Keuangan (dari mana angkanya berasal)."""
+    from app.models.opex import OperationalExpense
+    t = ctx.tenant_id
+    rows: list[PositionDetailRow] = []
+    title = ""
+
+    if kind == "kas":
+        title = "Kas & Bank per Rekening"
+        from app.api.v1.endpoints.cashbook import _compute_balances
+        accts, bal, unassigned = await _compute_balances(db, t)
+        for a in accts:
+            rows.append(PositionDetailRow(label=a.name, sublabel=("Bank" if a.kind.value == "bank" else "Kas"), amount=bal.get(a.id, Decimal(0))))
+        if unassigned:
+            rows.append(PositionDetailRow(label="Belum berrekening", sublabel=None, amount=unassigned))
+
+    elif kind == "persediaan":
+        title = "Persediaan per Proyek (unit belum terjual)"
+        clients_full = await _clients_of_project(db, t)
+        sold = {c.unit_id for c in clients_full if c.unit_id is not None}
+        pnames = dict((await db.execute(select(Project.id, Project.name).where(Project.tenant_id == t))).all())
+        for pid, pname in pnames.items():
+            cmap = await _project_cost_map(db, t, pid)
+            inv = sum((sum(g.values(), Decimal(0)) for uid, g in cmap.items() if uid is not None and uid not in sold), Decimal(0))
+            if inv:
+                rows.append(PositionDetailRow(label=pname or "-", amount=inv))
+
+    elif kind in ("piutang", "retensi"):
+        notdel_p = (Payment.is_deleted == False) & (Payment.approval_status == PaymentApprovalStatus.APPROVED)  # noqa: E712
+        cl = (await db.execute(select(Client.id, Client.full_name, Client.contract_value, Client.unit_id).where(
+            Client.tenant_id == t, Client.is_deleted == False, Client.status != ClientStatus.INACTIVE))).all()  # noqa: E712
+        units = {u.id: ("-".join(x for x in [u.block, u.unit_number] if x) or None) for u in (await db.execute(select(Unit).where(Unit.tenant_id == t))).scalars().all()}
+        buyer_by = {cid: Decimal(v) for cid, v in (await db.execute(select(Payment.client_id, func.coalesce(func.sum(Payment.amount), 0)).where(Payment.tenant_id == t, Payment.source == PaymentSource.PEMBELI, notdel_p).group_by(Payment.client_id))).all()}
+        bank_by = {cid: Decimal(v) for cid, v in (await db.execute(select(Payment.client_id, func.coalesce(func.sum(Payment.amount), 0)).where(Payment.tenant_id == t, Payment.source == PaymentSource.BANK, notdel_p).group_by(Payment.client_id))).all()}
+        committed_by: dict = {}
+        kb: dict = {}
+        for cid, plaf, stage, bname in (await db.execute(
+                select(KprApplication.client_id, KprApplication.plafond, KprApplication.stage, Bank.name)
+                .join(Bank, Bank.id == KprApplication.bank_id, isouter=True)
+                .where(KprApplication.tenant_id == t, KprApplication.is_deleted == False)  # noqa: E712
+                .order_by(KprApplication.client_id, KprApplication.created_at.desc()))).all():
+            if cid not in committed_by:
+                committed_by[cid] = Decimal(plaf or 0) if stage in (KprStage.AKAD_KREDIT, KprStage.PENCAIRAN) else Decimal(0)
+                kb[cid] = bname
+        for cid, name, price, uid in cl:
+            price = Decimal(price or 0); committed = committed_by.get(cid, Decimal(0))
+            if kind == "piutang":
+                rem = max(price - buyer_by.get(cid, Decimal(0)) - committed, Decimal(0))
+                if rem:
+                    rows.append(PositionDetailRow(label=name, sublabel=units.get(uid), amount=rem))
+            else:
+                if committed > 0:
+                    ret = max(committed - bank_by.get(cid, Decimal(0)), Decimal(0))
+                    if ret:
+                        rows.append(PositionDetailRow(label=name, sublabel=kb.get(cid), amount=ret))
+        title = "Piutang per Pembeli" if kind == "piutang" else "Retensi per Pembeli (bank)"
+
+    elif kind == "biaya":
+        title = "Biaya Proyek Belum Dibayar"
+        pnames = dict((await db.execute(select(Project.id, Project.name).where(Project.tenant_id == t))).all())
+        exps = (await db.execute(select(Expense).where(Expense.tenant_id == t, Expense.is_deleted == False, Expense.is_paid == False))).scalars().all()  # noqa: E712
+        for e in exps:
+            rows.append(PositionDetailRow(label=e.description, sublabel=pnames.get(e.project_id), amount=Decimal(e.amount)))
+
+    elif kind == "notaris":
+        title = "Hutang Jasa Notaris"
+        fees = (await db.execute(select(NotaryFee).options(selectinload(NotaryFee.notary)).where(NotaryFee.tenant_id == t, NotaryFee.is_deleted == False, NotaryFee.is_paid == False))).scalars().all()  # noqa: E712
+        for f in fees:
+            rows.append(PositionDetailRow(label=f.description, sublabel=(f.notary.name if f.notary else None), amount=Decimal(f.amount)))
+
+    elif kind == "opex":
+        title = "Biaya Operasional Belum Dibayar"
+        ops = (await db.execute(select(OperationalExpense).options(selectinload(OperationalExpense.category)).where(OperationalExpense.tenant_id == t, OperationalExpense.is_deleted == False, OperationalExpense.is_paid == False))).scalars().all()  # noqa: E712
+        for o in ops:
+            rows.append(PositionDetailRow(label=o.description, sublabel=(o.category.name if o.category else None), amount=Decimal(o.amount)))
+
+    else:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Rincian tidak dikenal")
+
+    rows.sort(key=lambda r: r.amount, reverse=True)
+    return PositionDetail(kind=kind, title=title, rows=rows, total=sum((r.amount for r in rows), Decimal(0)))
+
+
 @router.get("/project-profit/{project_id}", response_model=ProjectProfitDetail)
 async def project_profit_detail(
     project_id: uuid.UUID,

@@ -17,7 +17,7 @@ import { useAuth } from '../context/AuthContext'
 import Modal from '../components/ui/Modal'
 import Badge from '../components/ui/Badge'
 import DateInput from '../components/ui/DateInput'
-import type { KprRejectionReport, CashflowReport, SalesRecapReport, AgingReport, ConstructionProgressReport, MonthlyTaxReport, MonthlyTaxShareLink, Project, TaxChecklistReport, TaxChecklistItem, TaxChecklistStatus, ProjectProfitReport, ProjectProfitDetail, BankRetentionReport, CashProjection, TaxEqReport, TaxDraftItem, BusinessPnL, FinancialPosition } from '../types'
+import type { KprRejectionReport, CashflowReport, SalesRecapReport, AgingReport, ConstructionProgressReport, MonthlyTaxReport, MonthlyTaxShareLink, Project, TaxChecklistReport, TaxChecklistItem, TaxChecklistStatus, ProjectProfitReport, ProjectProfitDetail, BankRetentionReport, CashProjection, TaxEqReport, TaxDraftItem, BusinessPnL, FinancialPosition, PositionDetail } from '../types'
 
 const fmtRp = (n?: number | null) =>
   n == null ? '—' : new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(Number(n))
@@ -1144,18 +1144,29 @@ function FinancialPositionTab() {
   const [rep, setRep] = useState<FinancialPosition | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [detailKind, setDetailKind] = useState<string | null>(null)
 
   useEffect(() => {
     setLoading(true); setError('')
     reportingService.financialPosition().then(setRep).catch(() => setError('Gagal memuat Posisi Keuangan.')).finally(() => setLoading(false))
   }, [])
 
-  const Row = ({ label, value, hint, strong, total, indent, danger }: { label: string; value?: number; hint?: string; strong?: boolean; total?: boolean; indent?: boolean; danger?: boolean }) => (
-    <div className={`flex items-center justify-between py-2 ${indent ? 'pl-4' : ''} ${total ? 'border-t-2 border-slate-300 mt-1' : strong ? 'border-t border-slate-200 mt-1' : 'border-b border-slate-50'}`}>
-      <span className={`text-sm ${total || strong ? 'font-semibold text-slate-900' : 'text-slate-600'}`}>{label}{hint && <span className="block text-[11px] text-slate-400 font-normal">{hint}</span>}</span>
-      <span className={`tabular-nums ${total ? 'text-lg font-bold' : strong ? 'text-base font-bold' : 'text-sm'} ${danger ? 'text-red-600' : 'text-slate-900'}`}>{fmtRp(value)}</span>
-    </div>
-  )
+  const Row = ({ label, value, hint, strong, total, indent, danger, kind }: { label: string; value?: number; hint?: string; strong?: boolean; total?: boolean; indent?: boolean; danger?: boolean; kind?: string }) => {
+    const clickable = !!kind && !!value
+    const inner = (
+      <>
+        <span className={`text-sm ${total || strong ? 'font-semibold text-slate-900' : 'text-slate-600'}`}>
+          {clickable && <ChevronRight size={13} className="inline -ml-1 mr-0.5 text-slate-300 group-hover:text-brand-500" />}
+          {label}{hint && <span className="block text-[11px] text-slate-400 font-normal pl-0">{hint}</span>}
+        </span>
+        <span className={`tabular-nums ${total ? 'text-lg font-bold' : strong ? 'text-base font-bold' : 'text-sm'} ${danger ? 'text-red-600' : 'text-slate-900'}`}>{fmtRp(value)}</span>
+      </>
+    )
+    const cls = `flex items-center justify-between py-2 ${indent ? 'pl-4' : ''} ${total ? 'border-t-2 border-slate-300 mt-1' : strong ? 'border-t border-slate-200 mt-1' : 'border-b border-slate-50'}`
+    return clickable
+      ? <button className={`${cls} w-full text-left group hover:bg-slate-50 rounded-md`} onClick={() => setDetailKind(kind!)}>{inner}</button>
+      : <div className={cls}>{inner}</div>
+  }
 
   return (
     <div className="space-y-5">
@@ -1183,20 +1194,22 @@ function FinancialPositionTab() {
 
           <div className="card p-5 max-w-2xl">
             <h3 className="text-sm font-semibold text-slate-600 mb-1">Harta / Aset</h3>
-            <Row label="Kas & Bank" hint="saldo riil semua rekening" value={rep.kas_bank} indent />
-            <Row label="Persediaan / Modal Tertanam" hint="biaya unit belum terjual" value={rep.persediaan} indent />
-            <Row label="Piutang Pembeli" hint="sisa kontrak belum dibayar pembeli" value={rep.piutang_pembeli} indent />
-            <Row label="Retensi di Bank" hint="dana ditahan bank, belum cair" value={rep.retensi_bank} indent />
+            <Row label="Kas & Bank" hint="saldo riil semua rekening" value={rep.kas_bank} indent kind="kas" />
+            <Row label="Persediaan / Modal Tertanam" hint="biaya unit belum terjual" value={rep.persediaan} indent kind="persediaan" />
+            <Row label="Piutang Pembeli" hint="sisa kontrak belum dibayar pembeli" value={rep.piutang_pembeli} indent kind="piutang" />
+            <Row label="Retensi di Bank" hint="dana ditahan bank, belum cair" value={rep.retensi_bank} indent kind="retensi" />
             <Row label="Total Harta" value={rep.total_aset} strong />
 
             <h3 className="text-sm font-semibold text-slate-600 mb-1 mt-4">Kewajiban</h3>
-            <Row label="Biaya proyek belum dibayar" value={rep.biaya_belum_dibayar} indent danger />
-            <Row label="Hutang ke Notaris" value={rep.hutang_notaris} indent danger />
-            <Row label="Biaya operasional belum dibayar" value={rep.opex_belum_dibayar} indent danger />
+            <Row label="Biaya proyek belum dibayar" value={rep.biaya_belum_dibayar} indent danger kind="biaya" />
+            <Row label="Hutang ke Notaris" value={rep.hutang_notaris} indent danger kind="notaris" />
+            <Row label="Biaya operasional belum dibayar" value={rep.opex_belum_dibayar} indent danger kind="opex" />
             <Row label="Total Kewajiban" value={rep.total_kewajiban} strong danger />
 
             <Row label="KEKAYAAN BERSIH USAHA" value={rep.kekayaan_bersih} total danger={rep.kekayaan_bersih < 0} />
           </div>
+
+          <p className="text-[11px] text-slate-400 max-w-2xl">Klik baris mana pun untuk melihat rinciannya.</p>
 
           <div className="rounded-lg bg-slate-50 border border-slate-200 text-slate-500 text-xs px-4 py-2.5 max-w-2xl leading-relaxed">
             <b className="text-slate-700">Cara baca:</b> Kekayaan Bersih = Total Harta − Total Kewajiban. Persediaan yang besar berarti banyak modal
@@ -1204,7 +1217,40 @@ function FinancialPositionTab() {
           </div>
         </>
       )}
+
+      {detailKind && <PositionDetailModal kind={detailKind} onClose={() => setDetailKind(null)} />}
     </div>
+  )
+}
+
+function PositionDetailModal({ kind, onClose }: { kind: string; onClose: () => void }) {
+  const [data, setData] = useState<PositionDetail | null>(null)
+  const [loading, setLoading] = useState(true)
+  useEffect(() => { reportingService.positionDetail(kind).then(setData).catch(() => {}).finally(() => setLoading(false)) }, [kind])
+  return (
+    <Modal open onClose={onClose} title={data?.title ?? 'Rincian'} size="lg">
+      {loading ? (
+        <div className="py-10 text-center text-slate-400"><Loader2 size={18} className="inline animate-spin" /></div>
+      ) : !data || data.rows.length === 0 ? (
+        <p className="py-8 text-center text-slate-400 text-sm">Tidak ada rincian.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <tbody className="divide-y divide-slate-100">
+              {data.rows.map((r, i) => (
+                <tr key={i} className="hover:bg-slate-50">
+                  <td className="px-3 py-2 text-slate-700">{r.label}{r.sublabel && <span className="block text-[11px] text-slate-400">{r.sublabel}</span>}</td>
+                  <td className="px-3 py-2 text-right tabular-nums text-slate-900 whitespace-nowrap">{fmtRp(r.amount)}</td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr className="border-t-2 border-slate-300"><td className="px-3 py-2.5 font-semibold text-slate-900">Total ({data.rows.length})</td><td className="px-3 py-2.5 text-right font-bold tabular-nums">{fmtRp(data.total)}</td></tr>
+            </tfoot>
+          </table>
+        </div>
+      )}
+    </Modal>
   )
 }
 
