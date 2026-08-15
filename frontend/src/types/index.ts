@@ -2000,6 +2000,32 @@ export interface CashAccountsSummary {
   unassigned_balance: number
 }
 
+export interface OpexCategory {
+  id: string
+  name: string
+  sort_order: number
+  is_active: boolean
+}
+export interface OperationalExpense {
+  id: string
+  description: string
+  amount: number
+  expense_date?: string | null
+  opex_category_id?: string | null
+  category_name?: string | null
+  cash_account_id?: string | null
+  is_paid: boolean
+  paid_at?: string | null
+  notes?: string | null
+  created_at: string
+}
+export interface OpexList {
+  rows: OperationalExpense[]
+  total: number
+  total_unpaid: number
+  by_category: { name: string; total: number }[]
+}
+
 export interface CashTransfer {
   id: string
   from_account_id?: string | null

@@ -2,9 +2,10 @@ import { useEffect, useState, useCallback, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { Loader2, Wallet, TrendingUp, TrendingDown, Scale, ChevronLeft, ChevronRight, Landmark, Banknote, Plus, ArrowLeftRight, Settings2, Star, Trash2, Download, Upload } from 'lucide-react'
 import DateInput from '../../components/ui/DateInput'
+import MoneyInput from '../../components/ui/MoneyInput'
 import Modal from '../../components/ui/Modal'
 import { cashbookService } from '../../services/cashbook'
-import type { AccountCategory, CashBookEntry, CashBookSummary, CashDirection, CashAccount, CashAccountsSummary, MutationImportResult } from '../../types'
+import type { AccountCategory, CashBookEntry, CashBookSummary, CashDirection, CashAccount, CashAccountsSummary, MutationImportResult, OpexCategory, OperationalExpense, OpexList } from '../../types'
 
 const fmt = (n?: number) =>
   n == null ? '—' : new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(Number(n))
@@ -44,7 +45,7 @@ export default function CashBook() {
   const [manageOpen, setManageOpen] = useState(false)
   const [transferOpen, setTransferOpen] = useState(false)
   const [reconcileOpen, setReconcileOpen] = useState(false)
-  const [tab, setTab] = useState<'ringkasan' | 'transaksi'>('ringkasan')
+  const [tab, setTab] = useState<'ringkasan' | 'transaksi' | 'operasional'>('ringkasan')
 
   const loadAccounts = useCallback(() => {
     cashbookService.listAccounts().then(setAccts).catch(() => {})
@@ -157,7 +158,7 @@ export default function CashBook() {
 
       {/* Tab: Ringkasan (analitik) vs Transaksi (buku besar) */}
       <div className="flex items-center gap-1 border-b border-slate-200">
-        {([['ringkasan', 'Ringkasan'], ['transaksi', 'Transaksi']] as const).map(([key, label]) => (
+        {([['ringkasan', 'Ringkasan'], ['transaksi', 'Transaksi'], ['operasional', 'Biaya Operasional']] as const).map(([key, label]) => (
           <button key={key} onClick={() => setTab(key)}
             className={`px-4 py-2 text-sm font-medium -mb-px border-b-2 transition ${tab === key ? 'border-brand-500 text-brand-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
             {label}
@@ -310,6 +311,8 @@ export default function CashBook() {
         )}
       </div>
       )}
+
+      {tab === 'operasional' && <OperationalExpenseTab accounts={accts?.accounts ?? []} onChanged={() => { loadAccounts() }} />}
 
       {manageOpen && (
         <ManageAccountsModal accounts={accts?.accounts ?? []} onClose={() => setManageOpen(false)}
@@ -623,6 +626,183 @@ function TransferModal({ accounts, onClose, onDone }: { accounts: CashAccount[];
             {saving ? <Loader2 size={14} className="animate-spin" /> : <ArrowLeftRight size={14} />} Transfer
           </button>
         </div>
+      </div>
+    </Modal>
+  )
+}
+
+// ── Tab Biaya Operasional (overhead perusahaan, non-proyek) ──
+function OperationalExpenseTab({ accounts, onChanged }: { accounts: CashAccount[]; onChanged: () => void }) {
+  const [data, setData] = useState<OpexList | null>(null)
+  const [cats, setCats] = useState<OpexCategory[]>([])
+  const [loading, setLoading] = useState(true)
+  const [addOpen, setAddOpen] = useState(false)
+  const [catOpen, setCatOpen] = useState(false)
+
+  const load = useCallback(() => {
+    setLoading(true)
+    Promise.all([cashbookService.listOpex(), cashbookService.listOpexCategories()])
+      .then(([d, c]) => { setData(d); setCats(c) })
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [])
+  useEffect(() => { load() }, [load])
+
+  const remove = async (o: OperationalExpense) => {
+    if (!confirm(`Hapus biaya "${o.description}"?`)) return
+    await cashbookService.deleteOpex(o.id); load(); onChanged()
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm text-slate-500 max-w-xl">Biaya operasional perusahaan (gaji, sewa, dll). Masuk Arus Kas, tapi <b>tidak</b> dibebankan ke proyek — jadi Laba/Rugi per proyek tetap akurat.</p>
+        <div className="flex items-center gap-2">
+          <button onClick={() => setCatOpen(true)} className="btn-secondary text-sm inline-flex items-center gap-1.5"><Settings2 size={14} /> Kelola Kategori</button>
+          <button onClick={() => setAddOpen(true)} className="btn-primary text-sm inline-flex items-center gap-1.5"><Plus size={14} /> Catat Biaya</button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="card p-4"><div className="text-xs text-slate-500">Total Dibayar</div><div className="mt-1 font-display text-lg font-bold text-red-600 truncate">{fmt(data?.total)}</div></div>
+        <div className="card p-4"><div className="text-xs text-slate-500">Belum Dibayar</div><div className="mt-1 font-display text-lg font-bold text-amber-600 truncate">{fmt(data?.total_unpaid)}</div></div>
+        <div className="card p-4"><div className="text-xs text-slate-500">Jumlah Catatan</div><div className="mt-1 font-display text-lg font-bold text-slate-900">{data?.rows.length ?? 0}</div></div>
+      </div>
+
+      {data && data.by_category.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {data.by_category.map((b) => (
+            <span key={b.name} className="inline-flex items-center gap-1.5 text-xs bg-slate-100 text-slate-600 rounded-full px-3 py-1">
+              {b.name} <b className="text-slate-800">{fmt(b.total)}</b>
+            </span>
+          ))}
+        </div>
+      )}
+
+      <div className="card overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="bg-slate-50 border-b border-slate-200">
+            <tr>{['Tanggal', 'Deskripsi', 'Kategori', 'Status', 'Nominal', ''].map((h, i) => (
+              <th key={i} className={`px-4 py-2.5 text-xs font-semibold text-slate-500 uppercase tracking-wider ${i === 4 ? 'text-right' : 'text-left'}`}>{h}</th>))}</tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {loading ? (
+              <tr><td colSpan={6} className="px-4 py-8 text-center text-slate-400"><Loader2 size={16} className="inline animate-spin" /></td></tr>
+            ) : !data || data.rows.length === 0 ? (
+              <tr><td colSpan={6} className="px-4 py-8 text-center text-slate-400 text-sm">Belum ada biaya operasional. Klik <b>Catat Biaya</b>.</td></tr>
+            ) : data.rows.map((o) => (
+              <tr key={o.id} className="hover:bg-slate-50">
+                <td className="px-4 py-2.5 text-slate-500 text-xs whitespace-nowrap">{fmtDate(o.expense_date ?? undefined)}</td>
+                <td className="px-4 py-2.5 text-slate-700">{o.description}</td>
+                <td className="px-4 py-2.5 text-slate-500">{o.category_name ?? '—'}</td>
+                <td className="px-4 py-2.5">
+                  <span className={`text-xs font-medium px-2 py-0.5 rounded-md ${o.is_paid ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>{o.is_paid ? 'Dibayar' : 'Belum'}</span>
+                </td>
+                <td className="px-4 py-2.5 text-right font-medium text-red-600">{fmt(o.amount)}</td>
+                <td className="px-4 py-2.5 text-right"><button onClick={() => remove(o)} className="text-slate-400 hover:text-red-600"><Trash2 size={15} /></button></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {addOpen && <OpexAddModal accounts={accounts} cats={cats} onClose={() => setAddOpen(false)} onSaved={() => { setAddOpen(false); load(); onChanged() }} />}
+      {catOpen && <OpexCategoriesModal cats={cats} onClose={() => setCatOpen(false)} onChanged={() => { cashbookService.listOpexCategories().then(setCats) }} />}
+    </div>
+  )
+}
+
+function OpexAddModal({ accounts, cats, onClose, onSaved }: { accounts: CashAccount[]; cats: OpexCategory[]; onClose: () => void; onSaved: () => void }) {
+  const [desc, setDesc] = useState('')
+  const [amount, setAmount] = useState<number | undefined>(undefined)
+  const [date, setDate] = useState(new Date().toISOString().slice(0, 10))
+  const [catId, setCatId] = useState('')
+  const [acctId, setAcctId] = useState(accounts.find((a) => a.is_default)?.id ?? accounts[0]?.id ?? '')
+  const [isPaid, setIsPaid] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [err, setErr] = useState('')
+
+  const save = async () => {
+    if (!desc.trim() || !amount) { setErr('Deskripsi & nominal wajib diisi.'); return }
+    setSaving(true); setErr('')
+    try {
+      await cashbookService.createOpex({
+        description: desc.trim(), amount, expense_date: date || undefined,
+        opex_category_id: catId || undefined, cash_account_id: isPaid ? (acctId || undefined) : undefined,
+        is_paid: isPaid,
+      })
+      onSaved()
+    } catch { setErr('Gagal menyimpan.') } finally { setSaving(false) }
+  }
+
+  return (
+    <Modal open onClose={onClose} title="Catat Biaya Operasional" size="md">
+      <div className="space-y-3">
+        {err && <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2">{err}</div>}
+        <div><label className="label">Deskripsi</label><input className="input" value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="mis. Gaji karyawan Agustus" /></div>
+        <div className="grid grid-cols-2 gap-3">
+          <div><label className="label">Nominal</label><MoneyInput value={amount} onChange={setAmount} /></div>
+          <div><label className="label">Tanggal</label><DateInput className="input" value={date} onChange={setDate} /></div>
+        </div>
+        <div><label className="label">Kategori</label>
+          <select className="input" value={catId} onChange={(e) => setCatId(e.target.value)}>
+            <option value="">— Pilih kategori —</option>
+            {cats.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+        </div>
+        <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer select-none">
+          <input type="checkbox" checked={isPaid} onChange={(e) => setIsPaid(e.target.checked)} /> Sudah dibayar (langsung tercatat keluar dari kas)
+        </label>
+        {isPaid && (
+          <div><label className="label">Dibayar dari rekening</label>
+            <select className="input" value={acctId} onChange={(e) => setAcctId(e.target.value)}>
+              <option value="">— Rekening default —</option>
+              {accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+            </select>
+          </div>
+        )}
+        <div className="flex justify-end gap-2 pt-1">
+          <button className="btn-secondary" onClick={onClose} disabled={saving}>Batal</button>
+          <button className="btn-primary" onClick={save} disabled={saving}>{saving ? <Loader2 size={15} className="animate-spin" /> : 'Simpan'}</button>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
+function OpexCategoriesModal({ cats, onClose, onChanged }: { cats: OpexCategory[]; onClose: () => void; onChanged: () => void }) {
+  const [list, setList] = useState<OpexCategory[]>(cats)
+  const [name, setName] = useState('')
+  const [busy, setBusy] = useState(false)
+  const refresh = () => cashbookService.listOpexCategories().then((c) => { setList(c); onChanged() })
+
+  const add = async () => {
+    if (!name.trim()) return
+    setBusy(true)
+    try { await cashbookService.createOpexCategory(name.trim()); setName(''); await refresh() } finally { setBusy(false) }
+  }
+  const del = async (c: OpexCategory) => {
+    if (!confirm(`Hapus kategori "${c.name}"? Biaya lama tetap tersimpan.`)) return
+    await cashbookService.deleteOpexCategory(c.id); refresh()
+  }
+
+  return (
+    <Modal open onClose={onClose} title="Kelola Kategori Biaya Operasional" size="md">
+      <div className="space-y-3">
+        <div className="flex gap-2">
+          <input className="input flex-1" value={name} onChange={(e) => setName(e.target.value)} placeholder="Tambah kategori (mis. Konsultan)" onKeyDown={(e) => e.key === 'Enter' && add()} />
+          <button className="btn-primary text-sm" onClick={add} disabled={busy}><Plus size={14} /></button>
+        </div>
+        <div className="divide-y divide-slate-100 border border-slate-200 rounded-lg max-h-72 overflow-y-auto">
+          {list.length === 0 ? <p className="p-4 text-center text-slate-400 text-sm">Belum ada kategori.</p> :
+            list.map((c) => (
+              <div key={c.id} className="flex items-center justify-between px-3 py-2">
+                <span className="text-sm text-slate-700">{c.name}</span>
+                <button onClick={() => del(c)} className="text-slate-400 hover:text-red-600"><Trash2 size={14} /></button>
+              </div>
+            ))}
+        </div>
+        <div className="flex justify-end"><button className="btn-secondary text-sm" onClick={onClose}>Tutup</button></div>
       </div>
     </Modal>
   )

@@ -1,5 +1,5 @@
 import api from './api'
-import type { AccountCategory, CashBookEntry, CashBookSummary, PaginatedResponse, CashDirection, PendingExpenseList, CashAccount, CashAccountsSummary, CashTransfer, ReconcileView, ReconciliationRow, MutationImportResult } from '../types'
+import type { AccountCategory, CashBookEntry, CashBookSummary, PaginatedResponse, CashDirection, PendingExpenseList, CashAccount, CashAccountsSummary, CashTransfer, ReconcileView, ReconciliationRow, MutationImportResult, OpexCategory, OperationalExpense, OpexList } from '../types'
 
 export const cashbookService = {
   async listCategories(): Promise<AccountCategory[]> {
@@ -68,6 +68,34 @@ export const cashbookService = {
   async summary(params: { date_from?: string; date_to?: string } = {}): Promise<CashBookSummary> {
     const { data } = await api.get<CashBookSummary>('/cashbook/summary', { params })
     return data
+  },
+
+  // ── Biaya Operasional (overhead) ──
+  async listOpexCategories(): Promise<OpexCategory[]> {
+    const { data } = await api.get<OpexCategory[]>('/cashbook/opex-categories')
+    return data
+  },
+  async createOpexCategory(name: string): Promise<OpexCategory> {
+    const { data } = await api.post<OpexCategory>('/cashbook/opex-categories', { name })
+    return data
+  },
+  async updateOpexCategory(id: string, payload: Partial<OpexCategory>): Promise<OpexCategory> {
+    const { data } = await api.patch<OpexCategory>(`/cashbook/opex-categories/${id}`, payload)
+    return data
+  },
+  async deleteOpexCategory(id: string): Promise<void> {
+    await api.delete(`/cashbook/opex-categories/${id}`)
+  },
+  async listOpex(params: { date_from?: string; date_to?: string; category_id?: string } = {}): Promise<OpexList> {
+    const { data } = await api.get<OpexList>('/cashbook/opex', { params })
+    return data
+  },
+  async createOpex(payload: { description: string; amount: number; expense_date?: string; opex_category_id?: string; cash_account_id?: string; is_paid: boolean; notes?: string }): Promise<OperationalExpense> {
+    const { data } = await api.post<OperationalExpense>('/cashbook/opex', payload)
+    return data
+  },
+  async deleteOpex(id: string): Promise<void> {
+    await api.delete(`/cashbook/opex/${id}`)
   },
   async pendingExpenses(): Promise<PendingExpenseList> {
     const { data } = await api.get<PendingExpenseList>('/cashbook/pending-expenses')

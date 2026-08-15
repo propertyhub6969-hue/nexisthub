@@ -3,7 +3,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Optional
 
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.cashbook import AccountCategory, CashBookEntry, CashDirection, CashAccount
@@ -30,6 +30,22 @@ async def seed_default_account_categories(db: AsyncSession, tenant_id: uuid.UUID
         if code in existing:
             continue
         db.add(AccountCategory(tenant_id=tenant_id, code=code, name=name, direction=direction))
+    await seed_default_opex_categories(db, tenant_id)
+
+
+DEFAULT_OPEX = ["Gaji & Tunjangan", "Sewa Kantor", "Listrik & Air Kantor",
+                "ATK & Perlengkapan", "Marketing & Promosi", "Transport & Perjalanan", "Lain-lain"]
+
+
+async def seed_default_opex_categories(db: AsyncSession, tenant_id: uuid.UUID) -> None:
+    """Idempotent: seed sub-kategori biaya operasional default bila tenant belum punya sama sekali."""
+    from app.models.opex import OpexCategory
+    count = (await db.execute(
+        select(func.count()).select_from(OpexCategory).where(OpexCategory.tenant_id == tenant_id))).scalar() or 0
+    if count:
+        return
+    for i, name in enumerate(DEFAULT_OPEX):
+        db.add(OpexCategory(tenant_id=tenant_id, name=name, sort_order=i))
     await db.flush()
 
 
@@ -126,3 +142,25 @@ async def sync_expense_cashbook(db: AsyncSession, tenant_id: uuid.UUID, expense)
     entry.category_id = category.id if category else None
     entry.project_id = expense.project_id
     entry.description = expense.description
+
+
+async def sync_opex_cashbook(db: AsyncSession, tenant_id: uuid.UUID, opex) -> None:
+    """Biaya operasional perusahaan dibayar & tak terhapus → satu baris Buku Kas (OUT, Biaya Operasional);
+    selain itu → dihapus. Tanpa project_id → tak masuk Laba/Rugi proyek."""
+    entry = await _get_entry(db, tenant_id, "opex", opex.id)
+    should_exist = (not opex.is_deleted) and opex.is_paid
+    if not should_exist:
+        if entry is not None:
+            await db.delete(entry)
+        return
+    category = await _category_by_code(db, tenant_id, "biaya_operasional")
+    if entry is None:
+        entry = CashBookEntry(tenant_id=tenant_id, source_type="opex", source_id=opex.id)
+        db.add(entry)
+    entry.account_id = opex.cash_account_id or await _default_account_id(db, tenant_id)
+    entry.date = opex.paid_at or opex.expense_date or date.today()
+    entry.direction = CashDirection.OUT
+    entry.amount = opex.amount
+    entry.category_id = category.id if category else None
+    entry.project_id = None
+    entry.description = opex.description

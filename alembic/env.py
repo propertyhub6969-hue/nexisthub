@@ -34,6 +34,7 @@ from app.models.cashbook import AccountCategory, CashBookEntry
 from app.models.notification import Notification
 from app.models.announcement import Announcement, AnnouncementDismissal
 from app.models.document_text import DocumentText
+from app.models.opex import OpexCategory, OperationalExpense
 
 config = context.config
 

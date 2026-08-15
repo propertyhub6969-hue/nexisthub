@@ -754,3 +754,129 @@ async def mutations_template(ctx: AuthContext = Depends(get_current_context)):
     bio = io.BytesIO(); wb.save(bio); bio.seek(0)
     return StreamingResponse(bio, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                              headers={"Content-Disposition": 'attachment; filename="Template_Mutasi_Bank.xlsx"'})
+
+
+# ═══════════════════════ BIAYA OPERASIONAL (overhead perusahaan, non-proyek) ═══════════════════════
+from app.models.opex import OpexCategory, OperationalExpense  # noqa: E402
+from app.core.cashbook import sync_opex_cashbook, seed_default_opex_categories  # noqa: E402
+from app.schemas.opex import (  # noqa: E402
+    OpexCategoryCreate, OpexCategoryUpdate, OpexCategoryResponse,
+    OperationalExpenseCreate, OperationalExpenseUpdate, OperationalExpenseResponse,
+    OpexCategoryTotal, OpexList,
+)
+
+_ONOTDEL = lambda m: m.is_deleted == False  # noqa: E731, E712
+
+
+@router.get("/opex-categories", response_model=list[OpexCategoryResponse])
+async def list_opex_categories(ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db)):
+    await seed_default_opex_categories(db, ctx.tenant_id)   # tenant lama tanpa kategori → isi default
+    await db.commit()
+    rows = (await db.execute(select(OpexCategory).where(
+        OpexCategory.tenant_id == ctx.tenant_id, _ONOTDEL(OpexCategory), OpexCategory.is_active == True)  # noqa: E712
+        .order_by(OpexCategory.sort_order, OpexCategory.name))).scalars().all()
+    return rows
+
+
+@router.post("/opex-categories", response_model=OpexCategoryResponse, status_code=201)
+async def create_opex_category(payload: OpexCategoryCreate, ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db)):
+    nxt = (await db.execute(select(func.coalesce(func.max(OpexCategory.sort_order), 0)).where(
+        OpexCategory.tenant_id == ctx.tenant_id))).scalar() or 0
+    c = OpexCategory(tenant_id=ctx.tenant_id, name=payload.name.strip(), sort_order=nxt + 1)
+    db.add(c); await db.commit(); await db.refresh(c)
+    return c
+
+
+@router.patch("/opex-categories/{cid}", response_model=OpexCategoryResponse)
+async def update_opex_category(cid: uuid.UUID, payload: OpexCategoryUpdate, ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db)):
+    c = (await db.execute(select(OpexCategory).where(OpexCategory.id == cid, OpexCategory.tenant_id == ctx.tenant_id, _ONOTDEL(OpexCategory)))).scalar_one_or_none()
+    if c is None:
+        from fastapi import HTTPException
+        raise HTTPException(404, "Kategori tidak ditemukan")
+    for f, v in payload.model_dump(exclude_unset=True).items():
+        setattr(c, f, v.strip() if f == "name" and isinstance(v, str) else v)
+    await db.commit(); await db.refresh(c)
+    return c
+
+
+@router.delete("/opex-categories/{cid}", status_code=204)
+async def delete_opex_category(cid: uuid.UUID, ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db)):
+    c = (await db.execute(select(OpexCategory).where(OpexCategory.id == cid, OpexCategory.tenant_id == ctx.tenant_id))).scalar_one_or_none()
+    if c is not None:
+        c.is_deleted = True
+        await db.commit()
+
+
+async def _opex_resp(o: OperationalExpense) -> OperationalExpenseResponse:
+    r = OperationalExpenseResponse.model_validate(o)
+    r.category_name = o.category.name if o.category else None
+    return r
+
+
+@router.get("/opex", response_model=OpexList)
+async def list_opex(date_from: Optional[str] = Query(None), date_to: Optional[str] = Query(None),
+                    category_id: Optional[uuid.UUID] = Query(None),
+                    ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db)):
+    conds = [OperationalExpense.tenant_id == ctx.tenant_id, _ONOTDEL(OperationalExpense)]
+    if date_from:
+        conds.append(OperationalExpense.expense_date >= date.fromisoformat(date_from))
+    if date_to:
+        conds.append(OperationalExpense.expense_date <= date.fromisoformat(date_to))
+    if category_id:
+        conds.append(OperationalExpense.opex_category_id == category_id)
+    rows = (await db.execute(select(OperationalExpense).options(selectinload(OperationalExpense.category))
+            .where(*conds).order_by(OperationalExpense.expense_date.desc().nullslast(), OperationalExpense.created_at.desc()))).scalars().all()
+    total = sum((Decimal(r.amount) for r in rows if r.is_paid), Decimal(0))
+    total_unpaid = sum((Decimal(r.amount) for r in rows if not r.is_paid), Decimal(0))
+    agg: dict[str, Decimal] = {}
+    for r in rows:
+        if r.is_paid:
+            key = r.category.name if r.category else "Tanpa kategori"
+            agg[key] = agg.get(key, Decimal(0)) + Decimal(r.amount)
+    by_cat = [OpexCategoryTotal(name=k, total=v) for k, v in sorted(agg.items(), key=lambda x: -x[1])]
+    return OpexList(rows=[await _opex_resp(r) for r in rows], total=total, total_unpaid=total_unpaid, by_category=by_cat)
+
+
+@router.post("/opex", response_model=OperationalExpenseResponse, status_code=201)
+async def create_opex(payload: OperationalExpenseCreate, ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db)):
+    d = payload.model_dump()
+    is_paid = d.pop("is_paid", True)
+    o = OperationalExpense(tenant_id=ctx.tenant_id, created_by_id=ctx.user_id, is_paid=is_paid,
+                           paid_at=(d.get("expense_date") or date.today()) if is_paid else None, **d)
+    db.add(o); await db.flush()
+    await sync_opex_cashbook(db, ctx.tenant_id, o)
+    await record_audit(db, ctx.tenant_id, ctx.user_id, "CREATE", "operational_expenses", o.id,
+                       new_data={"amount": str(o.amount), "desc": o.description})
+    await db.commit()
+    o = (await db.execute(select(OperationalExpense).options(selectinload(OperationalExpense.category)).where(OperationalExpense.id == o.id))).scalar_one()
+    return await _opex_resp(o)
+
+
+@router.patch("/opex/{oid}", response_model=OperationalExpenseResponse)
+async def update_opex(oid: uuid.UUID, payload: OperationalExpenseUpdate, ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db)):
+    o = (await db.execute(select(OperationalExpense).where(OperationalExpense.id == oid, OperationalExpense.tenant_id == ctx.tenant_id, _ONOTDEL(OperationalExpense)))).scalar_one_or_none()
+    if o is None:
+        from fastapi import HTTPException
+        raise HTTPException(404, "Biaya tidak ditemukan")
+    data = payload.model_dump(exclude_unset=True)
+    for f, v in data.items():
+        setattr(o, f, v)
+    if o.is_paid and o.paid_at is None:
+        o.paid_at = o.expense_date or date.today()
+    if not o.is_paid:
+        o.paid_at = None
+    await db.flush()
+    await sync_opex_cashbook(db, ctx.tenant_id, o)
+    await db.commit()
+    o = (await db.execute(select(OperationalExpense).options(selectinload(OperationalExpense.category)).where(OperationalExpense.id == o.id))).scalar_one()
+    return await _opex_resp(o)
+
+
+@router.delete("/opex/{oid}", status_code=204)
+async def delete_opex(oid: uuid.UUID, ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db)):
+    o = (await db.execute(select(OperationalExpense).where(OperationalExpense.id == oid, OperationalExpense.tenant_id == ctx.tenant_id))).scalar_one_or_none()
+    if o is not None:
+        o.is_deleted = True
+        await db.flush()
+        await sync_opex_cashbook(db, ctx.tenant_id, o)
+        await db.commit()
