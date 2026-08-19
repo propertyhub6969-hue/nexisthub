@@ -46,6 +46,12 @@ class Settings(BaseSettings):
     # Timezone
     TIMEZONE: str = "Asia/Makassar"  # WITA UTC+8
 
+    # Xendit (pembayaran langganan tenant) — isi di .env. Kosong = fitur bayar-online nonaktif.
+    XENDIT_SECRET_KEY: str = ""          # pakai key TEST dulu (xnd_development_...), baru live
+    XENDIT_WEBHOOK_TOKEN: str = ""       # x-callback-token dari dashboard Xendit
+    XENDIT_BASE_URL: str = "https://api.xendit.co"
+    APP_PUBLIC_URL: str = "https://app.nexisthub.id"   # utk redirect setelah bayar
+
     class Config:
         env_file = ".env"
         case_sensitive = True

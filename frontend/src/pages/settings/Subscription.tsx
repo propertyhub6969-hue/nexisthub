@@ -11,12 +11,21 @@ export default function Subscription() {
   const [sub, setSub] = useState<Subscription | null>(null)
   const [invoices, setInvoices] = useState<Invoice[]>([])
   const [loading, setLoading] = useState(true)
+  const [payingId, setPayingId] = useState<string | null>(null)
 
   useEffect(() => {
     Promise.all([billingService.subscription(), billingService.invoices()])
       .then(([s, i]) => { setSub(s); setInvoices(i) })
       .finally(() => setLoading(false))
   }, [])
+
+  async function pay(invoiceId: string) {
+    setPayingId(invoiceId)
+    try {
+      const url = await billingService.payLink(invoiceId)
+      window.location.href = url   // arahkan ke halaman bayar Xendit
+    } catch { setPayingId(null) }
+  }
 
   if (loading) return <div className="py-16 text-center text-slate-400"><Loader2 size={20} className="inline animate-spin" /></div>
   if (!sub) return <div className="text-slate-400 text-sm">Data langganan tidak tersedia.</div>
@@ -48,11 +57,11 @@ export default function Subscription() {
       <div className="card overflow-hidden">
         <div className="px-4 py-2.5 border-b border-slate-100 text-sm font-semibold text-slate-900">Riwayat Tagihan</div>
         <table className="w-full text-sm">
-          <thead className="bg-slate-50 border-b border-slate-200"><tr>{['Periode', 'Paket', 'Nominal', 'Status', 'Dibayar'].map((h, i) => (
+          <thead className="bg-slate-50 border-b border-slate-200"><tr>{['Periode', 'Paket', 'Nominal', 'Status', 'Dibayar', ''].map((h, i) => (
             <th key={i} className="px-4 py-2.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">{h}</th>))}</tr></thead>
           <tbody className="divide-y divide-slate-100">
             {invoices.length === 0 ? (
-              <tr><td colSpan={5} className="px-4 py-6 text-center text-slate-400 text-sm">Belum ada tagihan.</td></tr>
+              <tr><td colSpan={6} className="px-4 py-6 text-center text-slate-400 text-sm">Belum ada tagihan.</td></tr>
             ) : invoices.map((inv) => (
               <tr key={inv.id} className="hover:bg-slate-50">
                 <td className="px-4 py-2.5 text-slate-600 text-xs">{fmtDate(inv.period_start)} → {fmtDate(inv.period_end)}</td>
@@ -60,6 +69,14 @@ export default function Subscription() {
                 <td className="px-4 py-2.5 text-slate-700">{fmtRp(inv.amount)}</td>
                 <td className="px-4 py-2.5">{inv.status === 'paid' ? <Badge label="Lunas" variant="green" /> : inv.status === 'void' ? <Badge label="Batal" variant="gray" /> : <Badge label="Belum Dibayar" variant="yellow" />}</td>
                 <td className="px-4 py-2.5 text-slate-500 text-xs">{fmtDate(inv.paid_at)}</td>
+                <td className="px-4 py-2.5 text-right">
+                  {inv.status !== 'paid' && inv.status !== 'void' && (
+                    <button onClick={() => pay(inv.id)} disabled={payingId === inv.id}
+                      className="btn-primary text-xs inline-flex items-center gap-1.5">
+                      {payingId === inv.id ? <Loader2 size={13} className="animate-spin" /> : <CreditCard size={13} />} Bayar
+                    </button>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>

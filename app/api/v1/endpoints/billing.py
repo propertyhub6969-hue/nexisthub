@@ -4,12 +4,41 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.config import settings
+from app.core import xendit
 from app.api.deps import get_current_context, AuthContext
 from app.models.tenant import Tenant
-from app.models.billing import Invoice
+from app.models.billing import Invoice, InvoiceStatus
 from app.schemas.billing import SubscriptionResponse, InvoiceResponse
 
 router = APIRouter()
+
+
+@router.post("/invoices/{invoice_id}/pay-link")
+async def create_pay_link(invoice_id, ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db)):
+    """Buat/ambil URL halaman bayar Xendit untuk satu invoice tenant ini."""
+    if not xendit.is_enabled():
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Pembayaran online belum diaktifkan.")
+    inv = (await db.execute(select(Invoice).where(Invoice.id == invoice_id, Invoice.tenant_id == ctx.tenant_id))).scalar_one_or_none()
+    if inv is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Tagihan tidak ditemukan")
+    if inv.status == InvoiceStatus.PAID:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Tagihan sudah lunas.")
+    if inv.payment_url and inv.xendit_invoice_id:
+        return {"payment_url": inv.payment_url}
+    t = (await db.execute(select(Tenant).where(Tenant.id == ctx.tenant_id))).scalar_one_or_none()
+    try:
+        res = await xendit.create_invoice(
+            external_id=str(inv.id), amount=float(inv.amount),
+            description=f"Langganan NexistHub {inv.plan or ''} — {inv.period_start} s/d {inv.period_end}".strip(),
+            success_redirect_url=f"{settings.APP_PUBLIC_URL}/settings/langganan",
+        )
+    except Exception:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, detail="Gagal membuat tagihan di Xendit. Coba lagi.")
+    inv.xendit_invoice_id = res.get("id")
+    inv.payment_url = res.get("invoice_url")
+    await db.commit()
+    return {"payment_url": inv.payment_url}
 
 
 @router.get("/subscription", response_model=SubscriptionResponse)

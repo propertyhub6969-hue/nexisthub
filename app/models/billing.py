@@ -25,9 +25,12 @@ class Invoice(BaseModel):
     plan: Mapped[str] = mapped_column(String(50), nullable=True)
     amount: Mapped[float] = mapped_column(Numeric(14, 2), nullable=False, default=0)
     status: Mapped[InvoiceStatus] = mapped_column(SAEnum(InvoiceStatus), default=InvoiceStatus.UNPAID, nullable=False)
-    method: Mapped[str] = mapped_column(String(50), nullable=True)   # transfer, tunai, dll
+    method: Mapped[str] = mapped_column(String(50), nullable=True)   # transfer, tunai, xendit
     paid_at: Mapped[date] = mapped_column(Date, nullable=True)
     notes: Mapped[str] = mapped_column(Text, nullable=True)
+    # Xendit (bayar online) — id & URL halaman bayar dari Xendit Invoice API
+    xendit_invoice_id: Mapped[str] = mapped_column(String(64), nullable=True, index=True)
+    payment_url: Mapped[str] = mapped_column(String(500), nullable=True)
 
     def __repr__(self) -> str:
         return f"<Invoice {self.amount} [{self.status}]>"

@@ -10,4 +10,8 @@ export const billingService = {
     const { data } = await api.get<Invoice[]>('/billing/invoices')
     return data
   },
+  async payLink(invoiceId: string): Promise<string> {
+    const { data } = await api.post<{ payment_url: string }>(`/billing/invoices/${invoiceId}/pay-link`)
+    return data.payment_url
+  },
 }

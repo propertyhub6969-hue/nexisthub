@@ -624,3 +624,41 @@ async def public_siteplan_booking(
         link="/marketing/booking-requests",
     )
     return {"status": "submitted", "id": str(b.id)}
+
+
+# ═══════════════════════ WEBHOOK XENDIT (pembayaran langganan) ═══════════════════════
+from app.core.config import settings as _settings  # noqa: E402
+from app.core.billing_apply import apply_invoice_paid  # noqa: E402
+from app.models.billing import Invoice as _Invoice  # noqa: E402
+
+
+@router.post("/billing/xendit-webhook")
+async def xendit_webhook(request: Request, db: AsyncSession = Depends(get_db)):
+    """Callback Xendit saat tagihan dibayar. Verifikasi x-callback-token, lalu tandai lunas (idempoten).
+    Xendit mengharap 200 secepatnya; error tetap 200 agar tak retry tanpa henti untuk kasus non-transien."""
+    token = request.headers.get("x-callback-token", "")
+    if not _settings.XENDIT_WEBHOOK_TOKEN or token != _settings.XENDIT_WEBHOOK_TOKEN:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="Token webhook tidak valid")
+    try:
+        payload = await request.json()
+    except Exception:
+        return {"ok": True}
+    status_str = (payload.get("status") or "").upper()   # PAID / SETTLED / EXPIRED
+    if status_str not in ("PAID", "SETTLED"):
+        return {"ok": True, "ignored": status_str}
+    # cocokkan invoice: pakai external_id (= id invoice kita) atau id Xendit
+    ext = payload.get("external_id")
+    xid = payload.get("id")
+    inv = None
+    if ext:
+        try:
+            inv = (await db.execute(select(_Invoice).where(_Invoice.id == uuid.UUID(str(ext))))).scalar_one_or_none()
+        except (ValueError, Exception):
+            inv = None
+    if inv is None and xid:
+        inv = (await db.execute(select(_Invoice).where(_Invoice.xendit_invoice_id == xid))).scalar_one_or_none()
+    if inv is None:
+        return {"ok": True, "invoice": "not_found"}
+    processed = await apply_invoice_paid(db, inv, method="xendit")
+    await db.commit()
+    return {"ok": True, "processed": processed}
