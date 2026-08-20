@@ -18,7 +18,7 @@ from app.schemas.platform import (
     FEATURE_MODULES, TenantAdminResponse, TenantProvision, TenantAdminUpdate,
     ResetOwnerPassword, TenantUserRow,
 )
-from app.schemas.billing import InvoiceCreate, MarkPaid, InvoiceResponse, RevenueSummary, RevenueTrendPoint
+from app.schemas.billing import InvoiceCreate, MarkPaid, InvoiceResponse, RevenueSummary, RevenueTrendPoint, InvoiceAdminRow
 
 router = APIRouter()
 
@@ -240,6 +240,20 @@ async def platform_revenue(_: User = Depends(require_platform_admin), db: AsyncS
 async def list_invoices(tid: uuid.UUID, _: User = Depends(require_platform_admin), db: AsyncSession = Depends(get_db)):
     r = await db.execute(select(Invoice).where(Invoice.tenant_id == tid).order_by(Invoice.created_at.desc()))
     return r.scalars().all()
+
+
+@router.get("/invoices", response_model=list[InvoiceAdminRow])
+async def list_all_invoices(status_filter: str = None, _: User = Depends(require_platform_admin), db: AsyncSession = Depends(get_db)):
+    """Semua tagihan lintas-tenant (untuk halaman Keuangan). Filter opsional status paid/unpaid."""
+    q = select(Invoice, Tenant.name).join(Tenant, Tenant.id == Invoice.tenant_id)
+    if status_filter in ("paid", "unpaid", "void"):
+        q = q.where(Invoice.status == InvoiceStatus(status_filter))
+    q = q.order_by(Invoice.created_at.desc())
+    rows = (await db.execute(q)).all()
+    return [InvoiceAdminRow(
+        id=inv.id, tenant_name=name, plan=inv.plan, period_start=inv.period_start, period_end=inv.period_end,
+        amount=inv.amount, status=inv.status.value, method=inv.method, paid_at=inv.paid_at, created_at=inv.created_at,
+    ) for inv, name in rows]
 
 
 @router.post("/tenants/{tid}/invoices", response_model=InvoiceResponse, status_code=status.HTTP_201_CREATED)

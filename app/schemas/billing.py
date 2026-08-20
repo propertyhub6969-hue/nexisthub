@@ -37,6 +37,19 @@ class InvoiceResponse(BaseModel):
         from_attributes = True
 
 
+class InvoiceAdminRow(BaseModel):
+    id: uuid.UUID
+    tenant_name: str
+    plan: Optional[str] = None
+    period_start: date
+    period_end: date
+    amount: Decimal
+    status: str
+    method: Optional[str] = None
+    paid_at: Optional[date] = None
+    created_at: datetime
+
+
 class SubscriptionResponse(BaseModel):
     tenant_name: str
     slug: str

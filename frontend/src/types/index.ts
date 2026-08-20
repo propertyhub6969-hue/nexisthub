@@ -106,6 +106,18 @@ export interface InvoiceCreate {
   method?: string
   notes?: string
 }
+export interface InvoiceAdminRow {
+  id: string
+  tenant_name: string
+  plan?: string
+  period_start: string
+  period_end: string
+  amount: number
+  status: string
+  method?: string
+  paid_at?: string
+  created_at: string
+}
 export interface RevenueTrendPoint {
   month: string
   amount: number

@@ -139,6 +139,7 @@ const platformItem: NavItem = {
   icon: Server,
   children: [
     { label: 'Pelanggan', to: '/platform/tenants', icon: Building2 },
+    { label: 'Keuangan', to: '/platform/keuangan', icon: Wallet },
     { label: 'Pengumuman', to: '/platform/announcements', icon: Megaphone },
   ],
 }
