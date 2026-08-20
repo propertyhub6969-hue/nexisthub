@@ -7,7 +7,8 @@ from sqlalchemy import select, func, update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.security import get_password_hash
+from app.core.security import get_password_hash, create_access_token, create_refresh_token
+from app.core.audit import record_audit
 from app.core.proxy_routes import regenerate_tenant_routes
 from app.core.cashbook import seed_default_account_categories
 from app.api.deps import require_platform_admin
@@ -189,6 +190,23 @@ async def reset_owner_password(tid: uuid.UUID, payload: ResetOwnerPassword, _: U
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Owner tenant tidak ditemukan")
     owner.hashed_password = get_password_hash(payload.new_password)
     await db.flush()
+
+
+@router.post("/tenants/{tid}/impersonate")
+async def impersonate_tenant(tid: uuid.UUID, admin: User = Depends(require_platform_admin), db: AsyncSession = Depends(get_db)):
+    """Terbitkan token sesi sebagai OWNER tenant — super-admin masuk untuk lihat & bantu. Tercatat di audit."""
+    t = (await db.execute(select(Tenant).where(Tenant.id == tid, Tenant.is_deleted == False))).scalar_one_or_none()  # noqa: E712
+    if t is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Tenant tidak ditemukan")
+    owner = (await db.execute(select(User).where(User.tenant_id == tid, User.role == UserRole.OWNER).limit(1))).scalar_one_or_none() \
+        or (await db.execute(select(User).where(User.tenant_id == tid).limit(1))).scalar_one_or_none()
+    if owner is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Tenant tak punya pengguna")
+    data = {"sub": str(owner.id), "tenant_id": str(tid)}
+    await record_audit(db, tid, admin.id, "IMPERSONATE", "tenants", tid, new_data={"by": str(admin.id), "owner": str(owner.id)})
+    await db.flush()
+    return {"access_token": create_access_token(data={**data, "impersonated_by": str(admin.id)}),
+            "refresh_token": create_refresh_token(data=data), "tenant_name": t.name, "tenant_slug": t.slug}
 
 
 @router.get("/revenue", response_model=RevenueSummary)

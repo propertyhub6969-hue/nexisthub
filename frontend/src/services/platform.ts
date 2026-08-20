@@ -10,6 +10,10 @@ export const platformService = {
     const { data } = await api.get<InvoiceAdminRow[]>('/platform/invoices', { params: status ? { status_filter: status } : {} })
     return data
   },
+  async impersonate(tenantId: string): Promise<{ access_token: string; refresh_token: string; tenant_name: string; tenant_slug: string }> {
+    const { data } = await api.post(`/platform/tenants/${tenantId}/impersonate`)
+    return data
+  },
   async listInvoices(tenantId: string): Promise<Invoice[]> {
     const { data } = await api.get<Invoice[]>(`/platform/tenants/${tenantId}/invoices`)
     return data

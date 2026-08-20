@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Loader2, Plus, Pencil, KeyRound, Building2, Receipt, Trash2, CheckCircle2, Wallet, RotateCcw } from 'lucide-react'
+import { Loader2, Plus, Pencil, KeyRound, Building2, Receipt, Trash2, CheckCircle2, Wallet, RotateCcw, LogIn } from 'lucide-react'
 import { Navigate } from 'react-router-dom'
 import Modal from '../../components/ui/Modal'
 import DateInput from '../../components/ui/DateInput'
@@ -116,6 +116,20 @@ export default function Platform() {
     catch (e: any) { setError(e?.response?.data?.detail || 'Gagal memulihkan tenant.') }
   }
 
+  async function impersonate(t: TenantAdmin) {
+    if (!confirm(`Masuk sebagai "${t.name}"? Anda akan melihat sistem persis seperti mereka. Bisa kembali ke Admin kapan saja lewat banner di atas.`)) return
+    try {
+      const res = await platformService.impersonate(t.id)
+      // simpan sesi admin agar bisa kembali
+      localStorage.setItem('impersonator_access', localStorage.getItem('access_token') || '')
+      localStorage.setItem('impersonator_refresh', localStorage.getItem('refresh_token') || '')
+      localStorage.setItem('impersonating', res.tenant_name)
+      localStorage.setItem('access_token', res.access_token)
+      localStorage.setItem('refresh_token', res.refresh_token)
+      window.location.href = '/dashboard'
+    } catch (e: any) { setError(e?.response?.data?.detail || 'Gagal masuk sebagai tenant.') }
+  }
+
   async function openInvoices(t: TenantAdmin) {
     setInvTenant(t); setInvForm({ ...emptyInv(), plan: t.subscription_plan })
     try { setInvoices(await platformService.listInvoices(t.id)) } catch { setInvoices([]) }
@@ -209,6 +223,7 @@ export default function Platform() {
                       <button onClick={() => restore(t)} className="text-slate-400 hover:text-emerald-600" title="Pulihkan tenant"><RotateCcw size={15} /></button>
                     ) : (
                       <>
+                        <button onClick={() => impersonate(t)} className="text-slate-400 hover:text-indigo-600" title="Masuk sebagai tenant ini"><LogIn size={15} /></button>
                         <button onClick={() => openEdit(t)} className="text-slate-400 hover:text-brand-600" title="Kelola"><Pencil size={15} /></button>
                         <button onClick={() => openInvoices(t)} className="text-slate-400 hover:text-brand-600" title="Tagihan / Langganan"><Receipt size={15} /></button>
                         <button onClick={() => { setPwTenant(t); setNewPw('') }} className="text-slate-400 hover:text-brand-600" title="Reset password owner"><KeyRound size={15} /></button>
