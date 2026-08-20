@@ -668,8 +668,8 @@ export default function Dashboard() {
             <AlertTriangle size={18} className="text-amber-600" />
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold text-amber-800">{s?.units_held_no_client} unit ditahan tanpa data Pembeli</p>
-            <p className="text-xs text-amber-700/80 mt-0.5">Biasanya dari booking agen yang sudah diterima — lanjutkan jadi Pembeli, atau lepas unitnya.</p>
+            <p className="text-sm font-semibold text-amber-800">{s?.units_held_no_client} unit terjual/booking belum punya data Pembeli</p>
+            <p className="text-xs text-amber-700/80 mt-0.5">Bisa dari migrasi data awal atau booking agen yang sudah diterima — lengkapi data Pembeli, atau lepas unitnya.</p>
           </div>
           <ChevronRight size={16} className="text-amber-500 shrink-0" />
         </Link>
