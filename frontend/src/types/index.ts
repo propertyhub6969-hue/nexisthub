@@ -128,6 +128,18 @@ export interface PlanInput {
   sort_order?: number
 }
 
+export interface PlanRequestRow {
+  id: string
+  tenant_id: string
+  tenant_name?: string | null
+  plan_id?: string | null
+  plan_name?: string | null
+  current_plan?: string | null
+  note?: string | null
+  status: string
+  created_at: string
+}
+
 export interface InvoiceAdminRow {
   id: string
   tenant_name: string

@@ -34,6 +34,7 @@ from app.models.cashbook import AccountCategory, CashBookEntry
 from app.models.notification import Notification
 from app.models.announcement import Announcement, AnnouncementDismissal
 from app.models.plan import Plan as _PlanReg
+from app.models.plan_request import PlanRequest as _PlanReqReg
 from app.models.document_text import DocumentText
 from app.models.opex import OpexCategory, OperationalExpense
 

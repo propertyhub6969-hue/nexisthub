@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Loader2, Plus, Pencil, KeyRound, Building2, Receipt, Trash2, CheckCircle2, Wallet, RotateCcw, LogIn } from 'lucide-react'
+import { Loader2, Plus, Pencil, KeyRound, Building2, Receipt, Trash2, CheckCircle2, Wallet, RotateCcw, LogIn, ArrowUpCircle } from 'lucide-react'
 import { Navigate } from 'react-router-dom'
 import Modal from '../../components/ui/Modal'
 import DateInput from '../../components/ui/DateInput'
@@ -7,7 +7,7 @@ import Badge from '../../components/ui/Badge'
 import MoneyInput from '../../components/ui/MoneyInput'
 import { useAuth } from '../../context/AuthContext'
 import { platformService } from '../../services/platform'
-import type { TenantAdmin, TenantProvision, TenantAdminUpdate, TenantStatus, Invoice, InvoiceCreate, RevenueSummary } from '../../types'
+import type { TenantAdmin, TenantProvision, TenantAdminUpdate, TenantStatus, Invoice, InvoiceCreate, PlanRequestRow } from '../../types'
 
 const fmtRp = (n?: number) => n == null ? 'Rp 0' : new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(Number(n))
 
@@ -24,6 +24,7 @@ export default function Platform() {
   const [modules, setModules] = useState<string[]>([])
   const [tenants, setTenants] = useState<TenantAdmin[]>([])
   const [loading, setLoading] = useState(true)
+  const [planReqs, setPlanReqs] = useState<PlanRequestRow[]>([])
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
   const [showDeleted, setShowDeleted] = useState(false)
@@ -58,7 +59,15 @@ export default function Platform() {
     try {
       const [m, t] = await Promise.all([platformService.listModules(), platformService.listTenants(showDeleted)])
       setModules(m); setTenants(t)
+      platformService.planRequests().then(setPlanReqs).catch(() => {})
     } catch { setError('Gagal memuat data platform.') } finally { setLoading(false) }
+  }
+
+  async function handleReq(r: PlanRequestRow) {
+    const t = tenants.find((x) => x.id === r.tenant_id)
+    if (t) openInvoices(t)
+    await platformService.markRequestHandled(r.id).catch(() => {})
+    setPlanReqs((list) => list.filter((x) => x.id !== r.id))
   }
   useEffect(() => { if (user?.is_platform_admin) load() }, [user, showDeleted])
 
@@ -172,6 +181,27 @@ export default function Platform() {
       </div>
 
       {error && <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-2">{error}</div>}
+
+      {planReqs.length > 0 && (
+        <div className="rounded-lg border border-indigo-200 bg-indigo-50 p-3">
+          <p className="text-sm font-semibold text-indigo-900 mb-2 flex items-center gap-1.5"><ArrowUpCircle size={16} /> Permintaan Upgrade Paket ({planReqs.length})</p>
+          <div className="space-y-2">
+            {planReqs.map((r) => (
+              <div key={r.id} className="flex flex-wrap items-center justify-between gap-2 bg-white rounded-md border border-indigo-100 px-3 py-2">
+                <div className="text-sm text-slate-700">
+                  <b>{r.tenant_name}</b> minta <b className="text-indigo-700">{r.plan_name}</b>
+                  {r.current_plan && <span className="text-slate-400"> (kini: {r.current_plan})</span>}
+                  {r.note && <span className="block text-xs text-slate-500 italic">"{r.note}"</span>}
+                </div>
+                <div className="flex items-center gap-2">
+                  <button onClick={() => handleReq(r)} className="btn-primary text-xs">Buka Tagihan</button>
+                  <button onClick={async () => { await platformService.markRequestHandled(r.id).catch(() => {}); setPlanReqs((l) => l.filter((x) => x.id !== r.id)) }} className="btn-secondary text-xs">Tandai selesai</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <div className="card p-4"><p className="text-xs text-slate-500">Total Tenant</p><p className="text-lg font-semibold text-slate-900">{summary.total}</p></div>

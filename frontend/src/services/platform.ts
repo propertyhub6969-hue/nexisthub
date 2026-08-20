@@ -1,5 +1,5 @@
 import api from './api'
-import type { TenantAdmin, TenantProvision, TenantAdminUpdate, Invoice, InvoiceCreate, RevenueSummary, InvoiceAdminRow, Plan, PlanInput } from '../types'
+import type { TenantAdmin, TenantProvision, TenantAdminUpdate, Invoice, InvoiceCreate, RevenueSummary, InvoiceAdminRow, Plan, PlanInput, PlanRequestRow } from '../types'
 
 export const platformService = {
   async getRevenue(): Promise<RevenueSummary> {
@@ -28,6 +28,13 @@ export const platformService = {
   },
   async deletePlan(id: string): Promise<void> {
     await api.delete(`/platform/plans/${id}`)
+  },
+  async planRequests(): Promise<PlanRequestRow[]> {
+    const { data } = await api.get<PlanRequestRow[]>('/platform/plan-requests')
+    return data
+  },
+  async markRequestHandled(id: string): Promise<void> {
+    await api.post(`/platform/plan-requests/${id}/handled`)
   },
   async listInvoices(tenantId: string): Promise<Invoice[]> {
     const { data } = await api.get<Invoice[]>(`/platform/tenants/${tenantId}/invoices`)

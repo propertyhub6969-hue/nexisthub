@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
-import { Loader2, CreditCard, AlertTriangle } from 'lucide-react'
+import { Loader2, CreditCard, AlertTriangle, Check, Star } from 'lucide-react'
 import Badge from '../../components/ui/Badge'
 import { billingService } from '../../services/billing'
-import type { Subscription, Invoice } from '../../types'
+import type { Subscription, Invoice, Plan } from '../../types'
 
 const fmtRp = (n?: number) => n == null ? 'Rp 0' : new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(Number(n))
 const fmtDate = (d?: string | null) => d ? new Date(d).toLocaleDateString('id-ID') : '—'
@@ -12,10 +12,13 @@ export default function Subscription() {
   const [invoices, setInvoices] = useState<Invoice[]>([])
   const [loading, setLoading] = useState(true)
   const [payingId, setPayingId] = useState<string | null>(null)
+  const [plans, setPlans] = useState<Plan[]>([])
+  const [reqId, setReqId] = useState<string | null>(null)
+  const [requested, setRequested] = useState<Set<string>>(new Set())
 
   useEffect(() => {
-    Promise.all([billingService.subscription(), billingService.invoices()])
-      .then(([s, i]) => { setSub(s); setInvoices(i) })
+    Promise.all([billingService.subscription(), billingService.invoices(), billingService.plans()])
+      .then(([s, i, p]) => { setSub(s); setInvoices(i); setPlans(p) })
       .finally(() => setLoading(false))
   }, [])
 
@@ -25,6 +28,13 @@ export default function Subscription() {
       const url = await billingService.payLink(invoiceId)
       window.location.href = url   // arahkan ke halaman bayar Xendit
     } catch { setPayingId(null) }
+  }
+
+  async function requestUpgrade(p: Plan) {
+    if (!confirm(`Minta upgrade ke paket "${p.name}"? Tim kami akan menghubungi & menerbitkan tagihan.`)) return
+    setReqId(p.id)
+    try { await billingService.requestUpgrade(p.id); setRequested((s) => new Set(s).add(p.id)) }
+    catch { /* toast */ } finally { setReqId(null) }
   }
 
   if (loading) return <div className="py-16 text-center text-slate-400"><Loader2 size={20} className="inline animate-spin" /></div>
@@ -82,6 +92,35 @@ export default function Subscription() {
           </tbody>
         </table>
       </div>
+
+      {plans.length > 0 && (
+        <div>
+          <h3 className="text-sm font-semibold text-slate-900 mb-1">Paket Tersedia</h3>
+          <p className="text-xs text-slate-500 mb-3">Ingin naik paket? Ajukan permintaan — tim kami akan menghubungi &amp; menerbitkan tagihan.</p>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            {plans.map((p) => (
+              <div key={p.id} className={`card p-4 flex flex-col ${p.highlight ? 'ring-2 ring-brand-400' : ''}`}>
+                <div className="flex items-center gap-1.5">
+                  <h4 className="font-semibold text-slate-900">{p.name}</h4>
+                  {p.highlight && <Star size={12} className="fill-brand-500 text-brand-500" />}
+                </div>
+                <div className="mt-1 flex items-baseline gap-1">
+                  <span className="text-xl font-bold text-slate-900">{p.price != null ? fmtRp(p.price) : 'Khusus'}</span>
+                  <span className="text-[11px] text-slate-400">{p.price_note}</span>
+                </div>
+                {p.description && <p className="text-xs text-slate-500 mt-1">{p.description}</p>}
+                <ul className="mt-2 space-y-1 flex-1">
+                  {(p.features ?? []).map((f, i) => <li key={i} className="text-xs text-slate-600 flex gap-1"><Check size={12} className="text-emerald-500 mt-0.5 shrink-0" />{f}</li>)}
+                </ul>
+                <button onClick={() => requestUpgrade(p)} disabled={reqId === p.id || requested.has(p.id)}
+                  className="btn-secondary text-xs mt-3 w-full justify-center disabled:opacity-60">
+                  {reqId === p.id ? <Loader2 size={13} className="animate-spin inline" /> : requested.has(p.id) ? '✓ Permintaan terkirim' : 'Minta paket ini'}
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

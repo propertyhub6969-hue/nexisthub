@@ -59,3 +59,28 @@ async def my_invoices(ctx: AuthContext = Depends(get_current_context), db: Async
         select(Invoice).where(Invoice.tenant_id == ctx.tenant_id).order_by(Invoice.created_at.desc())
     )
     return r.scalars().all()
+
+
+# ── Paket terlihat tenant + minta upgrade (hybrid: tenant meminta, admin menerbitkan) ──
+from app.models.plan import Plan as _Plan  # noqa: E402
+from app.models.plan_request import PlanRequest as _PlanRequest  # noqa: E402
+from app.schemas.plan import PlanResponse as _PlanResponse, PlanRequestCreate as _PlanReqCreate  # noqa: E402
+
+
+@router.get("/plans", response_model=list[_PlanResponse])
+async def available_plans(ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db)):
+    """Katalog paket aktif — dilihat tenant di halaman Langganan."""
+    return (await db.execute(select(_Plan).where(_Plan.is_active == True).order_by(_Plan.sort_order, _Plan.name))).scalars().all()  # noqa: E712
+
+
+@router.post("/request-upgrade", status_code=status.HTTP_201_CREATED)
+async def request_upgrade(payload: _PlanReqCreate, ctx: AuthContext = Depends(get_current_context), db: AsyncSession = Depends(get_db)):
+    """Tenant meminta upgrade ke paket tertentu. Admin yang meninjau & menerbitkan tagihan."""
+    plan = (await db.execute(select(_Plan).where(_Plan.id == payload.plan_id))).scalar_one_or_none()
+    if plan is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Paket tidak ditemukan")
+    t = (await db.execute(select(Tenant).where(Tenant.id == ctx.tenant_id))).scalar_one()
+    req = _PlanRequest(tenant_id=ctx.tenant_id, tenant_name=t.name, plan_id=plan.id, plan_name=plan.name,
+                       current_plan=t.subscription_plan, note=payload.note, requested_by_id=ctx.user_id, status="pending")
+    db.add(req); await db.commit()
+    return {"ok": True}

@@ -35,3 +35,26 @@ class PlanResponse(PlanBase):
 
     class Config:
         from_attributes = True
+
+
+from datetime import datetime
+
+
+class PlanRequestCreate(BaseModel):
+    plan_id: uuid.UUID
+    note: Optional[str] = None
+
+
+class PlanRequestResponse(BaseModel):
+    id: uuid.UUID
+    tenant_id: uuid.UUID
+    tenant_name: Optional[str] = None
+    plan_id: Optional[uuid.UUID] = None
+    plan_name: Optional[str] = None
+    current_plan: Optional[str] = None
+    note: Optional[str] = None
+    status: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True

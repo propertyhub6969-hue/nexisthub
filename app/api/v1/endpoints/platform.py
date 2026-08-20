@@ -394,3 +394,25 @@ async def delete_plan(pid: uuid.UUID, _: User = Depends(require_platform_admin),
     p = (await db.execute(select(Plan).where(Plan.id == pid))).scalar_one_or_none()
     if p is not None:
         await db.delete(p); await db.commit()
+
+
+# ── Permintaan upgrade paket (dari tenant) ──
+from datetime import timezone as _tz
+from app.models.plan_request import PlanRequest as _PlanRequest  # noqa: E402
+from app.schemas.plan import PlanRequestResponse as _PlanReqResp  # noqa: E402
+
+
+@router.get("/plan-requests", response_model=list[_PlanReqResp])
+async def list_plan_requests(only_pending: bool = Query(True), _: User = Depends(require_platform_admin), db: AsyncSession = Depends(get_db)):
+    q = select(_PlanRequest)
+    if only_pending:
+        q = q.where(_PlanRequest.status == "pending")
+    return (await db.execute(q.order_by(_PlanRequest.created_at.desc()))).scalars().all()
+
+
+@router.post("/plan-requests/{rid}/handled", status_code=status.HTTP_204_NO_CONTENT)
+async def mark_request_handled(rid: uuid.UUID, _: User = Depends(require_platform_admin), db: AsyncSession = Depends(get_db)):
+    r = (await db.execute(select(_PlanRequest).where(_PlanRequest.id == rid))).scalar_one_or_none()
+    if r is not None:
+        r.status = "handled"; r.handled_at = datetime.now(_tz.utc)
+        await db.commit()
