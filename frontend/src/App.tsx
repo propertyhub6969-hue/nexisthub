@@ -38,6 +38,7 @@ import PendingExpenses from './pages/finance/PendingExpenses'
 import Platform from './pages/platform/Platform'
 import PlatformAnnouncements from './pages/platform/Announcements'
 import PlatformFinance from './pages/platform/Finance'
+import PlatformPlans from './pages/platform/Plans'
 import PublicMonthlyTax from './pages/public/PublicMonthlyTax'
 import PublicBankFiling from './pages/public/PublicBankFiling'
 import PublicNotaryFiling from './pages/public/PublicNotaryFiling'
@@ -107,6 +108,7 @@ export default function App() {
           <Route path="/platform/tenants"    element={<Platform />} />
           <Route path="/platform/announcements" element={<PlatformAnnouncements />} />
           <Route path="/platform/keuangan"    element={<PlatformFinance />} />
+          <Route path="/platform/paket"       element={<PlatformPlans />} />
         </Route>
 
         {/* Fallback */}

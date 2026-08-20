@@ -359,3 +359,38 @@ async def delete_announcement(aid: uuid.UUID, _: User = Depends(require_platform
     if a is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Pengumuman tidak ditemukan")
     await db.delete(a); await db.commit()
+
+
+# ═══════════════════════ PAKET & HARGA (katalog langganan) ═══════════════════════
+from app.models.plan import Plan  # noqa: E402
+from app.schemas.plan import PlanCreate, PlanUpdate, PlanResponse  # noqa: E402
+
+
+@router.get("/plans", response_model=list[PlanResponse])
+async def list_plans(_: User = Depends(require_platform_admin), db: AsyncSession = Depends(get_db)):
+    return (await db.execute(select(Plan).order_by(Plan.sort_order, Plan.name))).scalars().all()
+
+
+@router.post("/plans", response_model=PlanResponse, status_code=status.HTTP_201_CREATED)
+async def create_plan(payload: PlanCreate, _: User = Depends(require_platform_admin), db: AsyncSession = Depends(get_db)):
+    p = Plan(**payload.model_dump())
+    db.add(p); await db.commit(); await db.refresh(p)
+    return p
+
+
+@router.patch("/plans/{pid}", response_model=PlanResponse)
+async def update_plan(pid: uuid.UUID, payload: PlanUpdate, _: User = Depends(require_platform_admin), db: AsyncSession = Depends(get_db)):
+    p = (await db.execute(select(Plan).where(Plan.id == pid))).scalar_one_or_none()
+    if p is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Paket tidak ditemukan")
+    for f, v in payload.model_dump(exclude_unset=True).items():
+        setattr(p, f, v)
+    await db.commit(); await db.refresh(p)
+    return p
+
+
+@router.delete("/plans/{pid}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_plan(pid: uuid.UUID, _: User = Depends(require_platform_admin), db: AsyncSession = Depends(get_db)):
+    p = (await db.execute(select(Plan).where(Plan.id == pid))).scalar_one_or_none()
+    if p is not None:
+        await db.delete(p); await db.commit()

@@ -1,5 +1,5 @@
 import api from './api'
-import type { TenantAdmin, TenantProvision, TenantAdminUpdate, Invoice, InvoiceCreate, RevenueSummary, InvoiceAdminRow } from '../types'
+import type { TenantAdmin, TenantProvision, TenantAdminUpdate, Invoice, InvoiceCreate, RevenueSummary, InvoiceAdminRow, Plan, PlanInput } from '../types'
 
 export const platformService = {
   async getRevenue(): Promise<RevenueSummary> {
@@ -13,6 +13,21 @@ export const platformService = {
   async impersonate(tenantId: string): Promise<{ access_token: string; refresh_token: string; tenant_name: string; tenant_slug: string }> {
     const { data } = await api.post(`/platform/tenants/${tenantId}/impersonate`)
     return data
+  },
+  async listPlans(): Promise<Plan[]> {
+    const { data } = await api.get<Plan[]>('/platform/plans')
+    return data
+  },
+  async createPlan(payload: PlanInput): Promise<Plan> {
+    const { data } = await api.post<Plan>('/platform/plans', payload)
+    return data
+  },
+  async updatePlan(id: string, payload: Partial<PlanInput>): Promise<Plan> {
+    const { data } = await api.patch<Plan>(`/platform/plans/${id}`, payload)
+    return data
+  },
+  async deletePlan(id: string): Promise<void> {
+    await api.delete(`/platform/plans/${id}`)
   },
   async listInvoices(tenantId: string): Promise<Invoice[]> {
     const { data } = await api.get<Invoice[]>(`/platform/tenants/${tenantId}/invoices`)

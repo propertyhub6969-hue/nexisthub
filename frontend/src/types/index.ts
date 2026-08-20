@@ -106,6 +106,28 @@ export interface InvoiceCreate {
   method?: string
   notes?: string
 }
+export interface Plan {
+  id: string
+  name: string
+  price?: number | null
+  price_note?: string | null
+  description?: string | null
+  features?: string[] | null
+  highlight: boolean
+  is_active: boolean
+  sort_order: number
+}
+export interface PlanInput {
+  name: string
+  price?: number | null
+  price_note?: string | null
+  description?: string | null
+  features?: string[] | null
+  highlight?: boolean
+  is_active?: boolean
+  sort_order?: number
+}
+
 export interface InvoiceAdminRow {
   id: string
   tenant_name: string
