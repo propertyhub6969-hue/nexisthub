@@ -42,6 +42,10 @@ export default function Subscription() {
 
   const days = sub.days_left
   const warn = days != null && days <= 7
+  // Katalog paket disembunyikan saat trial masih panjang (>7 hari); muncul saat trial mau habis,
+  // sudah bayar, atau sudah lewat — supaya tak mengganggu di awal tapi tetap terjangkau saat konversi.
+  const isEarlyTrial = sub.status === 'trial' && (days == null || days > 7)
+  const showPlans = !isEarlyTrial
   const statusBadge = sub.status === 'active' ? <Badge label="Aktif" variant="green" /> : sub.status === 'trial' ? <Badge label="Trial" variant="yellow" /> : <Badge label="Suspended" variant="red" />
 
   return (
@@ -93,10 +97,14 @@ export default function Subscription() {
         </table>
       </div>
 
-      {plans.length > 0 && (
+      {plans.length > 0 && showPlans && (
         <div>
           <h3 className="text-sm font-semibold text-slate-900 mb-1">Paket Tersedia</h3>
-          <p className="text-xs text-slate-500 mb-3">Ingin naik paket? Ajukan permintaan — tim kami akan menghubungi &amp; menerbitkan tagihan.</p>
+          <p className="text-xs text-slate-500 mb-3">
+            {sub.status === 'trial'
+              ? 'Masa coba gratis Anda segera berakhir — pilih paket untuk lanjut tanpa terputus.'
+              : 'Ingin naik paket? Ajukan permintaan — tim kami akan menghubungi & menerbitkan tagihan.'}
+          </p>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             {plans.map((p) => (
               <div key={p.id} className={`card p-4 flex flex-col ${p.highlight ? 'ring-2 ring-brand-400' : ''}`}>
