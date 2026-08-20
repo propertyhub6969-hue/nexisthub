@@ -1,8 +1,9 @@
 """Importir data dari Excel (migrasi data klien).
 
 Alur: unduh template terisi → klien lengkapi → upload → PRATINJAU (insert/update/error)
-→ TERAPKAN (upsert). Sheet pertama yang didukung: UNIT (kunci: Proyek + Blok + Nomor Unit).
-Pembeli & Pembayaran menyusul.
+→ TERAPKAN (upsert). Entitas didukung: UNIT (kunci Proyek+Blok+Nomor Unit),
+PEMBELI & KONTRAK (NIK / Proyek+Nomor Unit), DOKUMEN legalitas (manifest+ZIP),
+PEMBAYARAN (NIK / Proyek+Nomor Unit). + Undo Batch Level 1.
 """
 import io
 import os
