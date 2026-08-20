@@ -23,7 +23,6 @@ export default function Platform() {
   const { user } = useAuth()
   const [modules, setModules] = useState<string[]>([])
   const [tenants, setTenants] = useState<TenantAdmin[]>([])
-  const [revenue, setRevenue] = useState<RevenueSummary | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
@@ -57,8 +56,8 @@ export default function Platform() {
   const load = async () => {
     setLoading(true)
     try {
-      const [m, t, r] = await Promise.all([platformService.listModules(), platformService.listTenants(showDeleted), platformService.getRevenue()])
-      setModules(m); setTenants(t); setRevenue(r)
+      const [m, t] = await Promise.all([platformService.listModules(), platformService.listTenants(showDeleted)])
+      setModules(m); setTenants(t)
     } catch { setError('Gagal memuat data platform.') } finally { setLoading(false) }
   }
   useEffect(() => { if (user?.is_platform_admin) load() }, [user, showDeleted])
@@ -165,35 +164,6 @@ export default function Platform() {
         <div className="card p-4"><p className="text-xs text-slate-500">Aktif</p><p className="text-lg font-semibold text-emerald-600">{summary.active}</p></div>
         <div className="card p-4"><p className="text-xs text-slate-500">Trial</p><p className="text-lg font-semibold text-amber-600">{summary.trial}</p></div>
         <div className="card p-4"><p className="text-xs text-slate-500">Suspended</p><p className="text-lg font-semibold text-red-600">{summary.suspended}</p></div>
-      </div>
-
-      <div>
-        <h3 className="text-sm font-semibold text-slate-600 mb-2 flex items-center gap-1.5"><Wallet size={15} /> Pendapatan Platform</h3>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <div className="card p-4"><p className="text-xs text-slate-500">Total Diterima</p><p className="text-lg font-semibold text-slate-900">{fmtRp(revenue?.total_paid)}</p></div>
-          <div className="card p-4"><p className="text-xs text-slate-500">Bulan Ini</p><p className="text-lg font-semibold text-emerald-600">{fmtRp(revenue?.paid_this_month)}</p></div>
-          <div className="card p-4"><p className="text-xs text-slate-500">Tertunggak</p><p className="text-lg font-semibold text-red-600">{fmtRp(revenue?.outstanding)}</p></div>
-          <div className="card p-4"><p className="text-xs text-slate-500">Estimasi MRR</p><p className="text-lg font-semibold text-indigo-600">{fmtRp(revenue?.mrr_estimate)}</p></div>
-        </div>
-        {revenue && revenue.trend.length > 0 && (
-          <div className="card p-4 mt-3">
-            <p className="text-xs text-slate-500 mb-2">Tren 12 Bulan Terakhir</p>
-            <div className="space-y-1.5">
-              {(() => {
-                const max = Math.max(...revenue.trend.map((m) => m.amount), 1)
-                return revenue.trend.map((m) => (
-                  <div key={m.month} className="flex items-center gap-2 text-xs">
-                    <span className="w-12 text-slate-500 shrink-0">{fmtMonth(m.month)}</span>
-                    <div className="flex-1 h-1.5 rounded-full bg-slate-100 overflow-hidden">
-                      <div className="h-full bg-emerald-500" style={{ width: `${(m.amount / max) * 100}%` }} />
-                    </div>
-                    <span className="w-24 text-right text-slate-700 shrink-0">{fmtRp(m.amount)}</span>
-                  </div>
-                ))
-              })()}
-            </div>
-          </div>
-        )}
       </div>
 
       <div className="flex justify-end">
